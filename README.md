@@ -18,6 +18,31 @@ clippy, rustfmt, rust-analyzer, and Nix formatting tools.
 - `flake.nix`: dev shell, packages, and checks
 - `.cacophony/config.yaml`: project bootstrap plus queued build/test defaults
 - `scripts/pre-merge.sh`: fast local validation hook entrypoint
+- `.github/workflows/tag-release.yml`: tag-only GitHub Actions validation and release publishing
+
+## Release automation
+
+Local pre-merge validation remains the primary fast-feedback gate:
+
+```bash
+./scripts/pre-merge.sh
+```
+
+Tagged releases intentionally avoid per-commit remote CI. Pushing a `v*` tag
+starts the GitHub Actions release workflow, which:
+
+1. installs Nix on the self-hosted runner,
+2. reruns `./scripts/pre-merge.sh` so the remote release gate matches local expectations,
+3. builds the `.#tendril` flake package reproducibly,
+4. packages a versioned binary tarball plus a source tarball under `dist/`, and
+5. publishes a GitHub release using notes extracted from `CHANGELOG.md`.
+
+To prepare artifacts locally before pushing a tag:
+
+```bash
+./scripts/release-artifacts.sh v0.0.1
+./scripts/release-notes.sh v0.0.1
+```
 
 ## Audio capture status
 
