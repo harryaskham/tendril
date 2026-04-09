@@ -1,4 +1,6 @@
 use clap::{Args, CommandFactory, Parser, Subcommand};
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 /// Recommended high-level workflow for agents and operators.
 pub const WORKFLOW_HINT: &str =
@@ -79,10 +81,10 @@ impl Command {
     }
 }
 
-#[derive(Debug, Clone, Args, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Args, Serialize, Deserialize, JsonSchema)]
 pub struct ListCommand {}
 
-#[derive(Debug, Clone, Args, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Args, Serialize, Deserialize, JsonSchema)]
 pub struct CaptureCommand {
     #[arg(long)]
     pub max_width: Option<u32>,
@@ -97,19 +99,19 @@ pub struct CaptureCommand {
     pub compression: Option<u8>,
 }
 
-#[derive(Debug, Clone, Args, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Args, Serialize, Deserialize, JsonSchema)]
 pub struct RunCommand {
     /// Placeholder input definition argument for future DSL and string support.
     pub input_definition: Option<String>,
 }
 
-#[derive(Debug, Clone, Args, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Args, Serialize, Deserialize, JsonSchema)]
 pub struct ListenCommand {
     #[arg(long)]
     pub source: Option<String>,
 }
 
-#[derive(Debug, Clone, Args, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Args, Serialize, Deserialize, JsonSchema)]
 pub struct AliasCommand {
     #[arg(long)]
     pub shell: Option<String>,

@@ -1,4 +1,4 @@
-use mcp_cli::ErrorCategory;
+use mcp_cli::{ErrorCategory, McpCliError, StructuredError};
 use thiserror::Error;
 
 use crate::platform::PlatformAdapterError;
@@ -13,6 +13,9 @@ pub enum TendrilError {
 
     #[error(transparent)]
     Adapter(#[from] PlatformAdapterError),
+
+    #[error("MCP/JSON error: {message}")]
+    Mcp { message: String },
 }
 
 impl TendrilError {
@@ -22,11 +25,29 @@ impl TendrilError {
     }
 
     #[must_use]
+    pub fn mcp(error: &McpCliError) -> Self {
+        Self::Mcp {
+            message: error.to_string(),
+        }
+    }
+
+    #[must_use]
     pub fn category(&self) -> ErrorCategory {
         match self {
             Self::NotImplemented { .. } => ErrorCategory::UnsupportedCapability,
             Self::Config { .. } => ErrorCategory::ConfigError,
             Self::Adapter(error) => error.category(),
+            Self::Mcp { .. } => ErrorCategory::SerializationError,
         }
+    }
+}
+
+impl StructuredError for TendrilError {
+    fn category(&self) -> ErrorCategory {
+        self.category()
+    }
+
+    fn message(&self) -> String {
+        self.to_string()
     }
 }
