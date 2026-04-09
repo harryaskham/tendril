@@ -16,9 +16,13 @@ clippy, rustfmt, rust-analyzer, and Nix formatting tools.
 - `crates/tendril`: binary crate scaffold for the Tendril CLI
 - `crates/mcp-cli`: reusable structured JSON and MCP façade scaffold
 - `docs/`: mdBook-based GitHub Pages source for guides, reference docs, and published rustdoc links
-- `flake.nix`: dev shell, packages, and checks
+- `flake.nix`: dev shell, packages, checks, docs validation, and reproducible release artifacts
 - `.cacophony/config.yaml`: project bootstrap plus queued build/test defaults
 - `scripts/pre-merge.sh`: fast local validation hook entrypoint
+- `scripts/release-artifacts.sh`: full GitHub-release staging helper for binary and source archives
+- `scripts/release-notes.sh`: changelog section extractor for GitHub release notes
+- `scripts/release-lib.sh`: SemVer, tag, system, and artifact naming helpers shared by release automation
+- `scripts/stage-release-artifacts.sh`: Nix-backed staging helper for releasable binary archives, checksums, and manifest metadata
 - `.github/workflows/tag-release.yml`: tag-only GitHub Actions validation and release publishing
 
 ## Release automation
@@ -29,6 +33,10 @@ Local pre-merge validation remains the primary fast-feedback gate:
 ./scripts/pre-merge.sh
 ```
 
+Tendril uses SemVer. The single source of truth for the release version is
+`[workspace.package].version` in `Cargo.toml`, and release tags use the
+`v<semver>` form such as `v0.0.1`.
+
 Tagged releases intentionally avoid per-commit remote CI. Pushing a `v*` tag
 starts the GitHub Actions release workflow, which:
 
@@ -38,12 +46,23 @@ starts the GitHub Actions release workflow, which:
 4. packages a versioned binary tarball plus a source tarball under `dist/`, and
 5. publishes a GitHub release using notes extracted from `CHANGELOG.md`.
 
+For release packaging, `nix build .#releaseArtifact` produces the canonical
+binary archive, checksum, and `release-manifest.json` using the same workspace
+version as Cargo. Canonical binary asset names use the formula
+`tendril-<semver>-<nix-system>.tar.gz`, with matching `.sha256` sidecars.
+Supported Nix system suffixes are: `x86_64-linux`, `aarch64-linux`,
+`aarch64-darwin`, and `x86_64-darwin`.
+
 To prepare artifacts locally before pushing a tag:
 
 ```bash
+./scripts/stage-release-artifacts.sh v0.0.1
 ./scripts/release-artifacts.sh v0.0.1
 ./scripts/release-notes.sh v0.0.1
 ```
+
+See `docs/release-management.md` for the detailed repository release runbook and
+`docs/src/reference/publishing.md` for the published docs-site release reference.
 
 ## Documentation site
 

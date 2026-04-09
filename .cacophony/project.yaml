@@ -38,6 +38,11 @@ actions:
     command: nix develop --command cargo clippy --workspace --all-targets --all-features -- -D warnings
     description: Run clippy for the full workspace inside the Nix dev shell
     timeout_secs: 1800
+  release-artifact:
+    type: command
+    command: ./scripts/stage-release-artifacts.sh
+    description: Build and stage the versioned release tarball, checksum, and manifest via Nix
+    timeout_secs: 1800
   pre-merge:
     type: command
     command: ./scripts/pre-merge.sh

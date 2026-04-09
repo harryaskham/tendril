@@ -28,10 +28,19 @@ That produces one static site containing both narrative docs and generated Rust 
 The workflow is intentionally aligned with the repository's tag-oriented release policy:
 
 - GitHub Actions runs on version tags such as `v0.0.1`
+- the release version source of truth is `[workspace.package].version` in `Cargo.toml`
 - the build runs inside the Nix development environment
+- `nix build .#releaseArtifact` produces the canonical binary release archive, checksum, and manifest for the current Nix system
 - the resulting `target/book/` directory is uploaded to GitHub Pages
 
 This keeps published docs tied to release snapshots instead of publishing every branch push.
+
+## Release artifacts
+
+Binary release assets use the canonical naming pattern
+`tendril-<semver>-<nix-system>.tar.gz` with a matching `.sha256` file.
+The current tag workflow also publishes `tendril-<semver>-source.tar.gz` and a
+`release-manifest.json` file that records the version, tag, system, and artifact list.
 
 ## Local preview
 

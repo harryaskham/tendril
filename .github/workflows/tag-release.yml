@@ -43,6 +43,7 @@ jobs:
           path: |
             dist/*.tar.gz
             dist/*.sha256
+            dist/release-manifest.json
           if-no-files-found: error
 
   publish:
@@ -73,5 +74,6 @@ jobs:
           files: |
             dist/*.tar.gz
             dist/*.sha256
+            dist/release-manifest.json
           fail_on_unmatched_files: true
           prerelease: ${{ contains(github.ref_name, '-') }}

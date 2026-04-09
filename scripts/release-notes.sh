@@ -17,7 +17,7 @@ awk -v version="$version" '
     in_section = 0
     found = 0
   }
-  $0 ~ "^## \\[" version "\\]" {
+  $0 ~ "^## \\[(v)?" version "\\]" {
     in_section = 1
     found = 1
     print

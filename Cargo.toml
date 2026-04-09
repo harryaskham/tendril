@@ -10,6 +10,11 @@ version = "0.0.1"
 edition = "2024"
 license = "MIT"
 rust-version = "1.85"
+description = "Stateless Rust CLI for agent-driven desktop inspection and control"
+readme = "README.md"
+repository = "https://github.com/harryaskham/tendril"
+homepage = "https://github.com/harryaskham/tendril"
+documentation = "https://github.com/harryaskham/tendril/blob/main/README.md"
 
 [workspace.dependencies]
 anyhow = "1.0.98"

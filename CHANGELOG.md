@@ -13,7 +13,7 @@ Tendril follows [Semantic Versioning](https://semver.org/). Release notes are cu
 ### Changed
 - Seeded the changelog and release-note flow so future releases can prepend human-readable summaries when a new `vX.Y.Z` tag is pushed.
 
-## [v0.0.1] - 2026-04-09
+## [0.0.1] - 2026-04-09
 
 ### Added
 - Bootstrapped the Tendril Rust workspace at version `0.0.1`, including the `tendril` CLI crate and the in-repo reusable `mcp-cli` support crate.
@@ -23,3 +23,5 @@ Tendril follows [Semantic Versioning](https://semver.org/). Release notes are cu
 - Added cross-platform adapter scaffolding for macOS, Linux, and Windows 11 with explicit capability, permission, and structured error reporting.
 - Added Nix flake packaging, reproducible checks, Cacophony project bootstrap, git hooks, and the local `scripts/pre-merge.sh` validation gate.
 - Added integration, CLI/MCP parity, and platform contract test coverage for the initial stateless desktop automation workflow.
+- Added explicit SemVer and repository metadata wiring in Cargo manifests and release documentation.
+- Added reproducible `.#releaseArtifact` packaging plus local release helper scripts for canonical binary archives, checksums, and manifest metadata.
