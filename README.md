@@ -15,6 +15,7 @@ clippy, rustfmt, rust-analyzer, and Nix formatting tools.
 
 - `crates/tendril`: binary crate scaffold for the Tendril CLI
 - `crates/mcp-cli`: reusable structured JSON and MCP façade scaffold
+- `docs/`: mdBook-based GitHub Pages source for guides, reference docs, and published rustdoc links
 - `flake.nix`: dev shell, packages, and checks
 - `.cacophony/config.yaml`: project bootstrap plus queued build/test defaults
 - `scripts/pre-merge.sh`: fast local validation hook entrypoint
@@ -43,6 +44,18 @@ To prepare artifacts locally before pushing a tag:
 ./scripts/release-artifacts.sh v0.0.1
 ./scripts/release-notes.sh v0.0.1
 ```
+
+## Documentation site
+
+The repository publishes a static docs site built from `docs/`.
+
+- local build: `nix develop --command ./scripts/build-docs.sh`
+- mdBook source: `docs/src/`
+- published Pages artifact: `target/book/`
+- generated Rust API docs: `target/book/api/`
+- deployment workflow: `.github/workflows/pages.yaml`
+
+The Pages workflow is intentionally tag-triggered so published docs track release snapshots.
 
 ## Audio capture status
 

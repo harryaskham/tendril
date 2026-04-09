@@ -67,6 +67,15 @@
           cargo fmt --all -- --check
           touch "$out"
         '';
+
+        docs = pkgs.runCommand "tendril-docs-check" { nativeBuildInputs = [ pkgs.mdbook ]; } ''
+          export HOME="$TMPDIR"
+          cp -r ${./.} source
+          chmod -R +w source
+          cd source
+          mdbook build docs
+          touch "$out"
+        '';
       in
       {
         packages = {
@@ -79,7 +88,7 @@
           default = tendril;
           tendril = tendril;
           mcp-cli = mcpCli;
-          inherit clippy tests fmt;
+          inherit clippy tests fmt docs;
         };
 
         devShells.default = pkgs.mkShell {
@@ -88,6 +97,7 @@
             cargo
             clippy
             direnv
+            mdbook
             nixpkgs-fmt
             rust-analyzer
             rustc

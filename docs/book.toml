@@ -1,0 +1,17 @@
+[book]
+title = "Tendril"
+authors = ["Tendril contributors"]
+language = "en"
+src = "src"
+
+[build]
+build-dir = "../target/book"
+create-missing = false
+
+[output.html]
+default-theme = "navy"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/harryaskham/tendril"
+edit-url-template = "https://github.com/harryaskham/tendril/edit/main/docs/src/{path}"
+additional-css = ["theme/nord.css"]
+site-url = "/tendril/"

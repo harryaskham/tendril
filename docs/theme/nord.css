@@ -1,0 +1,193 @@
+:root {
+  --nord0: #2e3440;
+  --nord1: #3b4252;
+  --nord2: #434c5e;
+  --nord3: #4c566a;
+  --nord4: #d8dee9;
+  --nord5: #e5e9f0;
+  --nord6: #eceff4;
+  --nord7: #8fbcbb;
+  --nord8: #88c0d0;
+  --nord9: #81a1c1;
+  --nord10: #5e81ac;
+  --nord11: #bf616a;
+  --nord12: #d08770;
+  --nord13: #ebcb8b;
+  --nord14: #a3be8c;
+  --nord15: #b48ead;
+}
+
+html,
+body {
+  background: var(--nord0) !important;
+  color: var(--nord6) !important;
+}
+
+body,
+.content,
+.chapter li.chapter-item,
+.chapter li.part-title,
+.menu-bar,
+.sidebar,
+.sidebar-scrollbox,
+.nav-chapters,
+.mobile-nav-chapters,
+code {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+code,
+pre,
+.hljs,
+:not(pre) > .hljs {
+  font-family: "Fira Code", "FiraCode Nerd Font", "SF Mono", monospace;
+}
+
+.ayu,
+.coal,
+.light,
+.navy,
+.rust {
+  --bg: var(--nord0);
+  --fg: var(--nord6);
+  --sidebar-bg: var(--nord1);
+  --sidebar-fg: var(--nord5);
+  --sidebar-non-existant: var(--nord3);
+  --sidebar-active: var(--nord8);
+  --sidebar-spacer: var(--nord2);
+  --scrollbar: var(--nord3);
+  --icons: var(--nord8);
+  --icons-hover: var(--nord7);
+  --links: var(--nord8);
+  --inline-code-color: var(--nord13);
+  --theme-popup-bg: var(--nord1);
+  --theme-popup-border: var(--nord3);
+  --theme-hover: var(--nord2);
+  --quote-bg: rgba(94, 129, 172, 0.15);
+  --quote-border: var(--nord9);
+  --table-border-color: var(--nord3);
+  --table-header-bg: var(--nord1);
+  --table-alternate-bg: rgba(67, 76, 94, 0.45);
+  --searchbar-border-color: var(--nord3);
+  --searchbar-bg: var(--nord1);
+  --searchbar-fg: var(--nord6);
+  --searchbar-shadow-color: transparent;
+  --searchresults-header-fg: var(--nord5);
+  --searchresults-border-color: var(--nord3);
+  --searchresults-li-bg: var(--nord1);
+  --search-mark-bg: rgba(163, 190, 140, 0.3);
+}
+
+.menu-bar,
+.sidebar,
+.chapter li a,
+.nav-chapters,
+.mobile-nav-chapters,
+.content main {
+  background: transparent;
+  color: var(--nord6);
+}
+
+.sidebar {
+  background: var(--nord1) !important;
+  border-inline-end: 1px solid var(--nord3);
+}
+
+.chapter li.chapter-item > a,
+.chapter li.part-title {
+  border-radius: 8px;
+}
+
+.chapter li.chapter-item > a:hover,
+.chapter li.chapter-item > a:focus,
+.chapter li.chapter-item.affix > a:hover,
+.chapter li.chapter-item.affix > a:focus {
+  background: rgba(129, 161, 193, 0.16);
+  text-decoration: none;
+}
+
+.chapter li.chapter-item.expanded > a,
+.chapter li.chapter-item > a.active {
+  color: var(--nord8);
+}
+
+.content main {
+  max-width: 64rem;
+}
+
+.content main h1,
+.content main h2,
+.content main h3,
+.content main h4 {
+  color: var(--nord6);
+}
+
+.content main a {
+  color: var(--nord8);
+}
+
+.content main a:hover,
+.content main a:focus {
+  color: var(--nord7);
+}
+
+.content main table,
+.content main blockquote,
+.content main pre,
+.content main .mdbook-alerts {
+  border-radius: 8px;
+}
+
+.content main table {
+  overflow: hidden;
+}
+
+.content main blockquote {
+  background: rgba(94, 129, 172, 0.12);
+  border-inline-start: 4px solid var(--nord9);
+  padding: 0.8rem 1rem;
+}
+
+.content main pre,
+.hljs {
+  background: var(--nord1) !important;
+  border: 1px solid var(--nord3);
+}
+
+:not(pre) > code {
+  background: rgba(67, 76, 94, 0.9);
+  color: var(--nord13);
+  padding: 0.15rem 0.35rem;
+  border-radius: 6px;
+}
+
+#theme-toggle,
+.theme-popup,
+.theme-picker {
+  display: none !important;
+}
+
+.menu-title,
+.left-buttons button,
+.right-buttons button,
+.nav-chapters,
+.mobile-nav-chapters {
+  color: var(--nord5) !important;
+}
+
+.nav-chapters:hover,
+.mobile-nav-chapters:hover,
+.left-buttons button:hover,
+.right-buttons button:hover {
+  color: var(--nord8) !important;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--nord3);
+}
+
+@media (max-width: 768px) {
+  .content main {
+    padding-inline: 1rem;
+  }
+}

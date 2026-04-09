@@ -1,0 +1,17 @@
+# Summary
+
+- [Overview](index.md)
+- [Quickstart](quickstart.md)
+- [CLI guide](cli/index.md)
+  - [`tendril list`](cli/list.md)
+  - [`tendril capture`](cli/capture.md)
+  - [`tendril run`](cli/run.md)
+  - [`tendril listen`](cli/listen.md)
+  - [`tendril alias`](cli/alias.md)
+- [MCP guide](mcp.md)
+- [Reference](reference/index.md)
+  - [Configuration](reference/configuration.md)
+  - [JSON envelopes](reference/json-envelopes.md)
+  - [Platform support and rollout status](reference/platform-support.md)
+  - [Docs publishing and release flow](reference/publishing.md)
+  - [Rust API docs](reference/api.md)
