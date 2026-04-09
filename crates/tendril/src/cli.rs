@@ -1,4 +1,4 @@
-use clap::{Args, CommandFactory, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -36,17 +36,9 @@ pub struct TendrilCli {
 impl TendrilCli {
     #[must_use]
     pub fn agent_help() -> String {
-        let mut command = Self::command();
-        let mut output = Vec::new();
-        command
-            .write_long_help(&mut output)
-            .expect("help text should render into memory");
-
-        let mut help = String::from_utf8(output).expect("clap help must be valid utf-8");
-        help.push_str("\n\n");
-        help.push_str(WORKFLOW_HINT);
-        help.push('\n');
-        help
+        format!(
+            "Tendril is a stateless desktop inspection and control CLI for agents.\n\nWorkflow:\n  1. list targets:   tendril list --json\n  2. capture state:  tendril --window <id> capture --json\n  3. run input:      tendril --window <id> run 'send(\"hello\")'\n  4. reuse a target: eval \"$(tendril --window <id> alias --name desk)\"\n\nCommands:\n  list     Discover windows and displays\n  capture  Capture a screenshot from a window or display\n  run      Type text or execute an input sequence against a target\n  alias    Emit a shell helper that pre-fills --window/--display\n  listen   Probe supported audio capture paths\n  mcp      Serve Tendril over MCP stdio\n\nUse --json for machine-readable success/error envelopes.\nUse --help on any subcommand for detailed flags.\n\n{WORKFLOW_HINT}\n"
+        )
     }
 }
 
@@ -124,6 +116,9 @@ pub struct ListenCommand {
 pub struct AliasCommand {
     #[arg(long)]
     pub shell: Option<String>,
+
+    #[arg(long)]
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -146,8 +141,10 @@ mod tests {
     fn agent_help_includes_workflow_hint() {
         let help = TendrilCli::agent_help();
 
-        assert!(help.contains("Recommended workflow:"));
-        assert!(help.contains("tendril capture"));
-        assert!(help.contains("tendril run"));
+        assert!(help.contains("Workflow:"));
+        assert!(help.contains("tendril list --json"));
+        assert!(help.contains("capture --json"));
+        assert!(help.contains(" run 'send(\"hello\")'"));
+        assert!(help.contains("alias --name desk"));
     }
 }

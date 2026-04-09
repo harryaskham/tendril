@@ -399,6 +399,8 @@ pub struct AliasOutput {
     pub shell: ShellKind,
     pub name: String,
     pub command: String,
+    pub argv: Vec<String>,
+    pub shell_code: String,
     pub target: TargetSelector,
 }
 

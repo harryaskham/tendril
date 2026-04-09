@@ -30,6 +30,17 @@ where
     T: Into<OsString> + Clone,
 {
     let cli = TendrilCli::parse_from(args);
+
+    if cli.command.is_none() {
+        return match commands::dispatch(&cli, &TendrilConfig::default()) {
+            Ok(output) => {
+                output.print();
+                ExitCode::SUCCESS
+            }
+            Err(error) => emit_error(&cli, None, &error),
+        };
+    }
+
     let config = match TendrilConfig::load() {
         Ok(config) => config,
         Err(error) => return emit_error(&cli, None, &error),

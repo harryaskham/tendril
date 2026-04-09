@@ -13,9 +13,9 @@ use crate::cli::{
 use crate::config::TendrilConfig;
 use crate::error::TendrilError;
 use crate::model::{
-    AliasInput, AudioFormat, AudioSourceKind, AudioSourceSelector, CapabilitySet, CaptureInput,
-    ListInput, ListOutput, ListenInput, RunInput, RunInputPayload, ShellKind, TargetDescriptor,
-    TargetKind, TargetSelector,
+    AliasInput, AliasOutput, AudioFormat, AudioSourceKind, AudioSourceSelector, CapabilitySet,
+    CaptureInput, ListInput, ListOutput, ListenInput, RunInput, RunInputPayload, ShellKind,
+    TargetDescriptor, TargetKind, TargetSelector,
 };
 use crate::platform::{
     AdapterContext, AdapterInfo, AudioCapabilityReport, AudioProbeRequest,
@@ -49,6 +49,42 @@ pub struct RunRequest {
     pub target: TargetScope,
     #[serde(flatten)]
     pub options: RunCommand,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct AliasRequest {
+    #[serde(flatten)]
+    pub target: TargetScope,
+    #[serde(flatten)]
+    pub options: AliasCommand,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HelpWorkflowStep {
+    pub command: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HelpCommandSummary {
+    pub name: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HelpExample {
+    pub description: String,
+    pub command: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HelpOutput {
+    pub help: String,
+    pub workflow_hint: String,
+    pub workflow_steps: Vec<HelpWorkflowStep>,
+    pub commands: Vec<HelpCommandSummary>,
+    pub examples: Vec<HelpExample>,
+    pub notes: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -96,17 +132,12 @@ pub fn dispatch(cli: &TendrilCli, config: &TendrilConfig) -> Result<CommandOutpu
 }
 
 fn render_help(json_mode: bool) -> CommandOutput {
+    let help = build_help_output();
     if json_mode {
-        let envelope = JsonEnvelope::success_for(
-            "help",
-            json!({
-                "help": TendrilCli::agent_help(),
-                "workflow": WORKFLOW_HINT,
-            }),
-        );
+        let envelope = JsonEnvelope::success_for("help", &help);
         CommandOutput::Json(serde_json::to_value(envelope).expect("json help should serialize"))
     } else {
-        CommandOutput::Human(TendrilCli::agent_help())
+        CommandOutput::Human(help.help)
     }
 }
 
@@ -185,7 +216,13 @@ fn dispatch_cli_command(
                 alias_name = %input.name,
                 "validated alias request"
             );
-            Err(TendrilError::not_implemented("alias"))
+            let output = execute_alias(&input);
+            Ok(render_command_output(
+                "alias",
+                cli.json,
+                output,
+                render_alias_human,
+            ))
         }
         Command::Mcp(_) => unreachable!("MCP commands are dispatched separately"),
     }
@@ -233,6 +270,14 @@ fn build_tool_router() -> ToolRouter<CommandContext> {
         |context: &CommandContext, command: ListenCommand| {
             let input = build_listen_input(&command)?;
             listen_response_value(&input, &context.adapter_context)
+        },
+    );
+    router.add_typed_tool(
+        "tendril_alias",
+        "Emit transparent shell helper code for repeated target selection.",
+        |_: &CommandContext, command: AliasRequest| {
+            let input = build_alias_input(&command.target, &command.options)?;
+            Ok::<AliasOutput, TendrilError>(execute_alias(&input))
         },
     );
     router
@@ -306,6 +351,71 @@ where
         CommandOutput::Json(serde_json::to_value(envelope).expect("command json should serialize"))
     } else {
         CommandOutput::Human(render_human(&data))
+    }
+}
+
+fn build_help_output() -> HelpOutput {
+    HelpOutput {
+        help: TendrilCli::agent_help(),
+        workflow_hint: WORKFLOW_HINT.to_owned(),
+        workflow_steps: vec![
+            HelpWorkflowStep {
+                command: "tendril list --json".to_owned(),
+                description: "Discover actionable window and display targets.".to_owned(),
+            },
+            HelpWorkflowStep {
+                command: "tendril --window <id> capture --json".to_owned(),
+                description: "Capture target state and keep resize metadata in JSON.".to_owned(),
+            },
+            HelpWorkflowStep {
+                command: "tendril --window <id> run 'send(\"hello\")'".to_owned(),
+                description: "Execute text or input sequences against the chosen target.".to_owned(),
+            },
+        ],
+        commands: vec![
+            HelpCommandSummary {
+                name: "list".to_owned(),
+                description: "Discover windows and displays.".to_owned(),
+            },
+            HelpCommandSummary {
+                name: "capture".to_owned(),
+                description: "Capture a screenshot from a window or display target.".to_owned(),
+            },
+            HelpCommandSummary {
+                name: "run".to_owned(),
+                description: "Execute text or input sequences against a target.".to_owned(),
+            },
+            HelpCommandSummary {
+                name: "alias".to_owned(),
+                description: "Emit a shell helper that pre-fills --window or --display.".to_owned(),
+            },
+            HelpCommandSummary {
+                name: "listen".to_owned(),
+                description: "Probe supported audio capture paths.".to_owned(),
+            },
+            HelpCommandSummary {
+                name: "mcp stdio".to_owned(),
+                description: "Serve Tendril over MCP stdio.".to_owned(),
+            },
+        ],
+        examples: vec![
+            HelpExample {
+                description: "Inspect targets".to_owned(),
+                command: "tendril list --json".to_owned(),
+            },
+            HelpExample {
+                description: "Capture a chosen target".to_owned(),
+                command: "tendril --window <id> capture --json".to_owned(),
+            },
+            HelpExample {
+                description: "Create a reusable wrapper for repeated targeting".to_owned(),
+                command: "eval \"$(tendril --window <id> alias --name desk)\"".to_owned(),
+            },
+        ],
+        notes: vec![
+            "Use --json for machine-readable success and error envelopes.".to_owned(),
+            "Alias helpers are plain shell wrappers around explicit tendril arguments; Tendril does not store session state.".to_owned(),
+        ],
     }
 }
 
@@ -594,10 +704,29 @@ fn build_alias_input(
             .map(parse_shell)
             .transpose()?
             .unwrap_or(ShellKind::Bash),
-        name: default_alias_name(target),
+        name: command
+            .name
+            .clone()
+            .unwrap_or_else(|| default_alias_name(target)),
     };
     input.validate()?;
     Ok(input)
+}
+
+fn execute_alias(input: &AliasInput) -> AliasOutput {
+    let argv = alias_argv(&input.target);
+    AliasOutput {
+        shell: input.shell,
+        name: input.name.clone(),
+        command: render_shell_command(&argv, input.shell),
+        argv,
+        shell_code: render_alias_shell_code(input),
+        target: input.target.clone(),
+    }
+}
+
+fn render_alias_human(output: &AliasOutput) -> String {
+    output.shell_code.clone()
 }
 
 fn target_scope_from_cli(cli: &TendrilCli) -> TargetScope {
@@ -664,7 +793,7 @@ fn parse_audio_format(value: &str) -> Result<AudioFormat, TendrilError> {
 }
 
 fn parse_shell(value: &str) -> Result<ShellKind, TendrilError> {
-    match value {
+    match value.to_ascii_lowercase().as_str() {
         "bash" => Ok(ShellKind::Bash),
         "zsh" => Ok(ShellKind::Zsh),
         "fish" => Ok(ShellKind::Fish),
@@ -675,6 +804,75 @@ fn parse_shell(value: &str) -> Result<ShellKind, TendrilError> {
         .with_code("invalid_alias_input")
         .with_field("shell")),
     }
+}
+
+fn alias_argv(target: &TargetSelector) -> Vec<String> {
+    let mut argv = vec!["tendril".to_owned()];
+    match target {
+        TargetSelector::Window { id } => {
+            argv.push("--window".to_owned());
+            argv.push(id.clone());
+        }
+        TargetSelector::Display { id } => {
+            argv.push("--display".to_owned());
+            argv.push(id.clone());
+        }
+    }
+    argv
+}
+
+fn render_alias_shell_code(input: &AliasInput) -> String {
+    let argv = alias_argv(&input.target);
+    let invocation = render_shell_invocation(&argv, input.shell);
+    match input.shell {
+        ShellKind::Bash | ShellKind::Zsh => {
+            format!("{}() {{\n  {} \"$@\"\n}}\n", input.name, invocation)
+        }
+        ShellKind::Fish => format!("function {}\n    {} $argv\nend\n", input.name, invocation),
+        ShellKind::PowerShell => format!(
+            "function {} {{\n    param(\n        [Parameter(ValueFromRemainingArguments = $true)]\n        [string[]]$Args\n    )\n    {} @Args\n}}\n",
+            input.name, invocation,
+        ),
+    }
+}
+
+fn render_shell_invocation(argv: &[String], shell: ShellKind) -> String {
+    match shell {
+        ShellKind::PowerShell => format!("& {}", render_shell_command(argv, shell)),
+        ShellKind::Bash | ShellKind::Zsh | ShellKind::Fish => {
+            format!("command {}", render_shell_command(argv, shell))
+        }
+    }
+}
+
+fn render_shell_command(argv: &[String], shell: ShellKind) -> String {
+    let mut rendered = Vec::with_capacity(argv.len());
+    if let Some(program) = argv.first() {
+        rendered.push(program.clone());
+    }
+    rendered.extend(
+        argv.iter()
+            .skip(1)
+            .map(|argument| quote_for_shell(argument, shell)),
+    );
+    rendered.join(" ")
+}
+
+fn quote_for_shell(argument: &str, shell: ShellKind) -> String {
+    if !argument.is_empty() && argument.chars().all(is_shell_safe_character) {
+        return argument.to_owned();
+    }
+
+    match shell {
+        ShellKind::PowerShell => format!("'{}'", argument.replace('\'', "''")),
+        ShellKind::Bash | ShellKind::Zsh | ShellKind::Fish => {
+            format!("'{}'", argument.replace('\'', "'\"'\"'"))
+        }
+    }
+}
+
+fn is_shell_safe_character(character: char) -> bool {
+    character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.' | '/' | ':')
 }
 
 fn payload_kind(payload: &RunInputPayload) -> &'static str {
@@ -715,12 +913,15 @@ fn sanitize_identifier(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        CaptureRequest, RunRequest, TargetScope, build_capture_input, build_listen_input,
-        build_listen_response, build_mcp_server, dispatch, dispatch_listen_command,
+        AliasRequest, CaptureRequest, RunRequest, TargetScope, build_alias_input,
+        build_capture_input, build_listen_input, build_listen_response, build_mcp_server, dispatch,
+        dispatch_listen_command, execute_alias,
     };
-    use crate::cli::{CaptureCommand, Command, ListenCommand, RunCommand, TendrilCli};
+    use crate::cli::{
+        AliasCommand, CaptureCommand, Command, ListenCommand, RunCommand, TendrilCli, WORKFLOW_HINT,
+    };
     use crate::config::{ImageFormat, TendrilConfig};
-    use crate::model::{AudioFormat, AudioSourceKind};
+    use crate::model::{AudioFormat, AudioSourceKind, ShellKind};
     use crate::platform::{AdapterContext, AudioBackend};
     use serde_json::json;
 
@@ -743,7 +944,20 @@ mod tests {
                     value["data"]["help"]
                         .as_str()
                         .expect("help string")
-                        .contains("tendril list")
+                        .contains("Workflow:")
+                );
+                assert_eq!(value["data"]["workflow_hint"], WORKFLOW_HINT);
+                assert_eq!(
+                    value["data"]["workflow_steps"][0]["command"],
+                    "tendril list --json"
+                );
+                assert_eq!(
+                    value["data"]["workflow_steps"][1]["command"],
+                    "tendril --window <id> capture --json"
+                );
+                assert_eq!(
+                    value["data"]["workflow_steps"][2]["command"],
+                    "tendril --window <id> run 'send(\"hello\")'"
                 );
             }
             _ => panic!("expected json output"),
@@ -817,7 +1031,8 @@ mod tests {
                 "tendril_list",
                 "tendril_capture",
                 "tendril_run",
-                "tendril_listen"
+                "tendril_listen",
+                "tendril_alias"
             ]
         );
     }
@@ -884,6 +1099,46 @@ mod tests {
         assert_eq!(request.target.display.as_deref(), Some("display-1"));
         assert_eq!(request.options.max_width, Some(800));
         assert_eq!(request.options.compression, Some(90));
+    }
+
+    #[test]
+    fn alias_request_schema_includes_target_scope_and_alias_options() {
+        let schema = serde_json::to_value(schemars::schema_for!(AliasRequest))
+            .expect("alias schema should serialize");
+
+        assert_eq!(schema["type"], "object");
+        assert!(schema["properties"].get("window").is_some());
+        assert!(schema["properties"].get("display").is_some());
+        assert!(schema["properties"].get("shell").is_some());
+        assert!(schema["properties"].get("name").is_some());
+    }
+
+    #[test]
+    fn alias_output_is_shell_usable_and_transparent() {
+        let input = build_alias_input(
+            &TargetScope {
+                window: Some("window-1".to_string()),
+                display: None,
+            },
+            &AliasCommand {
+                shell: Some("bash".to_string()),
+                name: Some("desk".to_string()),
+            },
+        )
+        .expect("alias input should build");
+
+        let output = execute_alias(&input);
+
+        assert_eq!(output.shell, ShellKind::Bash);
+        assert_eq!(output.name, "desk");
+        assert_eq!(output.argv, vec!["tendril", "--window", "window-1"]);
+        assert_eq!(output.command, "tendril --window window-1");
+        assert!(output.shell_code.contains("desk()"));
+        assert!(
+            output
+                .shell_code
+                .contains("command tendril --window window-1 \"$@\"")
+        );
     }
 
     #[test]
@@ -968,6 +1223,52 @@ mod tests {
         assert_eq!(
             output.details().expect("structured details")["request"]["source"]["id"],
             "mic-2"
+        );
+    }
+
+    #[test]
+    fn mcp_alias_tool_returns_machine_readable_helper_metadata() {
+        let response = build_mcp_server()
+            .handle_request_value(
+                &super::CommandContext {
+                    config: TendrilConfig::default(),
+                    adapter_context: AdapterContext::windows11(),
+                },
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": 12,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "tendril_alias",
+                        "arguments": {
+                            "window": "window-1",
+                            "shell": "fish",
+                            "name": "desk"
+                        }
+                    }
+                }),
+            )
+            .expect("request should parse")
+            .expect("response should exist");
+
+        assert_eq!(response["result"]["isError"], false);
+        assert_eq!(
+            response["result"]["structuredContent"]["data"]["name"],
+            "desk"
+        );
+        assert_eq!(
+            response["result"]["structuredContent"]["data"]["shell"],
+            "fish"
+        );
+        assert_eq!(
+            response["result"]["structuredContent"]["data"]["argv"],
+            json!(["tendril", "--window", "window-1"])
+        );
+        assert!(
+            response["result"]["structuredContent"]["data"]["shell_code"]
+                .as_str()
+                .expect("shell code")
+                .contains("function desk")
         );
     }
 
