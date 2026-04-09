@@ -1,4 +1,5 @@
 use std::fmt::Write as _;
+use std::sync::Arc;
 
 use mcp_cli::{JsonEnvelope, McpServer, StdioServerConfig, ToolRouter};
 use schemars::JsonSchema;
@@ -21,14 +22,23 @@ use crate::model::{
 };
 use crate::platform::{
     AdapterContext, AdapterInfo, AudioCapabilityReport, AudioProbeRequest,
-    AudioSourceKind as PlatformAudioSourceKind, Capability, CaptureTargetKind,
+    AudioSourceKind as PlatformAudioSourceKind, Capability, CaptureTargetKind, PlatformAdapter,
     TargetDiscoveryRequest, adapter_for_context,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 struct CommandContext {
     config: TendrilConfig,
     adapter_context: AdapterContext,
+    adapter: Option<Arc<dyn PlatformAdapter>>,
+}
+
+impl CommandContext {
+    fn adapter(&self) -> Arc<dyn PlatformAdapter> {
+        self.adapter
+            .clone()
+            .unwrap_or_else(|| Arc::from(adapter_for_context(self.adapter_context.clone())))
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -153,6 +163,7 @@ fn dispatch_mcp(
             let context = CommandContext {
                 config: config.clone(),
                 adapter_context: AdapterContext::detect(),
+                adapter: None,
             };
             server
                 .serve_stdio(&context)
@@ -257,47 +268,31 @@ fn build_mcp_server() -> McpServer<CommandContext> {
 fn build_tool_router() -> ToolRouter<CommandContext> {
     let mut router = ToolRouter::new();
     router.add_typed_tool(
-        "tendril_list",
+        "list",
         "Discover available desktop targets.",
         |context: &CommandContext, command: ListCommand| {
             let input = validate_list_command(&command)?;
-            execute_list(&input, &context.adapter_context)
+            let adapter = context.adapter();
+            execute_list_with_adapter(&input, adapter.as_ref())
         },
     );
     router.add_typed_tool(
-        "tendril_capture",
+        "capture",
         "Capture a screenshot from a display or window target.",
         |context: &CommandContext, command: CaptureRequest| {
             let input = build_capture_input(&command.target, &command.options, &context.config)?;
-            capture_response_value(&input, &context.adapter_context)
+            let adapter = context.adapter();
+            capture_response_value(&input, adapter.as_ref())
         },
     );
     router.add_typed_tool(
-        "tendril_run",
+        "run",
         "Execute input against a specific target.",
         |context: &CommandContext, command: RunRequest| {
             let input = build_run_input(&command.target, &command.options)?;
-            serde_json::to_value(execute_run(
-                &input,
-                adapter_for_context(context.adapter_context.clone()).as_ref(),
-            )?)
-            .map_err(|error| TendrilError::serialization(error.to_string()))
-        },
-    );
-    router.add_typed_tool(
-        "tendril_listen",
-        "Probe supported audio capture paths and permissions for a requested source.",
-        |context: &CommandContext, command: ListenCommand| {
-            let input = build_listen_input(&command)?;
-            listen_response_value(&input, &context.adapter_context)
-        },
-    );
-    router.add_typed_tool(
-        "tendril_alias",
-        "Emit transparent shell helper code for repeated target selection.",
-        |_: &CommandContext, command: AliasRequest| {
-            let input = build_alias_input(&command.target, &command.options)?;
-            Ok::<AliasOutput, TendrilError>(execute_alias(&input))
+            let adapter = context.adapter();
+            serde_json::to_value(execute_run(&input, adapter.as_ref())?)
+                .map_err(|error| TendrilError::serialization(error.to_string()))
         },
     );
     router
@@ -316,6 +311,13 @@ fn execute_list(
     adapter_context: &AdapterContext,
 ) -> Result<ListOutput, TendrilError> {
     let adapter = adapter_for_context(adapter_context.clone());
+    execute_list_with_adapter(input, adapter.as_ref())
+}
+
+fn execute_list_with_adapter(
+    input: &ListInput,
+    adapter: &dyn PlatformAdapter,
+) -> Result<ListOutput, TendrilError> {
     let inventory = adapter.discover_targets(&TargetDiscoveryRequest)?;
 
     let targets = inventory
@@ -506,10 +508,9 @@ fn build_capture_input(
 
 fn capture_response_value(
     input: &CaptureInput,
-    adapter_context: &AdapterContext,
+    adapter: &dyn PlatformAdapter,
 ) -> Result<Value, TendrilError> {
-    let adapter = adapter_for_context(adapter_context.clone());
-    serde_json::to_value(execute_capture(input, adapter.as_ref())?)
+    serde_json::to_value(execute_capture(input, adapter)?)
         .map_err(|error| TendrilError::serialization(error.to_string()))
 }
 
@@ -666,14 +667,6 @@ fn probe_listen_capability(
                 .with_detail_entry("request", request_value.clone())
                 .with_detail_entry("adapter", adapter_value.clone())
         })
-}
-
-fn listen_response_value(
-    input: &ListenInput,
-    adapter_context: &AdapterContext,
-) -> Result<Value, TendrilError> {
-    serde_json::to_value(build_listen_response(input, adapter_context)?)
-        .map_err(|error| TendrilError::serialization(error.to_string()))
 }
 
 fn render_listen_output(response: &ListenResponse, json_mode: bool) -> CommandOutput {
@@ -938,18 +931,215 @@ fn sanitize_identifier(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Cursor;
+    use std::sync::Arc;
+
+    use image::{DynamicImage, ImageFormat as RasterImageFormat, Rgba, RgbaImage};
+    use mcp_cli::JsonEnvelope;
+    use serde_json::{Value, json};
+
     use super::{
         AliasRequest, CaptureRequest, RunRequest, TargetScope, build_alias_input,
         build_capture_input, build_listen_input, build_listen_response, build_mcp_server, dispatch,
-        dispatch_listen_command, execute_alias,
+        dispatch_listen_command, execute_alias, execute_list_with_adapter, render_command_output,
+        render_list_human,
     };
+    use crate::capture::{execute_capture, render_capture_human};
     use crate::cli::{
-        AliasCommand, CaptureCommand, Command, ListenCommand, RunCommand, TendrilCli, WORKFLOW_HINT,
+        AliasCommand, CaptureCommand, Command, ListCommand, ListenCommand, RunCommand, TendrilCli,
+        WORKFLOW_HINT,
     };
     use crate::config::{ImageFormat, TendrilConfig};
-    use crate::model::{AudioFormat, AudioSourceKind, ShellKind};
-    use crate::platform::{AdapterContext, AudioBackend};
-    use serde_json::json;
+    use crate::input::{execute_run, render_run_human};
+    use crate::model::{
+        AudioFormat, AudioSourceKind, Bounds, CaptureInput, RunInput, ShellKind, TargetSelector,
+    };
+    use crate::platform::{
+        AdapterContext, AdapterInfo, AudioBackend, AudioCapabilityProbe, AudioCapabilityReport,
+        AudioProbeRequest, CaptureAdapter, CaptureArtifact,
+        CaptureRequest as PlatformCaptureRequest, CaptureTargetKind, DesktopSession,
+        FeatureSupport, InputControlAdapter, InputOutcome, PermissionAdapter, PlatformAdapter,
+        PlatformAdapterError, PlatformKind, TargetDescriptor as PlatformTargetDescriptor,
+        TargetDiscoveryAdapter, TargetDiscoveryRequest, TargetInventory,
+    };
+
+    #[derive(Debug)]
+    struct FakeAdapter {
+        inventory: TargetInventory,
+        image_bytes: Vec<u8>,
+    }
+
+    impl Default for FakeAdapter {
+        fn default() -> Self {
+            Self {
+                inventory: TargetInventory {
+                    targets: vec![PlatformTargetDescriptor {
+                        id: "window-1".to_owned(),
+                        title: Some("Inbox".to_owned()),
+                        kind: CaptureTargetKind::Window,
+                        name: "Terminal".to_owned(),
+                        bounds: Bounds {
+                            x: 10,
+                            y: 20,
+                            width: 1280,
+                            height: 720,
+                        },
+                        scale_factor: crate::model::ScaleFactor::identity(),
+                        capture_supported: true,
+                        input_supported: true,
+                        app_name: Some("Mail".to_owned()),
+                        process_id: Some(42),
+                    }],
+                },
+                image_bytes: sample_png_bytes(),
+            }
+        }
+    }
+
+    impl TargetDiscoveryAdapter for FakeAdapter {
+        fn target_discovery_support(&self) -> Result<FeatureSupport, PlatformAdapterError> {
+            Ok(FeatureSupport::available(
+                crate::platform::Capability::TargetDiscovery,
+            ))
+        }
+
+        fn discover_targets(
+            &self,
+            _request: &TargetDiscoveryRequest,
+        ) -> Result<TargetInventory, PlatformAdapterError> {
+            Ok(self.inventory.clone())
+        }
+    }
+
+    impl CaptureAdapter for FakeAdapter {
+        fn capture_support(
+            &self,
+            target: CaptureTargetKind,
+        ) -> Result<FeatureSupport, PlatformAdapterError> {
+            Ok(FeatureSupport::available(match target {
+                CaptureTargetKind::Window => crate::platform::Capability::WindowCapture,
+                CaptureTargetKind::Display => crate::platform::Capability::DisplayCapture,
+            }))
+        }
+
+        fn capture(
+            &self,
+            request: &PlatformCaptureRequest,
+        ) -> Result<CaptureArtifact, PlatformAdapterError> {
+            Ok(CaptureArtifact {
+                target_id: request.target_id.clone(),
+                media_type: "image/png".to_owned(),
+                image_bytes: self.image_bytes.clone(),
+                captured_at: "2026-04-09T18:00:00Z".to_owned(),
+            })
+        }
+    }
+
+    impl InputControlAdapter for FakeAdapter {
+        fn input_support(&self) -> Result<FeatureSupport, PlatformAdapterError> {
+            Ok(FeatureSupport::available(
+                crate::platform::Capability::InputControl,
+            ))
+        }
+
+        fn execute_input(
+            &self,
+            request: &crate::platform::InputRequest,
+        ) -> Result<InputOutcome, crate::error::TendrilError> {
+            Ok(InputOutcome {
+                action_count: request.actions.len() + usize::from(request.text.is_some()),
+                focus_required: true,
+                focus_transferred: true,
+                focused_target: Some(request.target_id.clone()),
+                notes: vec!["fake adapter executed request".to_owned()],
+            })
+        }
+    }
+
+    impl PermissionAdapter for FakeAdapter {
+        fn permissions(&self) -> Vec<crate::platform::PermissionStatus> {
+            Vec::new()
+        }
+    }
+
+    impl AudioCapabilityProbe for FakeAdapter {
+        fn probe_audio_capture(
+            &self,
+            request: &AudioProbeRequest,
+        ) -> Result<AudioCapabilityReport, PlatformAdapterError> {
+            Ok(AudioCapabilityReport {
+                source: request.source,
+                backend: AudioBackend::Wasapi,
+                supported_sample_rates_hz: vec![48_000],
+                supported_channel_counts: vec![2],
+                permissions: Vec::new(),
+                notes: vec!["fake adapter probe".to_owned()],
+            })
+        }
+    }
+
+    impl PlatformAdapter for FakeAdapter {
+        fn info(&self) -> AdapterInfo {
+            AdapterInfo {
+                platform: PlatformKind::Windows11,
+                session: DesktopSession::WindowsDesktop,
+                audio_backend: Some(AudioBackend::Wasapi),
+                stateless: true,
+            }
+        }
+    }
+
+    fn sample_png_bytes() -> Vec<u8> {
+        let image = DynamicImage::ImageRgba8(RgbaImage::from_pixel(2, 2, Rgba([0, 255, 0, 255])));
+        let mut encoded = Vec::new();
+        image
+            .write_to(&mut Cursor::new(&mut encoded), RasterImageFormat::Png)
+            .expect("sample image should encode");
+        encoded
+    }
+
+    fn fake_adapter() -> Arc<dyn PlatformAdapter> {
+        Arc::new(FakeAdapter::default())
+    }
+
+    fn mcp_context(adapter: Arc<dyn PlatformAdapter>) -> super::CommandContext {
+        super::CommandContext {
+            config: TendrilConfig::default(),
+            adapter_context: AdapterContext::windows11(),
+            adapter: Some(adapter),
+        }
+    }
+
+    fn mcp_structured_content(response: &Value) -> Value {
+        response["result"]["structuredContent"].clone()
+    }
+
+    fn tool_call_response(context: &super::CommandContext, name: &str, arguments: &Value) -> Value {
+        build_mcp_server()
+            .handle_request_value(
+                context,
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/call",
+                    "params": {
+                        "name": name,
+                        "arguments": arguments
+                    }
+                }),
+            )
+            .expect("request should parse")
+            .expect("response should exist")
+    }
+
+    fn expect_json_output(output: super::CommandOutput) -> Value {
+        match output {
+            super::CommandOutput::Json(value) => value,
+            super::CommandOutput::Human(_) | super::CommandOutput::Empty => {
+                panic!("expected json output")
+            }
+        }
+    }
 
     #[test]
     fn json_help_dispatch_returns_machine_readable_envelope() {
@@ -1044,22 +1234,46 @@ mod tests {
     }
 
     #[test]
-    fn mcp_server_lists_core_tools() {
+    fn mcp_server_lists_initial_stdio_tools() {
         let server = build_mcp_server();
         let names: Vec<_> = server
             .tool_metadata()
             .into_iter()
             .map(|tool| tool.name)
             .collect();
+        assert_eq!(names, vec!["list", "capture", "run"]);
+    }
+
+    #[test]
+    fn mcp_tool_schemas_match_effective_cli_inputs() {
+        let tools = build_mcp_server().tool_metadata();
+        let list = tools
+            .iter()
+            .find(|tool| tool.name == "list")
+            .expect("list tool should be registered");
+        let capture = tools
+            .iter()
+            .find(|tool| tool.name == "capture")
+            .expect("capture tool should be registered");
+        let run = tools
+            .iter()
+            .find(|tool| tool.name == "run")
+            .expect("run tool should be registered");
+
         assert_eq!(
-            names,
-            vec![
-                "tendril_list",
-                "tendril_capture",
-                "tendril_run",
-                "tendril_listen",
-                "tendril_alias"
-            ]
+            list.input_schema,
+            serde_json::to_value(schemars::schema_for!(ListCommand))
+                .expect("list schema should serialize")
+        );
+        assert_eq!(
+            capture.input_schema,
+            serde_json::to_value(schemars::schema_for!(CaptureRequest))
+                .expect("capture schema should serialize")
+        );
+        assert_eq!(
+            run.input_schema,
+            serde_json::to_value(schemars::schema_for!(RunRequest))
+                .expect("run schema should serialize")
         );
     }
 
@@ -1168,71 +1382,166 @@ mod tests {
     }
 
     #[test]
-    fn mcp_tool_call_returns_structured_error_envelope() {
-        let response = build_mcp_server()
-            .handle_request_value(
-                &super::CommandContext {
-                    config: TendrilConfig::default(),
-                    adapter_context: AdapterContext::windows11(),
-                },
-                json!({
-                    "jsonrpc": "2.0",
-                    "id": 7,
-                    "method": "tools/call",
-                    "params": {
-                        "name": "tendril_capture",
-                        "arguments": {
-                            "window": "window-1",
-                            "display": "display-1"
-                        }
-                    }
-                }),
-            )
-            .expect("request should parse")
-            .expect("response should exist");
+    fn mcp_list_success_payload_matches_cli_json() {
+        let adapter = fake_adapter();
+        let context = mcp_context(adapter.clone());
+        let response = tool_call_response(&context, "list", &json!({}));
 
-        assert_eq!(response["result"]["isError"], true);
-        assert_eq!(
-            response["result"]["structuredContent"]["error"]["code"],
-            "invalid_capture_input"
-        );
+        let cli_output = execute_list_with_adapter(
+            &super::validate_list_command(&ListCommand::default())
+                .expect("list input should validate"),
+            adapter.as_ref(),
+        )
+        .expect("list output should build");
+        let cli_json = expect_json_output(render_command_output(
+            "list",
+            true,
+            cli_output,
+            render_list_human,
+        ));
+
+        assert_eq!(response["result"]["isError"], false);
+        assert_eq!(mcp_structured_content(&response), cli_json);
     }
 
     #[test]
-    fn mcp_listen_tool_returns_machine_readable_success_payload() {
-        let response = build_mcp_server()
-            .handle_request_value(
-                &super::CommandContext {
-                    config: TendrilConfig::default(),
-                    adapter_context: AdapterContext::windows11(),
+    fn mcp_capture_success_payload_matches_cli_json() {
+        let adapter = fake_adapter();
+        let context = mcp_context(adapter.clone());
+        let response = tool_call_response(
+            &context,
+            "capture",
+            &json!({
+                "window": "window-1",
+                "max_width": 1,
+                "format": "png",
+                "compression": 90
+            }),
+        );
+
+        let cli_output = execute_capture(
+            &CaptureInput {
+                target: TargetSelector::Window {
+                    id: "window-1".to_owned(),
                 },
-                json!({
-                    "jsonrpc": "2.0",
-                    "id": 9,
-                    "method": "tools/call",
-                    "params": {
-                        "name": "tendril_listen",
-                        "arguments": {
-                            "source": "system",
-                            "duration_ms": 3000,
-                            "format": "opus"
-                        }
-                    }
-                }),
-            )
-            .expect("request should parse")
-            .expect("response should exist");
+                max_width: Some(1),
+                max_height: None,
+                format: ImageFormat::Png,
+                compression: 90,
+            },
+            adapter.as_ref(),
+        )
+        .expect("capture output should build");
+        let cli_json = expect_json_output(render_command_output(
+            "capture",
+            true,
+            cli_output,
+            render_capture_human,
+        ));
 
         assert_eq!(response["result"]["isError"], false);
-        assert_eq!(response["result"]["structuredContent"]["status"], "success");
-        assert_eq!(
-            response["result"]["structuredContent"]["data"]["request"]["duration_ms"],
-            3000
+        assert_eq!(mcp_structured_content(&response), cli_json);
+    }
+
+    #[test]
+    fn mcp_run_success_payload_matches_cli_json() {
+        let adapter = fake_adapter();
+        let context = mcp_context(adapter.clone());
+        let response = tool_call_response(
+            &context,
+            "run",
+            &json!({
+                "window": "window-1",
+                "input_definition": "send(\"hello\")"
+            }),
         );
-        assert_eq!(
-            response["result"]["structuredContent"]["data"]["request"]["format"],
-            "opus"
+
+        let cli_output = execute_run(
+            &RunInput {
+                target: TargetSelector::Window {
+                    id: "window-1".to_owned(),
+                },
+                payload: crate::model::RunInputPayload::Actions {
+                    actions: vec![crate::model::InputAction::Send {
+                        text: "hello".to_owned(),
+                    }],
+                },
+            },
+            adapter.as_ref(),
+        )
+        .expect("run output should build");
+        let cli_json = expect_json_output(render_command_output(
+            "run",
+            true,
+            cli_output,
+            render_run_human,
+        ));
+
+        assert_eq!(response["result"]["isError"], false);
+        assert_eq!(mcp_structured_content(&response), cli_json);
+    }
+
+    #[test]
+    fn mcp_capture_error_payload_matches_cli_json() {
+        let cli_error = dispatch(
+            &TendrilCli {
+                json: true,
+                window: Some("window-1".to_owned()),
+                display: Some("display-1".to_owned()),
+                command: Some(Command::Capture(CaptureCommand::default())),
+            },
+            &TendrilConfig::default(),
+        )
+        .expect_err("capture should reject conflicting target flags");
+        let cli_json = serde_json::to_value(JsonEnvelope::<Value>::error_for(
+            "capture",
+            cli_error.to_json_error(),
+        ))
+        .expect("error envelope should serialize");
+
+        let response = tool_call_response(
+            &mcp_context(fake_adapter()),
+            "capture",
+            &json!({
+                "window": "window-1",
+                "display": "display-1"
+            }),
         );
+
+        assert_eq!(response["result"]["isError"], true);
+        assert_eq!(mcp_structured_content(&response), cli_json);
+    }
+
+    #[test]
+    fn mcp_run_error_payload_matches_cli_json() {
+        let cli_error = dispatch(
+            &TendrilCli {
+                json: true,
+                window: Some("window-1".to_owned()),
+                display: None,
+                command: Some(Command::Run(RunCommand {
+                    input_definition: None,
+                })),
+            },
+            &TendrilConfig::default(),
+        )
+        .expect_err("run should require an input definition");
+        let cli_json = serde_json::to_value(JsonEnvelope::<Value>::error_for(
+            "run",
+            cli_error.to_json_error(),
+        ))
+        .expect("error envelope should serialize");
+
+        let response = tool_call_response(
+            &mcp_context(fake_adapter()),
+            "run",
+            &json!({
+                "window": "window-1"
+            }),
+        );
+
+        assert_eq!(response["result"]["isError"], true);
+        assert_eq!(mcp_structured_content(&response), cli_json);
     }
 
     #[test]
@@ -1256,52 +1565,6 @@ mod tests {
         assert_eq!(
             output.details().expect("structured details")["request"]["source"]["id"],
             "mic-2"
-        );
-    }
-
-    #[test]
-    fn mcp_alias_tool_returns_machine_readable_helper_metadata() {
-        let response = build_mcp_server()
-            .handle_request_value(
-                &super::CommandContext {
-                    config: TendrilConfig::default(),
-                    adapter_context: AdapterContext::windows11(),
-                },
-                json!({
-                    "jsonrpc": "2.0",
-                    "id": 12,
-                    "method": "tools/call",
-                    "params": {
-                        "name": "tendril_alias",
-                        "arguments": {
-                            "window": "window-1",
-                            "shell": "fish",
-                            "name": "desk"
-                        }
-                    }
-                }),
-            )
-            .expect("request should parse")
-            .expect("response should exist");
-
-        assert_eq!(response["result"]["isError"], false);
-        assert_eq!(
-            response["result"]["structuredContent"]["data"]["name"],
-            "desk"
-        );
-        assert_eq!(
-            response["result"]["structuredContent"]["data"]["shell"],
-            "fish"
-        );
-        assert_eq!(
-            response["result"]["structuredContent"]["data"]["argv"],
-            json!(["tendril", "--window", "window-1"])
-        );
-        assert!(
-            response["result"]["structuredContent"]["data"]["shell_code"]
-                .as_str()
-                .expect("shell code")
-                .contains("function desk")
         );
     }
 
