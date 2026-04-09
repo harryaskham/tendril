@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tracing::info;
 
+use crate::capture::{execute_capture, render_capture_human};
 use crate::cli::{
     AliasCommand, CaptureCommand, Command, ListCommand, ListenCommand, McpSubcommand, RunCommand,
     TendrilCli, WORKFLOW_HINT,
@@ -190,7 +191,14 @@ fn dispatch_cli_command(
                 format = ?input.format,
                 "validated capture request"
             );
-            Err(TendrilError::not_implemented("capture"))
+            let adapter = adapter_for_context(AdapterContext::detect());
+            let output = execute_capture(&input, adapter.as_ref())?;
+            Ok(render_command_output(
+                "capture",
+                cli.json,
+                output,
+                render_capture_human,
+            ))
         }
         Command::Run(command) => {
             let input = build_run_input(&target_scope_from_cli(cli), command)?;
@@ -252,8 +260,8 @@ fn build_tool_router() -> ToolRouter<CommandContext> {
         "tendril_capture",
         "Capture a screenshot from a display or window target.",
         |context: &CommandContext, command: CaptureRequest| {
-            let _input = build_capture_input(&command.target, &command.options, &context.config)?;
-            Err::<Value, TendrilError>(TendrilError::not_implemented("capture"))
+            let input = build_capture_input(&command.target, &command.options, &context.config)?;
+            capture_response_value(&input, &context.adapter_context)
         },
     );
     router.add_typed_tool(
@@ -482,6 +490,15 @@ fn build_capture_input(
     };
     input.validate()?;
     Ok(input)
+}
+
+fn capture_response_value(
+    input: &CaptureInput,
+    adapter_context: &AdapterContext,
+) -> Result<Value, TendrilError> {
+    let adapter = adapter_for_context(adapter_context.clone());
+    serde_json::to_value(execute_capture(input, adapter.as_ref())?)
+        .map_err(|error| TendrilError::serialization(error.to_string()))
 }
 
 fn build_run_input(target: &TargetScope, command: &RunCommand) -> Result<RunInput, TendrilError> {
@@ -740,18 +757,27 @@ fn required_target(
     target: &TargetScope,
     command: &'static str,
 ) -> Result<TargetSelector, TendrilError> {
-    selected_target(target)?.ok_or_else(|| {
-        TendrilError::validation(format!(
-            "{command} requires exactly one of `--window <id>` or `--display <id>`"
-        ))
-        .with_code(match command {
-            "capture" => "invalid_capture_input",
-            "run" => "invalid_run_input",
-            "alias" => "invalid_alias_input",
-            _ => "invalid_input",
+    selected_target(target)
+        .map_err(|error| {
+            error.with_code(match command {
+                "capture" => "invalid_capture_input",
+                "run" => "invalid_run_input",
+                "alias" => "invalid_alias_input",
+                _ => "invalid_input",
+            })
+        })?
+        .ok_or_else(|| {
+            TendrilError::validation(format!(
+                "{command} requires exactly one of `--window <id>` or `--display <id>`"
+            ))
+            .with_code(match command {
+                "capture" => "invalid_capture_input",
+                "run" => "invalid_run_input",
+                "alias" => "invalid_alias_input",
+                _ => "invalid_input",
+            })
+            .with_field("target")
         })
-        .with_field("target")
-    })
 }
 
 fn selected_target(target: &TargetScope) -> Result<Option<TargetSelector>, TendrilError> {
@@ -1155,7 +1181,10 @@ mod tests {
                     "method": "tools/call",
                     "params": {
                         "name": "tendril_capture",
-                        "arguments": { "window": "window-1" }
+                        "arguments": {
+                            "window": "window-1",
+                            "display": "display-1"
+                        }
                     }
                 }),
             )
@@ -1163,6 +1192,10 @@ mod tests {
             .expect("response should exist");
 
         assert_eq!(response["result"]["isError"], true);
+        assert_eq!(
+            response["result"]["structuredContent"]["error"]["code"],
+            "invalid_capture_input"
+        );
     }
 
     #[test]
@@ -1269,6 +1302,25 @@ mod tests {
                 .as_str()
                 .expect("shell code")
                 .contains("function desk")
+        );
+    }
+
+    #[test]
+    fn capture_input_rejects_conflicting_target_flags() {
+        let error = build_capture_input(
+            &TargetScope {
+                window: Some("window-1".to_owned()),
+                display: Some("display-1".to_owned()),
+            },
+            &CaptureCommand::default(),
+            &TendrilConfig::default(),
+        )
+        .expect_err("capture target selection should reject conflicting flags");
+
+        assert_eq!(error.code(), "invalid_capture_input");
+        assert_eq!(
+            error.details().expect("structured details")["field"],
+            "target"
         );
     }
 

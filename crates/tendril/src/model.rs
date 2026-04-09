@@ -189,12 +189,17 @@ impl CoordinateTransform {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CaptureOutput {
+    pub adapter: AdapterInfo,
     pub target: TargetSelector,
     pub original_bounds: Bounds,
     pub output_bounds: Bounds,
-    pub transform: CoordinateTransform,
+    pub source_to_output: CoordinateTransform,
+    pub output_to_source: CoordinateTransform,
+    pub resized: bool,
     pub format: ImageFormat,
     pub compression: u8,
+    pub media_type: String,
+    pub image_base64: String,
     pub captured_at: String,
 }
 

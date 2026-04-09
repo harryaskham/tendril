@@ -5,6 +5,9 @@ use thiserror::Error;
 
 use mcp_cli::ErrorCategory;
 
+use crate::capture::{
+    current_timestamp, read_and_remove_temp_capture, run_capture_command, unique_temp_path,
+};
 use crate::discovery;
 use crate::model::{Bounds, ScaleFactor};
 
@@ -375,7 +378,9 @@ pub struct CaptureRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CaptureArtifact {
     pub target_id: String,
-    pub format: String,
+    pub media_type: String,
+    pub image_bytes: Vec<u8>,
+    pub captured_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -532,14 +537,63 @@ impl CaptureAdapter for MacOsAdapter {
         .with_notes(vec![note.to_owned()]))
     }
 
-    fn capture(&self, _request: &CaptureRequest) -> Result<CaptureArtifact, PlatformAdapterError> {
-        Err(PlatformAdapterError::missing_permission(
-            Capability::DisplayCapture,
-            PermissionKind::ScreenCapture,
-            self.platform(),
-            "Capture execution is gated on explicit Screen Recording consent.",
-            "Grant Screen Recording access before invoking capture commands.",
-        ))
+    fn capture(&self, request: &CaptureRequest) -> Result<CaptureArtifact, PlatformAdapterError> {
+        let path = unique_temp_path("png");
+        let mut command = std::process::Command::new("screencapture");
+        command.arg("-x").arg("-t").arg("png");
+
+        match request.target {
+            CaptureTargetKind::Window => {
+                command.arg("-l").arg(&request.target_id);
+            }
+            CaptureTargetKind::Display => {
+                command
+                    .arg("-D")
+                    .arg(parse_display_index(&request.target_id, self.platform())?.to_string());
+            }
+        }
+
+        command.arg(&path);
+        let output = command.output().map_err(|error| {
+            PlatformAdapterError::adapter_failure(
+                AdapterOperation::Capture,
+                self.platform(),
+                format!("failed to spawn screencapture: {error}"),
+            )
+        })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(PlatformAdapterError::missing_permission(
+                match request.target {
+                    CaptureTargetKind::Window => Capability::WindowCapture,
+                    CaptureTargetKind::Display => Capability::DisplayCapture,
+                },
+                PermissionKind::ScreenCapture,
+                self.platform(),
+                if stderr.trim().is_empty() {
+                    "Capture execution is gated on explicit Screen Recording consent.".to_owned()
+                } else {
+                    format!("Capture failed: {}", stderr.trim())
+                },
+                "Grant Screen Recording access before invoking capture commands.",
+            ));
+        }
+
+        let image_bytes = read_and_remove_temp_capture(&path).map_err(|error| {
+            PlatformAdapterError::adapter_failure(
+                AdapterOperation::Capture,
+                self.platform(),
+                error.to_string(),
+            )
+        })?;
+
+        Ok(CaptureArtifact {
+            target_id: request.target_id.clone(),
+            media_type: "image/png".to_owned(),
+            image_bytes,
+            captured_at: current_timestamp(),
+        })
     }
 }
 
@@ -691,12 +745,95 @@ impl CaptureAdapter for LinuxAdapter {
         }
     }
 
-    fn capture(&self, _request: &CaptureRequest) -> Result<CaptureArtifact, PlatformAdapterError> {
-        Err(PlatformAdapterError::adapter_failure(
-            AdapterOperation::Capture,
-            self.platform(),
-            "capture execution is not implemented in this bead; use capability probes only",
-        ))
+    fn capture(&self, request: &CaptureRequest) -> Result<CaptureArtifact, PlatformAdapterError> {
+        match self.context.session {
+            DesktopSession::X11 => {}
+            DesktopSession::Wayland => {
+                return Err(PlatformAdapterError::unsupported(
+                    match request.target {
+                        CaptureTargetKind::Window => Capability::WindowCapture,
+                        CaptureTargetKind::Display => Capability::DisplayCapture,
+                    },
+                    self.platform(),
+                    CapabilityErrorReason::UnsupportedSession,
+                    "The Linux adapter spine does not yet provide a compositor-portable Wayland capture backend.",
+                    Some(
+                        "Use an X11 session or extend the adapter with a portal/compositor backend.",
+                    ),
+                ));
+            }
+            _ => {
+                return Err(PlatformAdapterError::unsupported(
+                    match request.target {
+                        CaptureTargetKind::Window => Capability::WindowCapture,
+                        CaptureTargetKind::Display => Capability::DisplayCapture,
+                    },
+                    self.platform(),
+                    CapabilityErrorReason::UnsupportedSession,
+                    "Capture requires a detected graphical desktop session.",
+                    Some("Run Tendril from a graphical login session and retry."),
+                ));
+            }
+        }
+
+        let image_bytes = match request.target {
+            CaptureTargetKind::Window => {
+                let mut command = std::process::Command::new("import");
+                command.arg("-window").arg(&request.target_id).arg("png:-");
+                run_capture_command(&mut command).map_err(|error| {
+                    PlatformAdapterError::adapter_failure(
+                        AdapterOperation::Capture,
+                        self.platform(),
+                        error.to_string(),
+                    )
+                })?
+            }
+            CaptureTargetKind::Display => {
+                let inventory =
+                    discovery::discover_targets(&self.context, &TargetDiscoveryRequest)?;
+                let target = inventory
+                    .targets
+                    .into_iter()
+                    .find(|target| {
+                        target.kind == CaptureTargetKind::Display && target.id == request.target_id
+                    })
+                    .ok_or_else(|| {
+                        PlatformAdapterError::adapter_failure(
+                            AdapterOperation::Capture,
+                            self.platform(),
+                            format!(
+                                "display `{}` was not found during capture",
+                                request.target_id
+                            ),
+                        )
+                    })?;
+                let crop = format!(
+                    "{}x{}+{}+{}",
+                    target.bounds.width, target.bounds.height, target.bounds.x, target.bounds.y
+                );
+                let mut command = std::process::Command::new("import");
+                command
+                    .arg("-window")
+                    .arg("root")
+                    .arg("-crop")
+                    .arg(crop)
+                    .arg("png:-");
+                run_capture_command(&mut command).map_err(|error| {
+                    PlatformAdapterError::adapter_failure(
+                        AdapterOperation::Capture,
+                        self.platform(),
+                        error.to_string(),
+                    )
+                })?
+            }
+        };
+
+        Ok(CaptureArtifact {
+            target_id: request.target_id.clone(),
+            media_type: "image/png".to_owned(),
+            image_bytes,
+            captured_at: current_timestamp(),
+        })
     }
 }
 
@@ -824,6 +961,111 @@ impl WindowsAdapter {
             "Enable microphone access for desktop apps in Settings > Privacy & security > Microphone before retrying.",
         )
     }
+
+    fn capture_display(
+        &self,
+        target_id: &str,
+        path: &std::path::Path,
+    ) -> Result<(), PlatformAdapterError> {
+        let display_index = parse_display_zero_based(target_id, self.platform())?;
+        let script = format!(
+            r"
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+$screen = [System.Windows.Forms.Screen]::AllScreens[{display_index}]
+$bounds = $screen.Bounds
+$bitmap = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
+$graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+$graphics.CopyFromScreen($bounds.X, $bounds.Y, 0, 0, $bounds.Size)
+$bitmap.Save('{path}', [System.Drawing.Imaging.ImageFormat]::Png)
+$graphics.Dispose()
+$bitmap.Dispose()
+",
+            path = path.display()
+        );
+        self.run_powershell_capture(script)
+    }
+
+    fn capture_window(
+        &self,
+        target_id: &str,
+        path: &std::path::Path,
+    ) -> Result<(), PlatformAdapterError> {
+        let script = format!(
+            r#"
+Add-Type -AssemblyName System.Drawing
+Add-Type @"
+using System;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
+public static class TendrilCapture {{
+  [StructLayout(LayoutKind.Sequential)]
+  public struct RECT {{ public int Left; public int Top; public int Right; public int Bottom; }}
+  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+  [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdcBlt, uint nFlags);
+}}
+"@
+$hwnd = [IntPtr]::new([Int64]{hwnd})
+$rect = New-Object TendrilCapture+RECT
+if (-not [TendrilCapture]::GetWindowRect($hwnd, [ref]$rect)) {{ throw 'GetWindowRect failed' }}
+$width = $rect.Right - $rect.Left
+$height = $rect.Bottom - $rect.Top
+$bitmap = New-Object System.Drawing.Bitmap $width, $height
+$graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+$hdc = $graphics.GetHdc()
+try {{
+  if (-not [TendrilCapture]::PrintWindow($hwnd, $hdc, 0)) {{
+    $graphics.ReleaseHdc($hdc)
+    $hdc = [IntPtr]::Zero
+    $graphics.CopyFromScreen($rect.Left, $rect.Top, 0, 0, $bitmap.Size)
+  }}
+}} finally {{
+  if ($hdc -ne [IntPtr]::Zero) {{ $graphics.ReleaseHdc($hdc) }}
+}}
+$bitmap.Save('{path}', [System.Drawing.Imaging.ImageFormat]::Png)
+$graphics.Dispose()
+$bitmap.Dispose()
+"#,
+            hwnd = target_id,
+            path = path.display()
+        );
+        self.run_powershell_capture(script)
+    }
+
+    fn run_powershell_capture(&self, script: String) -> Result<(), PlatformAdapterError> {
+        let output = std::process::Command::new("powershell")
+            .arg("-NoProfile")
+            .arg("-NonInteractive")
+            .arg("-Command")
+            .arg(script)
+            .output()
+            .map_err(|error| {
+                PlatformAdapterError::adapter_failure(
+                    AdapterOperation::Capture,
+                    self.platform(),
+                    format!("failed to spawn PowerShell capture helper: {error}"),
+                )
+            })?;
+
+        if output.status.success() {
+            Ok(())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(PlatformAdapterError::adapter_failure(
+                AdapterOperation::Capture,
+                self.platform(),
+                if stderr.trim().is_empty() {
+                    format!(
+                        "PowerShell capture helper exited with status {}",
+                        output.status
+                    )
+                } else {
+                    format!("PowerShell capture helper failed: {}", stderr.trim())
+                },
+            ))
+        }
+    }
 }
 
 impl TargetDiscoveryAdapter for WindowsAdapter {
@@ -859,12 +1101,27 @@ impl CaptureAdapter for WindowsAdapter {
         ]))
     }
 
-    fn capture(&self, _request: &CaptureRequest) -> Result<CaptureArtifact, PlatformAdapterError> {
-        Err(PlatformAdapterError::adapter_failure(
-            AdapterOperation::Capture,
-            self.platform(),
-            "capture execution is not implemented in this bead; use capability probes only",
-        ))
+    fn capture(&self, request: &CaptureRequest) -> Result<CaptureArtifact, PlatformAdapterError> {
+        let path = unique_temp_path("png");
+        match request.target {
+            CaptureTargetKind::Display => self.capture_display(&request.target_id, &path)?,
+            CaptureTargetKind::Window => self.capture_window(&request.target_id, &path)?,
+        }
+
+        let image_bytes = read_and_remove_temp_capture(&path).map_err(|error| {
+            PlatformAdapterError::adapter_failure(
+                AdapterOperation::Capture,
+                self.platform(),
+                error.to_string(),
+            )
+        })?;
+
+        Ok(CaptureArtifact {
+            target_id: request.target_id.clone(),
+            media_type: "image/png".to_owned(),
+            image_bytes,
+            captured_at: current_timestamp(),
+        })
     }
 }
 
@@ -936,6 +1193,40 @@ impl PlatformAdapter for WindowsAdapter {
     fn info(&self) -> AdapterInfo {
         AdapterInfo::from_context(&self.context)
     }
+}
+
+fn parse_display_index(
+    target_id: &str,
+    platform: PlatformKind,
+) -> Result<u32, PlatformAdapterError> {
+    let suffix = target_id.strip_prefix("display-").ok_or_else(|| {
+        PlatformAdapterError::adapter_failure(
+            AdapterOperation::Capture,
+            platform,
+            format!("display target id `{target_id}` must use the `display-<n>` format"),
+        )
+    })?;
+    suffix.parse::<u32>().map_err(|error| {
+        PlatformAdapterError::adapter_failure(
+            AdapterOperation::Capture,
+            platform,
+            format!("display target id `{target_id}` could not be parsed: {error}"),
+        )
+    })
+}
+
+fn parse_display_zero_based(
+    target_id: &str,
+    platform: PlatformKind,
+) -> Result<u32, PlatformAdapterError> {
+    let one_based = parse_display_index(target_id, platform)?;
+    one_based.checked_sub(1).ok_or_else(|| {
+        PlatformAdapterError::adapter_failure(
+            AdapterOperation::Capture,
+            platform,
+            format!("display target id `{target_id}` must be one-based"),
+        )
+    })
 }
 
 #[must_use]
