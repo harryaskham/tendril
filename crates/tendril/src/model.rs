@@ -203,7 +203,7 @@ pub struct CaptureOutput {
     pub captured_at: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ModifierKey {
     Ctrl,
@@ -212,7 +212,7 @@ pub enum ModifierKey {
     Meta,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MouseButton {
     Left,
@@ -230,6 +230,29 @@ pub enum InputAction {
     Wait { duration_ms: u64 },
     Click { button: MouseButton, x: i32, y: i32 },
     Drag { x0: i32, y0: i32, x1: i32, y1: i32 },
+}
+
+impl InputAction {
+    pub fn validate(&self) -> Result<(), TendrilError> {
+        match self {
+            Self::KeyTap { key } if key.trim().is_empty() => {
+                Err(TendrilError::validation("key tap requires a non-empty key")
+                    .with_code("invalid_run_input")
+                    .with_field("actions"))
+            }
+            Self::Send { text } if text.is_empty() => Err(TendrilError::validation(
+                "send action requires a non-empty string",
+            )
+            .with_code("invalid_run_input")
+            .with_field("actions")),
+            Self::Wait { duration_ms } if *duration_ms == 0 => Err(TendrilError::validation(
+                "wait action duration must be greater than zero",
+            )
+            .with_code("invalid_run_input")
+            .with_field("actions")),
+            _ => Ok(()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -267,6 +290,16 @@ impl RunInput {
                     .with_code("invalid_run_input")
                     .with_field("actions"))
             }
+            RunInputPayload::Actions { actions } => {
+                for (index, action) in actions.iter().enumerate() {
+                    action.validate().map_err(|error| {
+                        error
+                            .with_detail_entry("action_index", serde_json::json!(index))
+                            .with_detail_entry("action_number", serde_json::json!(index + 1))
+                    })?;
+                }
+                Ok(())
+            }
             _ => Ok(()),
         }
     }
@@ -274,11 +307,15 @@ impl RunInput {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RunOutput {
+    pub adapter: AdapterInfo,
     pub target: TargetSelector,
     pub focus_required: bool,
+    pub focus_transferred: bool,
     pub action_count: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub focused_target: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

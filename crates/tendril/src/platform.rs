@@ -1,6 +1,9 @@
 use std::env;
+use std::fmt::Write as _;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use thiserror::Error;
 
 use mcp_cli::ErrorCategory;
@@ -9,7 +12,9 @@ use crate::capture::{
     current_timestamp, read_and_remove_temp_capture, run_capture_command, unique_temp_path,
 };
 use crate::discovery;
-use crate::model::{Bounds, ScaleFactor};
+use crate::error::TendrilError;
+use crate::input::{relative_point_to_absolute, reliability_delay};
+use crate::model::{Bounds, InputAction, ModifierKey, MouseButton, ScaleFactor};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -386,13 +391,26 @@ pub struct CaptureArtifact {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InputRequest {
     pub target_id: String,
-    pub action: String,
+    pub target: CaptureTargetKind,
+    pub target_name: String,
+    pub bounds: Bounds,
+    pub app_name: Option<String>,
+    pub process_id: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<InputAction>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InputOutcome {
     pub action_count: usize,
+    pub focus_required: bool,
     pub focus_transferred: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub focused_target: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -432,7 +450,7 @@ pub trait CaptureAdapter {
 pub trait InputControlAdapter {
     fn input_support(&self) -> Result<FeatureSupport, PlatformAdapterError>;
 
-    fn execute_input(&self, _request: &InputRequest) -> Result<InputOutcome, PlatformAdapterError>;
+    fn execute_input(&self, _request: &InputRequest) -> Result<InputOutcome, TendrilError>;
 }
 
 pub trait PermissionAdapter {
@@ -607,14 +625,8 @@ impl InputControlAdapter for MacOsAdapter {
             ]))
     }
 
-    fn execute_input(&self, _request: &InputRequest) -> Result<InputOutcome, PlatformAdapterError> {
-        Err(PlatformAdapterError::missing_permission(
-            Capability::InputControl,
-            PermissionKind::Accessibility,
-            self.platform(),
-            "Input injection requires explicit Accessibility consent.",
-            "Grant Accessibility access before invoking tendril run.",
-        ))
+    fn execute_input(&self, request: &InputRequest) -> Result<InputOutcome, TendrilError> {
+        execute_macos_input(self.platform(), request)
     }
 }
 
@@ -863,12 +875,8 @@ impl InputControlAdapter for LinuxAdapter {
         }
     }
 
-    fn execute_input(&self, _request: &InputRequest) -> Result<InputOutcome, PlatformAdapterError> {
-        Err(PlatformAdapterError::adapter_failure(
-            AdapterOperation::InputControl,
-            self.platform(),
-            "input execution is not implemented in this bead; use capability probes only",
-        ))
+    fn execute_input(&self, request: &InputRequest) -> Result<InputOutcome, TendrilError> {
+        execute_linux_input(self.platform(), self.context.session, request)
     }
 }
 
@@ -1133,12 +1141,8 @@ impl InputControlAdapter for WindowsAdapter {
         ]))
     }
 
-    fn execute_input(&self, _request: &InputRequest) -> Result<InputOutcome, PlatformAdapterError> {
-        Err(PlatformAdapterError::adapter_failure(
-            AdapterOperation::InputControl,
-            self.platform(),
-            "input execution is not implemented in this bead; use capability probes only",
-        ))
+    fn execute_input(&self, request: &InputRequest) -> Result<InputOutcome, TendrilError> {
+        execute_windows_input(self.platform(), request)
     }
 }
 
@@ -1227,6 +1231,944 @@ fn parse_display_zero_based(
             format!("display target id `{target_id}` must be one-based"),
         )
     })
+}
+
+fn execute_linux_input(
+    platform: PlatformKind,
+    session: DesktopSession,
+    request: &InputRequest,
+) -> Result<InputOutcome, TendrilError> {
+    if session != DesktopSession::X11 {
+        return Err(TendrilError::from(PlatformAdapterError::unsupported(
+            Capability::InputControl,
+            platform,
+            CapabilityErrorReason::UnsupportedSession,
+            "The Linux run surface currently requires an X11 session for target-scoped input injection.",
+            Some(
+                "Use an X11 session or extend Tendril with a compositor-specific Wayland input backend.",
+            ),
+        )));
+    }
+
+    let keyboard_input = request.text.is_some() || request.actions.iter().any(action_is_keyboard);
+    let mut focus_required = false;
+    let mut focus_transferred = false;
+    let mut notes = Vec::new();
+
+    if keyboard_input {
+        focus_required = true;
+        if matches!(request.target, CaptureTargetKind::Window) {
+            run_process_for_input(
+                "xdotool",
+                &["windowactivate", "--sync", &request.target_id],
+                "focus",
+                None,
+                None,
+            )?;
+            focus_transferred = true;
+            notes.push(
+                "Activated the target window before keyboard delivery for X11 reliability."
+                    .to_owned(),
+            );
+            std::thread::sleep(reliability_delay());
+        } else {
+            notes.push(
+                "Display-scoped keyboard input uses the currently focused control; place focus explicitly if a different app should receive text or key taps."
+                    .to_owned(),
+            );
+        }
+    }
+
+    if let Some(text) = &request.text {
+        let mut args = vec!["type", "--clearmodifiers", "--delay", "12"];
+        if matches!(request.target, CaptureTargetKind::Window) {
+            args.extend(["--window", &request.target_id]);
+        }
+        args.push(text);
+        run_process_for_input("xdotool", &args, "dispatch", Some(0), Some("text"))?;
+        return Ok(InputOutcome {
+            action_count: 1,
+            focus_required,
+            focus_transferred,
+            focused_target: if focus_transferred {
+                Some(request.target_id.clone())
+            } else {
+                None
+            },
+            notes,
+        });
+    }
+
+    for (action_index, action) in request.actions.iter().enumerate() {
+        let label = action_label(action);
+        dispatch_linux_action(request, action, action_index, &label)?;
+        if !matches!(action, InputAction::Wait { .. }) {
+            std::thread::sleep(reliability_delay());
+        }
+    }
+
+    Ok(InputOutcome {
+        action_count: request.actions.len(),
+        focus_required,
+        focus_transferred,
+        focused_target: if focus_transferred {
+            Some(request.target_id.clone())
+        } else {
+            None
+        },
+        notes,
+    })
+}
+
+#[allow(clippy::too_many_lines)]
+fn dispatch_linux_action(
+    request: &InputRequest,
+    action: &InputAction,
+    action_index: usize,
+    label: &str,
+) -> Result<(), TendrilError> {
+    match action {
+        InputAction::KeyTap { key } => {
+            let mapped = x11_key_name(key);
+            let mut args = vec!["key", "--clearmodifiers"];
+            if matches!(request.target, CaptureTargetKind::Window) {
+                args.extend(["--window", &request.target_id]);
+            }
+            args.push(mapped.as_str());
+            run_process_for_input(
+                "xdotool",
+                &args,
+                "dispatch",
+                Some(action_index),
+                Some(label),
+            )
+        }
+        InputAction::Hold { modifier } => {
+            let mapped = x11_modifier_name(*modifier);
+            let mut args = vec!["keydown"];
+            if matches!(request.target, CaptureTargetKind::Window) {
+                args.extend(["--window", &request.target_id]);
+            }
+            args.push(mapped);
+            run_process_for_input(
+                "xdotool",
+                &args,
+                "dispatch",
+                Some(action_index),
+                Some(label),
+            )
+        }
+        InputAction::Release { modifier } => {
+            let mapped = x11_modifier_name(*modifier);
+            let mut args = vec!["keyup"];
+            if matches!(request.target, CaptureTargetKind::Window) {
+                args.extend(["--window", &request.target_id]);
+            }
+            args.push(mapped);
+            run_process_for_input(
+                "xdotool",
+                &args,
+                "dispatch",
+                Some(action_index),
+                Some(label),
+            )
+        }
+        InputAction::Send { text } => {
+            let mut args = vec!["type", "--clearmodifiers", "--delay", "12"];
+            if matches!(request.target, CaptureTargetKind::Window) {
+                args.extend(["--window", &request.target_id]);
+            }
+            args.push(text);
+            run_process_for_input(
+                "xdotool",
+                &args,
+                "dispatch",
+                Some(action_index),
+                Some(label),
+            )
+        }
+        InputAction::Wait { duration_ms } => {
+            std::thread::sleep(Duration::from_millis(*duration_ms));
+            Ok(())
+        }
+        InputAction::Click { button, x, y } => {
+            let button_number = mouse_button_number(*button);
+            if matches!(request.target, CaptureTargetKind::Window) {
+                let x_value = x.to_string();
+                let y_value = y.to_string();
+                let button_value = button_number.to_string();
+                let args = [
+                    "mousemove",
+                    "--window",
+                    request.target_id.as_str(),
+                    x_value.as_str(),
+                    y_value.as_str(),
+                    "click",
+                    button_value.as_str(),
+                ];
+                run_process_for_input(
+                    "xdotool",
+                    &args,
+                    "dispatch",
+                    Some(action_index),
+                    Some(label),
+                )
+            } else {
+                let (absolute_x, absolute_y) = relative_point_to_absolute(&request.bounds, *x, *y);
+                let x_value = absolute_x.to_string();
+                let y_value = absolute_y.to_string();
+                let button_value = button_number.to_string();
+                let args = [
+                    "mousemove",
+                    x_value.as_str(),
+                    y_value.as_str(),
+                    "click",
+                    button_value.as_str(),
+                ];
+                run_process_for_input(
+                    "xdotool",
+                    &args,
+                    "dispatch",
+                    Some(action_index),
+                    Some(label),
+                )
+            }
+        }
+        InputAction::Drag { x0, y0, x1, y1 } => {
+            let (move_to_start, move_to_end) =
+                if matches!(request.target, CaptureTargetKind::Window) {
+                    (
+                        vec![
+                            "mousemove".to_owned(),
+                            "--window".to_owned(),
+                            request.target_id.clone(),
+                            x0.to_string(),
+                            y0.to_string(),
+                        ],
+                        vec![
+                            "mousemove".to_owned(),
+                            "--window".to_owned(),
+                            request.target_id.clone(),
+                            x1.to_string(),
+                            y1.to_string(),
+                        ],
+                    )
+                } else {
+                    let (start_x, start_y) = relative_point_to_absolute(&request.bounds, *x0, *y0);
+                    let (end_x, end_y) = relative_point_to_absolute(&request.bounds, *x1, *y1);
+                    (
+                        vec![
+                            "mousemove".to_owned(),
+                            start_x.to_string(),
+                            start_y.to_string(),
+                        ],
+                        vec!["mousemove".to_owned(), end_x.to_string(), end_y.to_string()],
+                    )
+                };
+
+            let move_to_start_refs = move_to_start.iter().map(String::as_str).collect::<Vec<_>>();
+            run_process_for_input(
+                "xdotool",
+                &move_to_start_refs,
+                "dispatch",
+                Some(action_index),
+                Some(label),
+            )?;
+            run_process_for_input(
+                "xdotool",
+                &["mousedown", "1"],
+                "dispatch",
+                Some(action_index),
+                Some(label),
+            )?;
+            std::thread::sleep(reliability_delay());
+            let move_to_end_refs = move_to_end.iter().map(String::as_str).collect::<Vec<_>>();
+            run_process_for_input(
+                "xdotool",
+                &move_to_end_refs,
+                "dispatch",
+                Some(action_index),
+                Some(label),
+            )?;
+            run_process_for_input(
+                "xdotool",
+                &["mouseup", "1"],
+                "dispatch",
+                Some(action_index),
+                Some(label),
+            )
+        }
+    }
+}
+
+fn execute_macos_input(
+    _platform: PlatformKind,
+    request: &InputRequest,
+) -> Result<InputOutcome, TendrilError> {
+    let keyboard_input = request.text.is_some() || request.actions.iter().any(action_is_keyboard);
+    let mut focus_required = keyboard_input || matches!(request.target, CaptureTargetKind::Window);
+    let mut focus_transferred = false;
+    let mut notes = Vec::new();
+
+    if matches!(request.target, CaptureTargetKind::Window) {
+        if let Some(process_id) = request.process_id {
+            let script = format!(
+                "import AppKit\nif let app = NSRunningApplication(processIdentifier: pid_t({process_id})) {{ _ = app.activate(options: [.activateIgnoringOtherApps]) }} else {{ fputs(\"target process could not be activated\\n\", stderr); exit(1) }}\n"
+            );
+            run_process_for_input("swift", &["-e", script.as_str()], "focus", None, None)?;
+            focus_transferred = true;
+            notes.push(
+                "Activated the target macOS application via NSRunningApplication before dispatching input."
+                    .to_owned(),
+            );
+            std::thread::sleep(reliability_delay());
+        } else if let Some(app_name) = &request.app_name {
+            let script = format!(r"tell application {app_name:?} to activate",);
+            run_process_for_input("osascript", &["-e", script.as_str()], "focus", None, None)?;
+            focus_transferred = true;
+            notes.push(
+                "Activated the target macOS application by name before dispatching input."
+                    .to_owned(),
+            );
+            std::thread::sleep(reliability_delay());
+        } else {
+            notes.push(
+                "Target focus could not be transferred automatically because discovery did not expose a process or app name."
+                    .to_owned(),
+            );
+        }
+    } else if keyboard_input {
+        notes.push(
+            "Display-scoped keyboard input posts into the current macOS focus chain; transfer focus manually when needed."
+                .to_owned(),
+        );
+    }
+
+    if let Some(text) = &request.text {
+        let script = macos_text_swift_script(text);
+        run_process_for_input(
+            "swift",
+            &["-e", script.as_str()],
+            "dispatch",
+            Some(0),
+            Some("text"),
+        )?;
+        return Ok(InputOutcome {
+            action_count: 1,
+            focus_required,
+            focus_transferred,
+            focused_target: if focus_transferred {
+                Some(request.target_id.clone())
+            } else {
+                None
+            },
+            notes,
+        });
+    }
+
+    for (action_index, action) in request.actions.iter().enumerate() {
+        let label = action_label(action);
+        dispatch_macos_action(request, action, action_index, &label)?;
+        if !matches!(action, InputAction::Wait { .. }) {
+            std::thread::sleep(reliability_delay());
+        }
+    }
+
+    if !keyboard_input && matches!(request.target, CaptureTargetKind::Display) {
+        focus_required = false;
+    }
+
+    Ok(InputOutcome {
+        action_count: request.actions.len(),
+        focus_required,
+        focus_transferred,
+        focused_target: if focus_transferred {
+            Some(request.target_id.clone())
+        } else {
+            None
+        },
+        notes,
+    })
+}
+
+fn dispatch_macos_action(
+    request: &InputRequest,
+    action: &InputAction,
+    action_index: usize,
+    label: &str,
+) -> Result<(), TendrilError> {
+    match action {
+        InputAction::KeyTap { key } => {
+            let script = macos_key_swift_script(key, Some(true), Some(true))?;
+            run_process_for_input(
+                "swift",
+                &["-e", script.as_str()],
+                "dispatch",
+                Some(action_index),
+                Some(label),
+            )
+        }
+        InputAction::Hold { modifier } => {
+            let script = macos_modifier_swift_script(*modifier, true)?;
+            run_process_for_input(
+                "swift",
+                &["-e", script.as_str()],
+                "dispatch",
+                Some(action_index),
+                Some(label),
+            )
+        }
+        InputAction::Release { modifier } => {
+            let script = macos_modifier_swift_script(*modifier, false)?;
+            run_process_for_input(
+                "swift",
+                &["-e", script.as_str()],
+                "dispatch",
+                Some(action_index),
+                Some(label),
+            )
+        }
+        InputAction::Send { text } => {
+            let script = macos_text_swift_script(text);
+            run_process_for_input(
+                "swift",
+                &["-e", script.as_str()],
+                "dispatch",
+                Some(action_index),
+                Some(label),
+            )
+        }
+        InputAction::Wait { duration_ms } => {
+            std::thread::sleep(Duration::from_millis(*duration_ms));
+            Ok(())
+        }
+        InputAction::Click { button, x, y } => {
+            let (absolute_x, absolute_y) = relative_point_to_absolute(&request.bounds, *x, *y);
+            let script = macos_mouse_swift_script(*button, absolute_x, absolute_y, None);
+            run_process_for_input(
+                "swift",
+                &["-e", script.as_str()],
+                "dispatch",
+                Some(action_index),
+                Some(label),
+            )
+        }
+        InputAction::Drag { x0, y0, x1, y1 } => {
+            let (start_x, start_y) = relative_point_to_absolute(&request.bounds, *x0, *y0);
+            let (end_x, end_y) = relative_point_to_absolute(&request.bounds, *x1, *y1);
+            let script =
+                macos_mouse_swift_script(MouseButton::Left, start_x, start_y, Some((end_x, end_y)));
+            run_process_for_input(
+                "swift",
+                &["-e", script.as_str()],
+                "dispatch",
+                Some(action_index),
+                Some(label),
+            )
+        }
+    }
+}
+
+fn execute_windows_input(
+    _platform: PlatformKind,
+    request: &InputRequest,
+) -> Result<InputOutcome, TendrilError> {
+    let keyboard_input = request.text.is_some() || request.actions.iter().any(action_is_keyboard);
+    let mut focus_required = keyboard_input || matches!(request.target, CaptureTargetKind::Window);
+    let mut focus_transferred = false;
+    let mut notes = Vec::new();
+
+    if matches!(request.target, CaptureTargetKind::Window) {
+        let focus_script = format!(
+            r#"
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public static class TendrilFocus {{
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+}}
+"@
+$hwnd = [IntPtr]::new([Int64]{})
+if (-not [TendrilFocus]::SetForegroundWindow($hwnd)) {{ throw 'SetForegroundWindow failed' }}
+"#,
+            request.target_id
+        );
+        run_process_for_input(
+            "powershell",
+            &[
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                focus_script.as_str(),
+            ],
+            "focus",
+            None,
+            None,
+        )?;
+        focus_transferred = true;
+        notes.push(
+            "Activated the target window with SetForegroundWindow before dispatching Windows input."
+                .to_owned(),
+        );
+        std::thread::sleep(reliability_delay());
+    } else if keyboard_input {
+        notes.push(
+            "Display-scoped keyboard input uses the currently focused Windows control; transfer focus manually when required."
+                .to_owned(),
+        );
+    }
+
+    if let Some(text) = &request.text {
+        let script = windows_sendkeys_script(&windows_sendkeys_text(text));
+        run_process_for_input(
+            "powershell",
+            &["-NoProfile", "-NonInteractive", "-Command", script.as_str()],
+            "dispatch",
+            Some(0),
+            Some("text"),
+        )?;
+        return Ok(InputOutcome {
+            action_count: 1,
+            focus_required,
+            focus_transferred,
+            focused_target: if focus_transferred {
+                Some(request.target_id.clone())
+            } else {
+                None
+            },
+            notes,
+        });
+    }
+
+    for (action_index, action) in request.actions.iter().enumerate() {
+        let label = action_label(action);
+        dispatch_windows_action(request, action, action_index, &label)?;
+        if !matches!(action, InputAction::Wait { .. }) {
+            std::thread::sleep(reliability_delay());
+        }
+    }
+
+    if !keyboard_input && matches!(request.target, CaptureTargetKind::Display) {
+        focus_required = false;
+    }
+
+    Ok(InputOutcome {
+        action_count: request.actions.len(),
+        focus_required,
+        focus_transferred,
+        focused_target: if focus_transferred {
+            Some(request.target_id.clone())
+        } else {
+            None
+        },
+        notes,
+    })
+}
+
+fn dispatch_windows_action(
+    request: &InputRequest,
+    action: &InputAction,
+    action_index: usize,
+    label: &str,
+) -> Result<(), TendrilError> {
+    match action {
+        InputAction::KeyTap { key } => {
+            let sequence = windows_sendkeys_key(key)?;
+            let script = windows_sendkeys_script(&sequence);
+            run_process_for_input(
+                "powershell",
+                &["-NoProfile", "-NonInteractive", "-Command", script.as_str()],
+                "dispatch",
+                Some(action_index),
+                Some(label),
+            )
+        }
+        InputAction::Hold { modifier } => {
+            let sequence = match modifier {
+                ModifierKey::Ctrl => "^",
+                ModifierKey::Alt => "%",
+                ModifierKey::Shift => "+",
+                ModifierKey::Meta => "^{ESC}",
+            };
+            let script = windows_sendkeys_script(sequence);
+            run_process_for_input(
+                "powershell",
+                &["-NoProfile", "-NonInteractive", "-Command", script.as_str()],
+                "dispatch",
+                Some(action_index),
+                Some(label),
+            )
+        }
+        InputAction::Release { .. } => Ok(()),
+        InputAction::Send { text } => {
+            let script = windows_sendkeys_script(&windows_sendkeys_text(text));
+            run_process_for_input(
+                "powershell",
+                &["-NoProfile", "-NonInteractive", "-Command", script.as_str()],
+                "dispatch",
+                Some(action_index),
+                Some(label),
+            )
+        }
+        InputAction::Wait { duration_ms } => {
+            std::thread::sleep(Duration::from_millis(*duration_ms));
+            Ok(())
+        }
+        InputAction::Click { button, x, y } => {
+            let (absolute_x, absolute_y) = relative_point_to_absolute(&request.bounds, *x, *y);
+            let script = windows_mouse_script(*button, absolute_x, absolute_y, None);
+            run_process_for_input(
+                "powershell",
+                &["-NoProfile", "-NonInteractive", "-Command", script.as_str()],
+                "dispatch",
+                Some(action_index),
+                Some(label),
+            )
+        }
+        InputAction::Drag { x0, y0, x1, y1 } => {
+            let (start_x, start_y) = relative_point_to_absolute(&request.bounds, *x0, *y0);
+            let (end_x, end_y) = relative_point_to_absolute(&request.bounds, *x1, *y1);
+            let script =
+                windows_mouse_script(MouseButton::Left, start_x, start_y, Some((end_x, end_y)));
+            run_process_for_input(
+                "powershell",
+                &["-NoProfile", "-NonInteractive", "-Command", script.as_str()],
+                "dispatch",
+                Some(action_index),
+                Some(label),
+            )
+        }
+    }
+}
+
+fn action_is_keyboard(action: &InputAction) -> bool {
+    matches!(
+        action,
+        InputAction::KeyTap { .. }
+            | InputAction::Hold { .. }
+            | InputAction::Release { .. }
+            | InputAction::Send { .. }
+    )
+}
+
+fn action_label(action: &InputAction) -> String {
+    serde_json::to_string(action).unwrap_or_else(|_| format!("{action:?}"))
+}
+
+fn run_process_for_input(
+    program: &str,
+    args: &[&str],
+    stage: &'static str,
+    action_index: Option<usize>,
+    action: Option<&str>,
+) -> Result<(), TendrilError> {
+    let output = std::process::Command::new(program)
+        .args(args)
+        .output()
+        .map_err(|error| {
+            input_execution_error(
+                "input_spawn_failed",
+                format!("failed to spawn {program}: {error}"),
+                stage,
+                action_index,
+                action,
+            )
+        })?;
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+    Err(input_execution_error(
+        "input_command_failed",
+        if stderr.is_empty() {
+            format!("{program} exited with status {}", output.status)
+        } else {
+            format!("{program} failed: {stderr}")
+        },
+        stage,
+        action_index,
+        action,
+    ))
+}
+
+fn input_execution_error(
+    code: &'static str,
+    message: String,
+    stage: &'static str,
+    action_index: Option<usize>,
+    action: Option<&str>,
+) -> TendrilError {
+    let mut error = TendrilError::execution_failure(code, message, action_index)
+        .with_detail_entry("stage", json!(stage));
+    if let Some(action_index) = action_index {
+        error = error.with_detail_entry("action_number", json!(action_index + 1));
+    }
+    if let Some(action) = action {
+        error = error.with_detail_entry("action", json!(action));
+    }
+    error
+}
+
+fn x11_modifier_name(modifier: ModifierKey) -> &'static str {
+    match modifier {
+        ModifierKey::Ctrl => "ctrl",
+        ModifierKey::Alt => "alt",
+        ModifierKey::Shift => "shift",
+        ModifierKey::Meta => "Super_L",
+    }
+}
+
+fn x11_key_name(key: &str) -> String {
+    match key.to_ascii_lowercase().as_str() {
+        "enter" | "return" => "Return".to_owned(),
+        "esc" | "escape" => "Escape".to_owned(),
+        "tab" => "Tab".to_owned(),
+        "space" => "space".to_owned(),
+        "backspace" => "BackSpace".to_owned(),
+        "delete" | "del" => "Delete".to_owned(),
+        "left" => "Left".to_owned(),
+        "right" => "Right".to_owned(),
+        "up" => "Up".to_owned(),
+        "down" => "Down".to_owned(),
+        "home" => "Home".to_owned(),
+        "end" => "End".to_owned(),
+        "pageup" => "Page_Up".to_owned(),
+        "pagedown" => "Page_Down".to_owned(),
+        other => other.to_owned(),
+    }
+}
+
+fn mouse_button_number(button: MouseButton) -> u8 {
+    match button {
+        MouseButton::Left => 1,
+        MouseButton::Middle => 2,
+        MouseButton::Right => 3,
+    }
+}
+
+fn swift_string_literal(value: &str) -> String {
+    format!("#{value:?}#")
+}
+
+fn macos_text_swift_script(text: &str) -> String {
+    let text = swift_string_literal(text);
+    format!(
+        "import ApplicationServices\nimport Foundation\nlet source = CGEventSource(stateID: .hidSystemState)\nlet text = {text}\nif let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true), let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) {{\n  let scalars = Array(text.utf16)\n  keyDown.keyboardSetUnicodeString(stringLength: scalars.count, unicodeString: scalars)\n  keyUp.keyboardSetUnicodeString(stringLength: scalars.count, unicodeString: scalars)\n  keyDown.post(tap: .cghidEventTap)\n  keyUp.post(tap: .cghidEventTap)\n}} else {{\n  fputs(\"failed to create keyboard events\\n\", stderr)\n  exit(1)\n}}\n"
+    )
+}
+
+fn macos_modifier_swift_script(modifier: ModifierKey, down: bool) -> Result<String, TendrilError> {
+    let key_code = macos_key_code(match modifier {
+        ModifierKey::Ctrl => "ctrl",
+        ModifierKey::Alt => "alt",
+        ModifierKey::Shift => "shift",
+        ModifierKey::Meta => "meta",
+    })?;
+    Ok(format!(
+        "import ApplicationServices\nif let event = CGEvent(keyboardEventSource: nil, virtualKey: {key_code}, keyDown: {down}) {{ event.post(tap: .cghidEventTap) }} else {{ fputs(\"failed to create modifier event\\n\", stderr); exit(1) }}\n"
+    ))
+}
+
+fn macos_key_swift_script(
+    key: &str,
+    down: Option<bool>,
+    up: Option<bool>,
+) -> Result<String, TendrilError> {
+    let key_code = macos_key_code(key)?;
+    let mut script = String::from("import ApplicationServices\n");
+    if down.unwrap_or(true) {
+        let _ = writeln!(
+            script,
+            "if let event = CGEvent(keyboardEventSource: nil, virtualKey: {key_code}, keyDown: true) {{ event.post(tap: .cghidEventTap) }} else {{ fputs(\"failed to create key down event\\n\", stderr); exit(1) }}"
+        );
+    }
+    if up.unwrap_or(true) {
+        let _ = writeln!(
+            script,
+            "if let event = CGEvent(keyboardEventSource: nil, virtualKey: {key_code}, keyDown: false) {{ event.post(tap: .cghidEventTap) }} else {{ fputs(\"failed to create key up event\\n\", stderr); exit(1) }}"
+        );
+    }
+    Ok(script)
+}
+
+fn macos_mouse_swift_script(
+    button: MouseButton,
+    x: i32,
+    y: i32,
+    drag_end: Option<(i32, i32)>,
+) -> String {
+    let (down_event, up_event, drag_event, button_code) = match button {
+        MouseButton::Left => ("leftMouseDown", "leftMouseUp", "leftMouseDragged", 0),
+        MouseButton::Right => ("rightMouseDown", "rightMouseUp", "rightMouseDragged", 1),
+        MouseButton::Middle => ("otherMouseDown", "otherMouseUp", "otherMouseDragged", 2),
+    };
+    if let Some((end_x, end_y)) = drag_end {
+        format!(
+            "import ApplicationServices\nlet start = CGPoint(x: {x}, y: {y})\nlet end = CGPoint(x: {end_x}, y: {end_y})\nCGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: start, mouseButton: .left)?.post(tap: .cghidEventTap)\nCGEvent(mouseEventSource: nil, mouseType: .{down_event}, mouseCursorPosition: start, mouseButton: .left)?.post(tap: .cghidEventTap)\nCGEvent(mouseEventSource: nil, mouseType: .{drag_event}, mouseCursorPosition: end, mouseButton: .left)?.post(tap: .cghidEventTap)\nCGEvent(mouseEventSource: nil, mouseType: .{up_event}, mouseCursorPosition: end, mouseButton: .left)?.post(tap: .cghidEventTap)\n"
+        )
+    } else {
+        format!(
+            "import ApplicationServices\nlet point = CGPoint(x: {x}, y: {y})\nCGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)\nCGEvent(mouseEventSource: nil, mouseType: .{down_event}, mouseCursorPosition: point, mouseButton: CGMouseButton(rawValue: {button_code})!)?.post(tap: .cghidEventTap)\nCGEvent(mouseEventSource: nil, mouseType: .{up_event}, mouseCursorPosition: point, mouseButton: CGMouseButton(rawValue: {button_code})!)?.post(tap: .cghidEventTap)\n"
+        )
+    }
+}
+
+fn macos_key_code(key: &str) -> Result<u16, TendrilError> {
+    match key.to_ascii_lowercase().as_str() {
+        "a" => Ok(0),
+        "s" => Ok(1),
+        "d" => Ok(2),
+        "f" => Ok(3),
+        "h" => Ok(4),
+        "g" => Ok(5),
+        "z" => Ok(6),
+        "x" => Ok(7),
+        "c" => Ok(8),
+        "v" => Ok(9),
+        "b" => Ok(11),
+        "q" => Ok(12),
+        "w" => Ok(13),
+        "e" => Ok(14),
+        "r" => Ok(15),
+        "y" => Ok(16),
+        "t" => Ok(17),
+        "1" => Ok(18),
+        "2" => Ok(19),
+        "3" => Ok(20),
+        "4" => Ok(21),
+        "6" => Ok(22),
+        "5" => Ok(23),
+        "=" => Ok(24),
+        "9" => Ok(25),
+        "7" => Ok(26),
+        "-" => Ok(27),
+        "8" => Ok(28),
+        "0" => Ok(29),
+        "]" => Ok(30),
+        "o" => Ok(31),
+        "u" => Ok(32),
+        "[" => Ok(33),
+        "i" => Ok(34),
+        "p" => Ok(35),
+        "enter" | "return" => Ok(36),
+        "l" => Ok(37),
+        "j" => Ok(38),
+        "'" => Ok(39),
+        "k" => Ok(40),
+        ";" => Ok(41),
+        "\\" => Ok(42),
+        "," => Ok(43),
+        "/" => Ok(44),
+        "n" => Ok(45),
+        "m" => Ok(46),
+        "." => Ok(47),
+        "tab" => Ok(48),
+        "space" => Ok(49),
+        "`" => Ok(50),
+        "backspace" => Ok(51),
+        "esc" | "escape" => Ok(53),
+        "meta" | "cmd" | "command" => Ok(55),
+        "shift" => Ok(56),
+        "alt" | "option" => Ok(58),
+        "ctrl" | "control" => Ok(59),
+        "right_shift" => Ok(60),
+        "right_alt" => Ok(61),
+        "right_ctrl" => Ok(62),
+        "left" => Ok(123),
+        "right" => Ok(124),
+        "down" => Ok(125),
+        "up" => Ok(126),
+        other => Err(TendrilError::execution_failure(
+            "unsupported_key",
+            format!("unsupported macOS key `{other}`"),
+            None,
+        )),
+    }
+}
+
+fn windows_sendkeys_script(sequence: &str) -> String {
+    format!(
+        r"
+Add-Type -AssemblyName System.Windows.Forms
+[System.Windows.Forms.SendKeys]::SendWait({sequence:?})
+"
+    )
+}
+
+fn windows_sendkeys_text(text: &str) -> String {
+    text.replace('{', "{{}").replace('}', "{}}")
+}
+
+fn windows_sendkeys_key(key: &str) -> Result<String, TendrilError> {
+    Ok(match key.to_ascii_lowercase().as_str() {
+        "enter" | "return" => "{ENTER}".to_owned(),
+        "esc" | "escape" => "{ESC}".to_owned(),
+        "tab" => "{TAB}".to_owned(),
+        "backspace" => "{BACKSPACE}".to_owned(),
+        "delete" | "del" => "{DELETE}".to_owned(),
+        "left" => "{LEFT}".to_owned(),
+        "right" => "{RIGHT}".to_owned(),
+        "up" => "{UP}".to_owned(),
+        "down" => "{DOWN}".to_owned(),
+        other if other.len() == 1 => other.to_owned(),
+        other => {
+            return Err(TendrilError::execution_failure(
+                "unsupported_key",
+                format!("unsupported Windows key `{other}`"),
+                None,
+            ));
+        }
+    })
+}
+
+fn windows_mouse_script(
+    button: MouseButton,
+    x: i32,
+    y: i32,
+    drag_end: Option<(i32, i32)>,
+) -> String {
+    let (down_flag, up_flag) = match button {
+        MouseButton::Left => (0x0002_u32, 0x0004_u32),
+        MouseButton::Right => (0x0008_u32, 0x0010_u32),
+        MouseButton::Middle => (0x0020_u32, 0x0040_u32),
+    };
+    if let Some((end_x, end_y)) = drag_end {
+        format!(
+            r#"
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public static class TendrilMouse {{
+  [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
+  [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo);
+}}
+"@
+[TendrilMouse]::SetCursorPos({x}, {y}) | Out-Null
+[TendrilMouse]::mouse_event({down_flag}, 0, 0, 0, [UIntPtr]::Zero)
+Start-Sleep -Milliseconds 20
+[TendrilMouse]::SetCursorPos({end_x}, {end_y}) | Out-Null
+[TendrilMouse]::mouse_event({up_flag}, 0, 0, 0, [UIntPtr]::Zero)
+"#
+        )
+    } else {
+        format!(
+            r#"
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public static class TendrilMouse {{
+  [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
+  [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo);
+}}
+"@
+[TendrilMouse]::SetCursorPos({x}, {y}) | Out-Null
+[TendrilMouse]::mouse_event({down_flag}, 0, 0, 0, [UIntPtr]::Zero)
+[TendrilMouse]::mouse_event({up_flag}, 0, 0, 0, [UIntPtr]::Zero)
+"#
+        )
+    }
 }
 
 #[must_use]

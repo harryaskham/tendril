@@ -4,6 +4,7 @@ pub mod commands;
 pub mod config;
 pub mod discovery;
 pub mod error;
+pub mod input;
 pub mod logging;
 pub mod model;
 pub mod platform;

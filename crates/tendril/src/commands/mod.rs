@@ -13,6 +13,7 @@ use crate::cli::{
 };
 use crate::config::TendrilConfig;
 use crate::error::TendrilError;
+use crate::input::{execute_run, parse_input_definition, render_run_human};
 use crate::model::{
     AliasInput, AliasOutput, AudioFormat, AudioSourceKind, AudioSourceSelector, CapabilitySet,
     CaptureInput, ListInput, ListOutput, ListenInput, RunInput, RunInputPayload, ShellKind,
@@ -209,7 +210,14 @@ fn dispatch_cli_command(
                 payload_kind = %payload_kind(&input.payload),
                 "validated run request with redacted payload"
             );
-            Err(TendrilError::not_implemented("run"))
+            let adapter = adapter_for_context(AdapterContext::detect());
+            let output = execute_run(&input, adapter.as_ref())?;
+            Ok(render_command_output(
+                "run",
+                cli.json,
+                output,
+                render_run_human,
+            ))
         }
         Command::Listen(command) => {
             dispatch_listen_command(command, cli.json, &AdapterContext::detect())
@@ -267,9 +275,13 @@ fn build_tool_router() -> ToolRouter<CommandContext> {
     router.add_typed_tool(
         "tendril_run",
         "Execute input against a specific target.",
-        |_: &CommandContext, command: RunRequest| {
-            let _input = build_run_input(&command.target, &command.options)?;
-            Err::<Value, TendrilError>(TendrilError::not_implemented("run"))
+        |context: &CommandContext, command: RunRequest| {
+            let input = build_run_input(&command.target, &command.options)?;
+            serde_json::to_value(execute_run(
+                &input,
+                adapter_for_context(context.adapter_context.clone()).as_ref(),
+            )?)
+            .map_err(|error| TendrilError::serialization(error.to_string()))
         },
     );
     router.add_typed_tool(
@@ -509,15 +521,7 @@ fn build_run_input(target: &TargetScope, command: &RunCommand) -> Result<RunInpu
     })?;
     let input = RunInput {
         target: required_target(target, "run")?,
-        payload: if looks_like_dsl(&input_definition) {
-            RunInputPayload::Dsl {
-                sequence: input_definition,
-            }
-        } else {
-            RunInputPayload::Text {
-                text: input_definition,
-            }
-        },
+        payload: parse_input_definition(&input_definition)?,
     };
     input.validate()?;
     Ok(input)
@@ -907,10 +911,6 @@ fn payload_kind(payload: &RunInputPayload) -> &'static str {
         RunInputPayload::Dsl { .. } => "dsl",
         RunInputPayload::Actions { .. } => "actions",
     }
-}
-
-fn looks_like_dsl(input_definition: &str) -> bool {
-    input_definition.contains('(') || input_definition.contains(',')
 }
 
 fn default_alias_name(target: &TargetScope) -> String {
