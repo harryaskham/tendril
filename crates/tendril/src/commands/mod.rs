@@ -11,13 +11,18 @@ use crate::cli::{
 use crate::config::TendrilConfig;
 use crate::error::TendrilError;
 use crate::model::{
-    AliasInput, AudioSourceKind, AudioSourceSelector, CaptureInput, ListInput, ListenInput,
-    RunInput, RunInputPayload, ShellKind, TargetSelector,
+    AliasInput, AudioFormat, AudioSourceKind, AudioSourceSelector, CaptureInput, ListInput,
+    ListenInput, RunInput, RunInputPayload, ShellKind, TargetSelector,
+};
+use crate::platform::{
+    AdapterContext, AdapterInfo, AudioCapabilityReport, AudioProbeRequest,
+    AudioSourceKind as PlatformAudioSourceKind, Capability, adapter_for_context,
 };
 
 #[derive(Debug, Clone)]
 struct CommandContext {
     config: TendrilConfig,
+    adapter_context: AdapterContext,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -42,6 +47,22 @@ pub struct RunRequest {
     pub options: RunCommand,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ListenResponse {
+    pub request: ListenInput,
+    pub adapter: AdapterInfo,
+    pub capability: AudioCapabilityReport,
+    pub execution: ListenExecutionStatus,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ListenExecutionStatus {
+    pub status: String,
+    pub artifact_available: bool,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug)]
 pub enum CommandOutput {
     Human(String),
     Json(Value),
@@ -94,6 +115,7 @@ fn dispatch_mcp(
             let server = build_mcp_server();
             let context = CommandContext {
                 config: config.clone(),
+                adapter_context: AdapterContext::detect(),
             };
             server
                 .serve_stdio(&context)
@@ -137,14 +159,7 @@ fn dispatch_cli_command(
             Err(TendrilError::not_implemented("run"))
         }
         Command::Listen(command) => {
-            let input = build_listen_input(command)?;
-            info!(
-                command = "listen",
-                source_kind = ?input.source.kind,
-                duration_ms = input.duration_ms,
-                "validated listen request"
-            );
-            Err(TendrilError::not_implemented("listen"))
+            dispatch_listen_command(command, cli.json, &AdapterContext::detect())
         }
         Command::Alias(command) => {
             let input = build_alias_input(&target_scope_from_cli(cli), command)?;
@@ -196,6 +211,14 @@ fn build_tool_router() -> ToolRouter<CommandContext> {
         |_: &CommandContext, command: RunRequest| {
             let _input = build_run_input(&command.target, &command.options)?;
             Err::<Value, TendrilError>(TendrilError::not_implemented("run"))
+        },
+    );
+    router.add_typed_tool(
+        "tendril_listen",
+        "Probe supported audio capture paths and permissions for a requested source.",
+        |context: &CommandContext, command: ListenCommand| {
+            let input = build_listen_input(&command)?;
+            listen_response_value(&input, &context.adapter_context)
         },
     );
     router
@@ -253,35 +276,189 @@ fn build_run_input(target: &TargetScope, command: &RunCommand) -> Result<RunInpu
 }
 
 fn build_listen_input(command: &ListenCommand) -> Result<ListenInput, TendrilError> {
+    let defaults = ListenInput::default();
     let input = ListenInput {
         source: match command.source.as_deref() {
-            None | Some("system") => AudioSourceSelector {
+            None => AudioSourceSelector {
                 kind: AudioSourceKind::System,
                 id: None,
             },
-            Some("microphone") => AudioSourceSelector {
-                kind: AudioSourceKind::Microphone,
-                id: None,
-            },
+            Some(value)
+                if value.eq_ignore_ascii_case("system")
+                    || value.eq_ignore_ascii_case("loopback") =>
+            {
+                AudioSourceSelector {
+                    kind: AudioSourceKind::System,
+                    id: None,
+                }
+            }
+            Some(value)
+                if value.eq_ignore_ascii_case("microphone")
+                    || value.eq_ignore_ascii_case("mic") =>
+            {
+                AudioSourceSelector {
+                    kind: AudioSourceKind::Microphone,
+                    id: None,
+                }
+            }
             Some(value) => {
-                if let Some(id) = value.strip_prefix("device:") {
-                    AudioSourceSelector {
-                        kind: AudioSourceKind::Device,
-                        id: Some(id.to_owned()),
+                if let Some((prefix, id)) = value.split_once(':') {
+                    if prefix.eq_ignore_ascii_case("device") {
+                        AudioSourceSelector {
+                            kind: AudioSourceKind::Device,
+                            id: Some(id.to_owned()),
+                        }
+                    } else {
+                        return Err(TendrilError::validation(format!(
+                            "unsupported audio source `{value}`; use `system`, `loopback`, `microphone`, or `device:<id>`"
+                        ))
+                        .with_code("invalid_listen_input")
+                        .with_field("source"));
                     }
                 } else {
                     return Err(TendrilError::validation(format!(
-                        "unsupported audio source `{value}`; use `system`, `microphone`, or `device:<id>`"
+                        "unsupported audio source `{value}`; use `system`, `loopback`, `microphone`, or `device:<id>`"
                     ))
                     .with_code("invalid_listen_input")
                     .with_field("source"));
                 }
             }
         },
-        ..ListenInput::default()
+        duration_ms: command.duration_ms.unwrap_or(defaults.duration_ms),
+        format: command
+            .format
+            .as_deref()
+            .map(parse_audio_format)
+            .transpose()?
+            .unwrap_or(defaults.format),
     };
     input.validate()?;
     Ok(input)
+}
+
+fn dispatch_listen_command(
+    command: &ListenCommand,
+    json_mode: bool,
+    adapter_context: &AdapterContext,
+) -> Result<CommandOutput, TendrilError> {
+    let input = build_listen_input(command)?;
+    info!(
+        command = "listen",
+        source_kind = ?input.source.kind,
+        source_id = input.source.id.as_deref().unwrap_or(""),
+        duration_ms = input.duration_ms,
+        format = ?input.format,
+        "validated listen request"
+    );
+    let response = build_listen_response(&input, adapter_context)?;
+    Ok(render_listen_output(&response, json_mode))
+}
+
+fn build_listen_response(
+    input: &ListenInput,
+    adapter_context: &AdapterContext,
+) -> Result<ListenResponse, TendrilError> {
+    let adapter = adapter_for_context(adapter_context.clone());
+    let adapter_info = adapter.info();
+    let capability = probe_listen_capability(input, adapter.as_ref())?;
+
+    Ok(ListenResponse {
+        request: input.clone(),
+        adapter: adapter_info,
+        capability,
+        execution: ListenExecutionStatus {
+            status: "probe_only".to_owned(),
+            artifact_available: false,
+            notes: vec![
+                "The v0.0.1 listen surface reports command-scoped capability and permission diagnostics but does not yet emit an audio artifact.".to_owned(),
+                "Use the returned backend, permissions, and channel metadata to decide whether a follow-up capture path is viable on this platform/session.".to_owned(),
+            ],
+        },
+    })
+}
+
+fn probe_listen_capability(
+    input: &ListenInput,
+    adapter: &dyn crate::platform::PlatformAdapter,
+) -> Result<AudioCapabilityReport, TendrilError> {
+    let adapter_info = adapter.info();
+    let request_value = serde_json::to_value(input)
+        .expect("listen input should always serialize for structured diagnostics");
+    let adapter_value = serde_json::to_value(&adapter_info)
+        .expect("adapter info should always serialize for structured diagnostics");
+
+    let platform_source = match input.source.kind {
+        AudioSourceKind::System => PlatformAudioSourceKind::SystemLoopback,
+        AudioSourceKind::Microphone => PlatformAudioSourceKind::Microphone,
+        AudioSourceKind::Device => {
+            return Err(TendrilError::unsupported_capability(
+                "audio_device_selection_not_implemented",
+                "explicit input-device selection is not implemented in the v0.0.1 listen surface",
+                Some(json!({
+                    "request": request_value,
+                    "adapter": adapter_value,
+                    "capability": Capability::AudioInputCapture,
+                    "suggested_action": "Use `--source microphone` for the shippable v0.0.1 slice. Explicit per-device binding remains a documented gap for a future adapter implementation."
+                })),
+            ));
+        }
+    };
+
+    adapter
+        .probe_audio_capture(&AudioProbeRequest {
+            source: platform_source,
+            duration_hint_ms: Some(input.duration_ms.try_into().unwrap_or(u32::MAX)),
+        })
+        .map_err(|error| {
+            TendrilError::from(error)
+                .with_detail_entry("request", request_value.clone())
+                .with_detail_entry("adapter", adapter_value.clone())
+        })
+}
+
+fn listen_response_value(
+    input: &ListenInput,
+    adapter_context: &AdapterContext,
+) -> Result<Value, TendrilError> {
+    serde_json::to_value(build_listen_response(input, adapter_context)?)
+        .map_err(|error| TendrilError::serialization(error.to_string()))
+}
+
+fn render_listen_output(response: &ListenResponse, json_mode: bool) -> CommandOutput {
+    if json_mode {
+        let envelope = JsonEnvelope::success_for("listen", &response);
+        CommandOutput::Json(
+            serde_json::to_value(envelope).expect("listen response envelope should serialize"),
+        )
+    } else {
+        let permission_lines = response
+            .capability
+            .permissions
+            .iter()
+            .map(|permission| {
+                format!(
+                    "- {:?}: {:?} ({})",
+                    permission.permission, permission.state, permission.summary
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let notes = response.execution.notes.join(" ");
+        CommandOutput::Human(format!(
+            "listen source: {:?}\nformat: {:?}\nduration_ms: {}\nplatform: {:?}\nsession: {:?}\naudio_backend: {:?}\nsupported_sample_rates_hz: {:?}\nsupported_channel_counts: {:?}\npermissions:\n{}\nstatus: {}\nnotes: {}\n",
+            response.request.source,
+            response.request.format,
+            response.request.duration_ms,
+            response.adapter.platform,
+            response.adapter.session,
+            response.capability.backend,
+            response.capability.supported_sample_rates_hz,
+            response.capability.supported_channel_counts,
+            permission_lines,
+            response.execution.status,
+            notes,
+        ))
+    }
 }
 
 fn build_alias_input(
@@ -352,6 +529,19 @@ fn parse_image_format(value: &str) -> Result<crate::config::ImageFormat, Tendril
     }
 }
 
+fn parse_audio_format(value: &str) -> Result<AudioFormat, TendrilError> {
+    match value {
+        "wav" => Ok(AudioFormat::Wav),
+        "flac" => Ok(AudioFormat::Flac),
+        "opus" => Ok(AudioFormat::Opus),
+        other => Err(TendrilError::validation(format!(
+            "unsupported audio format `{other}`; expected `wav`, `flac`, or `opus`"
+        ))
+        .with_code("invalid_listen_input")
+        .with_field("format")),
+    }
+}
+
 fn parse_shell(value: &str) -> Result<ShellKind, TendrilError> {
     match value {
         "bash" => Ok(ShellKind::Bash),
@@ -404,10 +594,13 @@ fn sanitize_identifier(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        CaptureRequest, RunRequest, TargetScope, build_capture_input, build_mcp_server, dispatch,
+        CaptureRequest, RunRequest, TargetScope, build_capture_input, build_listen_input,
+        build_listen_response, build_mcp_server, dispatch, dispatch_listen_command,
     };
-    use crate::cli::{CaptureCommand, Command, RunCommand, TendrilCli};
+    use crate::cli::{CaptureCommand, Command, ListenCommand, RunCommand, TendrilCli};
     use crate::config::{ImageFormat, TendrilConfig};
+    use crate::model::{AudioFormat, AudioSourceKind};
+    use crate::platform::{AdapterContext, AudioBackend};
     use serde_json::json;
 
     #[test]
@@ -499,8 +692,57 @@ mod tests {
             .collect();
         assert_eq!(
             names,
-            vec!["tendril_list", "tendril_capture", "tendril_run"]
+            vec![
+                "tendril_list",
+                "tendril_capture",
+                "tendril_run",
+                "tendril_listen"
+            ]
         );
+    }
+
+    #[test]
+    fn listen_input_parses_requested_source_duration_and_format() {
+        let input = build_listen_input(&ListenCommand {
+            source: Some("loopback".to_string()),
+            duration_ms: Some(1_500),
+            format: Some("flac".to_string()),
+        })
+        .expect("listen input should build");
+
+        assert_eq!(input.source.kind, AudioSourceKind::System);
+        assert_eq!(input.duration_ms, 1_500);
+        assert_eq!(input.format, AudioFormat::Flac);
+    }
+
+    #[test]
+    fn listen_request_schema_includes_source_duration_and_format() {
+        let schema = serde_json::to_value(schemars::schema_for!(ListenCommand))
+            .expect("listen schema should serialize");
+
+        assert_eq!(schema["type"], "object");
+        assert!(schema["properties"].get("source").is_some());
+        assert!(schema["properties"].get("duration_ms").is_some());
+        assert!(schema["properties"].get("format").is_some());
+    }
+
+    #[test]
+    fn listen_probe_reports_probe_only_gap_in_success_payload() {
+        let response = build_listen_response(
+            &build_listen_input(&ListenCommand {
+                source: Some("system".to_string()),
+                duration_ms: Some(2_000),
+                format: Some("wav".to_string()),
+            })
+            .expect("listen input should build"),
+            &AdapterContext::windows11(),
+        )
+        .expect("windows loopback probe should succeed");
+
+        assert_eq!(response.capability.backend, AudioBackend::Wasapi);
+        assert_eq!(response.execution.status, "probe_only");
+        assert!(!response.execution.artifact_available);
+        assert!(response.execution.notes[0].contains("does not yet emit an audio artifact"));
     }
 
     #[test]
@@ -529,6 +771,7 @@ mod tests {
             .handle_request_value(
                 &super::CommandContext {
                     config: TendrilConfig::default(),
+                    adapter_context: AdapterContext::windows11(),
                 },
                 json!({
                     "jsonrpc": "2.0",
@@ -544,6 +787,67 @@ mod tests {
             .expect("response should exist");
 
         assert_eq!(response["result"]["isError"], true);
+    }
+
+    #[test]
+    fn mcp_listen_tool_returns_machine_readable_success_payload() {
+        let response = build_mcp_server()
+            .handle_request_value(
+                &super::CommandContext {
+                    config: TendrilConfig::default(),
+                    adapter_context: AdapterContext::windows11(),
+                },
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": 9,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "tendril_listen",
+                        "arguments": {
+                            "source": "system",
+                            "duration_ms": 3000,
+                            "format": "opus"
+                        }
+                    }
+                }),
+            )
+            .expect("request should parse")
+            .expect("response should exist");
+
+        assert_eq!(response["result"]["isError"], false);
+        assert_eq!(response["result"]["structuredContent"]["status"], "success");
+        assert_eq!(
+            response["result"]["structuredContent"]["data"]["request"]["duration_ms"],
+            3000
+        );
+        assert_eq!(
+            response["result"]["structuredContent"]["data"]["request"]["format"],
+            "opus"
+        );
+    }
+
+    #[test]
+    fn cli_listen_json_error_is_structured_for_unimplemented_device_selection() {
+        let output = dispatch_listen_command(
+            &ListenCommand {
+                source: Some("device:mic-2".to_string()),
+                duration_ms: Some(1_000),
+                format: Some("wav".to_string()),
+            },
+            true,
+            &AdapterContext::windows11(),
+        )
+        .expect_err("device-specific selection should remain a documented gap");
+
+        assert_eq!(
+            output.category(),
+            mcp_cli::ErrorCategory::UnsupportedCapability
+        );
+        assert_eq!(output.code(), "audio_device_selection_not_implemented");
+        assert_eq!(
+            output.details().expect("structured details")["request"]["source"]["id"],
+            "mic-2"
+        );
     }
 
     #[test]

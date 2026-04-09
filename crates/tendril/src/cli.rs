@@ -107,8 +107,17 @@ pub struct RunCommand {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Args, Serialize, Deserialize, JsonSchema)]
 pub struct ListenCommand {
+    /// Audio source selector: `system`, `loopback`, `microphone`, or `device:<id>`.
     #[arg(long)]
     pub source: Option<String>,
+
+    /// Requested capture duration in milliseconds.
+    #[arg(long)]
+    pub duration_ms: Option<u64>,
+
+    /// Requested audio format: `wav`, `flac`, or `opus`.
+    #[arg(long)]
+    pub format: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Args, Serialize, Deserialize, JsonSchema)]
