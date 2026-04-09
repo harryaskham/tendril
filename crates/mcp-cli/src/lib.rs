@@ -7,6 +7,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use thiserror::Error;
 
+/// Stable schema version for JSON envelopes shared by CLI and MCP surfaces.
+pub const JSON_SCHEMA_VERSION: u32 = 1;
+
 /// Stable categories for structured JSON and MCP errors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -21,19 +24,68 @@ pub enum ErrorCategory {
     SerializationError,
 }
 
-/// Structured error payload shared by CLI and MCP surfaces.
+/// Stable metadata attached to every machine-readable response envelope.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EnvelopeMeta {
+    pub schema_version: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+}
+
+impl Default for EnvelopeMeta {
+    fn default() -> Self {
+        Self {
+            schema_version: JSON_SCHEMA_VERSION,
+            command: None,
+        }
+    }
+}
+
+impl EnvelopeMeta {
+    #[must_use]
+    pub fn for_command(command: impl Into<String>) -> Self {
+        Self {
+            schema_version: JSON_SCHEMA_VERSION,
+            command: Some(command.into()),
+        }
+    }
+}
+
+/// Errors that can be projected into a stable JSON/MCP error payload.
+pub trait StructuredError {
+    fn category(&self) -> ErrorCategory;
+
+    fn code(&self) -> String;
+
+    fn message(&self) -> String;
+
+    fn details(&self) -> Option<Value> {
+        None
+    }
+}
+
+/// Structured error payload shared by CLI and MCP surfaces.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JsonError {
     pub category: ErrorCategory,
+    pub code: String,
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<Value>,
 }
 
 impl JsonError {
     #[must_use]
-    pub fn new(category: ErrorCategory, message: impl Into<String>) -> Self {
+    pub fn new(
+        category: ErrorCategory,
+        code: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
         Self {
             category,
+            code: code.into(),
             message: message.into(),
+            details: None,
         }
     }
 
@@ -42,15 +94,18 @@ impl JsonError {
     where
         E: StructuredError + ?Sized,
     {
-        Self::new(error.category(), error.message())
+        let mut value = Self::new(error.category(), error.code(), error.message());
+        if let Some(details) = error.details() {
+            value = value.with_details(details);
+        }
+        value
     }
-}
 
-/// Errors that can be projected into a stable JSON/MCP error payload.
-pub trait StructuredError {
-    fn category(&self) -> ErrorCategory;
-
-    fn message(&self) -> String;
+    #[must_use]
+    pub fn with_details(mut self, details: Value) -> Self {
+        self.details = Some(details);
+        self
+    }
 }
 
 impl StructuredError for JsonError {
@@ -58,29 +113,63 @@ impl StructuredError for JsonError {
         self.category
     }
 
+    fn code(&self) -> String {
+        self.code.clone()
+    }
+
     fn message(&self) -> String {
         self.message.clone()
+    }
+
+    fn details(&self) -> Option<Value> {
+        self.details.clone()
     }
 }
 
 /// Structured success/error envelope for machine-readable command responses.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum JsonEnvelope<T> {
-    Success { data: T },
-    Error { error: JsonError },
+    Success {
+        meta: EnvelopeMeta,
+        data: T,
+    },
+    Error {
+        meta: EnvelopeMeta,
+        error: JsonError,
+    },
 }
 
 impl<T> JsonEnvelope<T> {
     #[must_use]
     pub fn success(data: T) -> Self {
-        Self::Success { data }
+        Self::Success {
+            meta: EnvelopeMeta::default(),
+            data,
+        }
     }
 
     #[must_use]
-    pub fn error(category: ErrorCategory, message: impl Into<String>) -> Self {
+    pub fn success_for(command: impl Into<String>, data: T) -> Self {
+        Self::Success {
+            meta: EnvelopeMeta::for_command(command),
+            data,
+        }
+    }
+
+    #[must_use]
+    pub fn error(error: JsonError) -> Self {
         Self::Error {
-            error: JsonError::new(category, message),
+            meta: EnvelopeMeta::default(),
+            error,
+        }
+    }
+
+    #[must_use]
+    pub fn error_for(command: impl Into<String>, error: JsonError) -> Self {
+        Self::Error {
+            meta: EnvelopeMeta::for_command(command),
+            error,
         }
     }
 
@@ -98,9 +187,7 @@ where
 {
     match result {
         Ok(data) => JsonEnvelope::success(data),
-        Err(error) => JsonEnvelope::Error {
-            error: JsonError::from_error(&error),
-        },
+        Err(error) => JsonEnvelope::error(JsonError::from_error(&error)),
     }
 }
 
@@ -113,9 +200,7 @@ where
 {
     match result {
         Ok(data) => JsonEnvelope::success(data),
-        Err(error) => JsonEnvelope::Error {
-            error: JsonError::from_error(error),
-        },
+        Err(error) => JsonEnvelope::error(JsonError::from_error(error)),
     }
 }
 
@@ -143,9 +228,7 @@ where
 {
     let envelope = match result {
         Ok(data) => JsonEnvelope::success(data),
-        Err(error) => JsonEnvelope::Error {
-            error: JsonError::from_error(error),
-        },
+        Err(error) => JsonEnvelope::error(JsonError::from_error(error)),
     };
     serde_json::to_writer(&mut writer, &envelope)?;
     writer.write_all(b"\n")?;
@@ -189,8 +272,9 @@ impl<Ctx> Tool<Ctx> {
         Error: StructuredError + 'static,
         Handler: Fn(&Ctx, Input) -> Result<Output, Error> + Send + Sync + 'static,
     {
+        let tool_name = name.into();
         let metadata = ToolMetadata {
-            name: name.into(),
+            name: tool_name.clone(),
             description: description.into(),
             input_schema: serde_json::to_value(schemars::schema_for!(Input))
                 .expect("tool schema should serialize"),
@@ -200,19 +284,27 @@ impl<Ctx> Tool<Ctx> {
             move |ctx: &Ctx, arguments: Value| match serde_json::from_value(arguments) {
                 Ok(input) => match handler(ctx, input) {
                     Ok(output) => match serde_json::to_value(output) {
-                        Ok(data) => JsonEnvelope::success(data),
-                        Err(error) => JsonEnvelope::error(
-                            ErrorCategory::SerializationError,
-                            format!("failed to serialize tool result: {error}"),
+                        Ok(data) => JsonEnvelope::success_for(tool_name.clone(), data),
+                        Err(error) => JsonEnvelope::error_for(
+                            tool_name.clone(),
+                            JsonError::new(
+                                ErrorCategory::SerializationError,
+                                "serialization_error",
+                                format!("failed to serialize tool result: {error}"),
+                            ),
                         ),
                     },
-                    Err(error) => JsonEnvelope::Error {
-                        error: JsonError::from_error(&error),
-                    },
+                    Err(error) => {
+                        JsonEnvelope::error_for(tool_name.clone(), JsonError::from_error(&error))
+                    }
                 },
-                Err(error) => JsonEnvelope::error(
-                    ErrorCategory::Validation,
-                    format!("invalid tool arguments: {error}"),
+                Err(error) => JsonEnvelope::error_for(
+                    tool_name.clone(),
+                    JsonError::new(
+                        ErrorCategory::Validation,
+                        "invalid_tool_arguments",
+                        format!("invalid tool arguments: {error}"),
+                    ),
                 ),
             };
 
@@ -284,9 +376,14 @@ impl<Ctx> ToolRouter<Ctx> {
     pub fn call_tool(&self, ctx: &Ctx, name: &str, arguments: Value) -> JsonEnvelope<Value> {
         match self.tools.iter().find(|tool| tool.metadata().name == name) {
             Some(tool) => tool.call(ctx, arguments),
-            None => {
-                JsonEnvelope::error(ErrorCategory::Validation, format!("unknown tool `{name}`"))
-            }
+            None => JsonEnvelope::error_for(
+                name,
+                JsonError::new(
+                    ErrorCategory::Validation,
+                    "unknown_tool",
+                    format!("unknown tool `{name}`"),
+                ),
+            ),
         }
     }
 }
@@ -457,6 +554,13 @@ pub enum McpCliError {
     Protocol(String),
 }
 
+impl McpCliError {
+    #[must_use]
+    pub const fn category(&self) -> ErrorCategory {
+        ErrorCategory::SerializationError
+    }
+}
+
 fn read_protocol_message<R>(reader: &mut R) -> Result<Option<Vec<u8>>, McpCliError>
 where
     R: BufRead,
@@ -496,7 +600,7 @@ where
         McpCliError::Protocol("missing Content-Length header in MCP message".to_string())
     })?;
     let mut body = vec![0; length];
-    reader.read_exact(&mut body)?;
+    std::io::Read::read_exact(reader, &mut body)?;
     Ok(Some(body))
 }
 
@@ -514,8 +618,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
-        ErrorCategory, JsonEnvelope, McpServer, StdioServerConfig, StructuredError, ToolRouter,
-        write_json_result_ref,
+        EnvelopeMeta, ErrorCategory, JSON_SCHEMA_VERSION, JsonEnvelope, JsonError, McpServer,
+        StdioServerConfig, StructuredError, ToolRouter, write_json_result_ref,
     };
     use clap::{Args, Parser, Subcommand};
     use schemars::JsonSchema;
@@ -565,6 +669,10 @@ mod tests {
     impl StructuredError for SampleError {
         fn category(&self) -> ErrorCategory {
             self.category
+        }
+
+        fn code(&self) -> String {
+            "sample_validation".to_owned()
         }
 
         fn message(&self) -> String {
@@ -685,24 +793,44 @@ mod tests {
     }
 
     #[test]
-    fn success_envelope_serializes_with_status_tag() {
-        let envelope = JsonEnvelope::success(json!({ "crate": "mcp-cli" }));
+    fn success_envelope_serializes_with_status_tag_and_meta() {
+        let envelope = JsonEnvelope::success_for("list", json!({ "crate": "mcp-cli" }));
 
         let value = serde_json::to_value(envelope).expect("success envelope serializes");
 
         assert_eq!(value["status"], "success");
+        assert_eq!(value["meta"]["schema_version"], JSON_SCHEMA_VERSION);
+        assert_eq!(value["meta"]["command"], "list");
         assert_eq!(value["data"]["crate"], "mcp-cli");
     }
 
     #[test]
-    fn error_envelope_serializes_with_structured_category() {
-        let envelope: JsonEnvelope<()> =
-            JsonEnvelope::error(ErrorCategory::Validation, "placeholder validation failure");
+    fn error_envelope_serializes_with_structured_category_and_code() {
+        let envelope: JsonEnvelope<()> = JsonEnvelope::error_for(
+            "capture",
+            JsonError::new(
+                ErrorCategory::Validation,
+                "invalid_target",
+                "placeholder validation failure",
+            )
+            .with_details(json!({ "field": "window" })),
+        );
 
         let value = serde_json::to_value(envelope).expect("error envelope serializes");
 
         assert_eq!(value["status"], "error");
+        assert_eq!(value["meta"]["command"], "capture");
         assert_eq!(value["error"]["category"], "validation");
+        assert_eq!(value["error"]["code"], "invalid_target");
+        assert_eq!(value["error"]["details"]["field"], "window");
+    }
+
+    #[test]
+    fn envelope_meta_defaults_are_stable() {
+        let meta = EnvelopeMeta::default();
+
+        assert_eq!(meta.schema_version, JSON_SCHEMA_VERSION);
+        assert!(meta.command.is_none());
     }
 
     #[test]
@@ -731,13 +859,9 @@ mod tests {
 
         let envelope = router.call_tool(&(), "math_add", json!({ "lhs": 3 }));
 
-        assert_eq!(
-            envelope,
-            JsonEnvelope::error(
-                ErrorCategory::Validation,
-                "invalid tool arguments: missing field `rhs`"
-            )
-        );
+        assert!(envelope.is_error());
+        let value = serde_json::to_value(envelope).expect("error envelope serializes");
+        assert_eq!(value["error"]["code"], "invalid_tool_arguments");
     }
 
     #[test]
@@ -753,7 +877,8 @@ mod tests {
         ))
         .expect("math router envelope serializes");
 
-        assert_eq!(math_cli_envelope, math_router_envelope);
+        assert_eq!(math_cli_envelope["status"], math_router_envelope["status"]);
+        assert_eq!(math_cli_envelope["data"], math_router_envelope["data"]);
 
         let (_, reverse_cli_json) =
             run_reverse_cli(&["reverse-cli", "--json", "reverse", "--value", "straw"]);
@@ -766,7 +891,10 @@ mod tests {
         ))
         .expect("reverse router envelope serializes");
 
-        assert_eq!(reverse_cli_envelope, reverse_router_envelope);
+        assert_eq!(
+            reverse_cli_envelope["data"],
+            reverse_router_envelope["data"]
+        );
     }
 
     #[test]

@@ -1,4 +1,3 @@
-fn main() -> anyhow::Result<()> {
-    tendril::run(std::env::args_os())?;
-    Ok(())
+fn main() -> std::process::ExitCode {
+    tendril::run(std::env::args_os())
 }
