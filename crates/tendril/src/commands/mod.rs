@@ -1,3 +1,5 @@
+use std::fmt::Write as _;
+
 use mcp_cli::{JsonEnvelope, McpServer, StdioServerConfig, ToolRouter};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -11,12 +13,14 @@ use crate::cli::{
 use crate::config::TendrilConfig;
 use crate::error::TendrilError;
 use crate::model::{
-    AliasInput, AudioFormat, AudioSourceKind, AudioSourceSelector, CaptureInput, ListInput,
-    ListenInput, RunInput, RunInputPayload, ShellKind, TargetSelector,
+    AliasInput, AudioFormat, AudioSourceKind, AudioSourceSelector, CapabilitySet, CaptureInput,
+    ListInput, ListOutput, ListenInput, RunInput, RunInputPayload, ShellKind, TargetDescriptor,
+    TargetKind, TargetSelector,
 };
 use crate::platform::{
     AdapterContext, AdapterInfo, AudioCapabilityReport, AudioProbeRequest,
-    AudioSourceKind as PlatformAudioSourceKind, Capability, adapter_for_context,
+    AudioSourceKind as PlatformAudioSourceKind, Capability, CaptureTargetKind,
+    TargetDiscoveryRequest, adapter_for_context,
 };
 
 #[derive(Debug, Clone)]
@@ -132,9 +136,19 @@ fn dispatch_cli_command(
 ) -> Result<CommandOutput, TendrilError> {
     match command {
         Command::List(command) => {
-            validate_list_command(command)?;
-            info!(command = "list", "validated list command request");
-            Err(TendrilError::not_implemented("list"))
+            let input = validate_list_command(command)?;
+            let output = execute_list(&input, &AdapterContext::detect())?;
+            info!(
+                command = "list",
+                target_count = output.targets.len(),
+                "discovered desktop targets"
+            );
+            Ok(render_command_output(
+                "list",
+                cli.json,
+                output,
+                render_list_human,
+            ))
         }
         Command::Capture(command) => {
             let input = build_capture_input(&target_scope_from_cli(cli), command, config)?;
@@ -192,9 +206,9 @@ fn build_tool_router() -> ToolRouter<CommandContext> {
     router.add_typed_tool(
         "tendril_list",
         "Discover available desktop targets.",
-        |_: &CommandContext, command: ListCommand| {
-            validate_list_command(&command)?;
-            Err::<Value, TendrilError>(TendrilError::not_implemented("list"))
+        |context: &CommandContext, command: ListCommand| {
+            let input = validate_list_command(&command)?;
+            execute_list(&input, &context.adapter_context)
         },
     );
     router.add_typed_tool(
@@ -230,6 +244,113 @@ fn validate_list_command(_command: &ListCommand) -> Result<ListInput, TendrilErr
         .validate()
         .map_err(|error| error.with_code("invalid_list_input"))?;
     Ok(input)
+}
+
+fn execute_list(
+    input: &ListInput,
+    adapter_context: &AdapterContext,
+) -> Result<ListOutput, TendrilError> {
+    let adapter = adapter_for_context(adapter_context.clone());
+    let inventory = adapter.discover_targets(&TargetDiscoveryRequest)?;
+
+    let targets = inventory
+        .targets
+        .into_iter()
+        .filter(|target| match target.kind {
+            CaptureTargetKind::Window => input.include_windows,
+            CaptureTargetKind::Display => input.include_displays,
+        })
+        .map(model_target_from_platform)
+        .collect();
+
+    Ok(ListOutput {
+        adapter: adapter.info(),
+        permissions: adapter.permissions(),
+        targets,
+    })
+}
+
+fn model_target_from_platform(target: crate::platform::TargetDescriptor) -> TargetDescriptor {
+    TargetDescriptor {
+        id: target.id,
+        kind: match target.kind {
+            CaptureTargetKind::Window => TargetKind::Window,
+            CaptureTargetKind::Display => TargetKind::Display,
+        },
+        name: target.name,
+        title: target.title,
+        bounds: target.bounds,
+        scale_factor: target.scale_factor,
+        capabilities: CapabilitySet {
+            capture: target.capture_supported,
+            input: target.input_supported,
+            audio: false,
+        },
+        app_name: target.app_name,
+        process_id: target.process_id,
+    }
+}
+
+fn render_command_output<T, Render>(
+    command_name: &str,
+    json_mode: bool,
+    data: T,
+    render_human: Render,
+) -> CommandOutput
+where
+    T: Serialize,
+    Render: FnOnce(&T) -> String,
+{
+    if json_mode {
+        let envelope = JsonEnvelope::success_for(command_name, &data);
+        CommandOutput::Json(serde_json::to_value(envelope).expect("command json should serialize"))
+    } else {
+        CommandOutput::Human(render_human(&data))
+    }
+}
+
+fn render_list_human(output: &ListOutput) -> String {
+    let mut rendered = format!(
+        "platform: {:?} / {:?}\npermissions: {}\ntargets:\n",
+        output.adapter.platform,
+        output.adapter.session,
+        output.permissions.len()
+    );
+
+    for target in &output.targets {
+        let capability_summary = format!(
+            "capture={}, input={}",
+            target.capabilities.capture, target.capabilities.input
+        );
+        let title_suffix = target
+            .title
+            .as_deref()
+            .map(|title| format!(" title={title:?}"))
+            .unwrap_or_default();
+        let app_suffix = target
+            .app_name
+            .as_deref()
+            .map(|app_name| format!(" app={app_name}"))
+            .unwrap_or_default();
+        let _ = writeln!(
+            rendered,
+            "- {:?} {} {} {}x{}+{}+{} scale={}/{} {}{}{}",
+            target.kind,
+            target.id,
+            target.name,
+            target.bounds.width,
+            target.bounds.height,
+            target.bounds.x,
+            target.bounds.y,
+            target.scale_factor.numerator,
+            target.scale_factor.denominator,
+            capability_summary,
+            title_suffix,
+            app_suffix,
+        );
+    }
+
+    rendered
 }
 
 fn build_capture_input(

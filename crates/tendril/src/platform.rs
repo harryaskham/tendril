@@ -5,6 +5,9 @@ use thiserror::Error;
 
 use mcp_cli::ErrorCategory;
 
+use crate::discovery;
+use crate::model::{Bounds, ScaleFactor};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PlatformKind {
@@ -349,8 +352,13 @@ pub struct TargetDescriptor {
     pub id: String,
     pub title: Option<String>,
     pub kind: CaptureTargetKind,
+    pub name: String,
+    pub bounds: Bounds,
+    pub scale_factor: ScaleFactor,
     pub capture_supported: bool,
     pub input_supported: bool,
+    pub app_name: Option<String>,
+    pub process_id: Option<u32>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -496,13 +504,9 @@ impl TargetDiscoveryAdapter for MacOsAdapter {
 
     fn discover_targets(
         &self,
-        _request: &TargetDiscoveryRequest,
+        request: &TargetDiscoveryRequest,
     ) -> Result<TargetInventory, PlatformAdapterError> {
-        Err(PlatformAdapterError::adapter_failure(
-            AdapterOperation::TargetDiscovery,
-            self.platform(),
-            "target discovery is not implemented in this bead; use capability probes only",
-        ))
+        discovery::discover_targets(&self.context, request)
     }
 }
 
@@ -650,13 +654,9 @@ impl TargetDiscoveryAdapter for LinuxAdapter {
 
     fn discover_targets(
         &self,
-        _request: &TargetDiscoveryRequest,
+        request: &TargetDiscoveryRequest,
     ) -> Result<TargetInventory, PlatformAdapterError> {
-        Err(PlatformAdapterError::adapter_failure(
-            AdapterOperation::TargetDiscovery,
-            self.platform(),
-            "target discovery is not implemented in this bead; use capability probes only",
-        ))
+        discovery::discover_targets(&self.context, request)
     }
 }
 
@@ -838,13 +838,9 @@ impl TargetDiscoveryAdapter for WindowsAdapter {
 
     fn discover_targets(
         &self,
-        _request: &TargetDiscoveryRequest,
+        request: &TargetDiscoveryRequest,
     ) -> Result<TargetInventory, PlatformAdapterError> {
-        Err(PlatformAdapterError::adapter_failure(
-            AdapterOperation::TargetDiscovery,
-            self.platform(),
-            "target discovery is not implemented in this bead; use capability probes only",
-        ))
+        discovery::discover_targets(&self.context, request)
     }
 }
 

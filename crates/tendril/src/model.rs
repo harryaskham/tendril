@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::ImageFormat;
 use crate::error::TendrilError;
+use crate::platform::{AdapterInfo, PermissionStatus};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -71,6 +72,8 @@ pub struct TargetDescriptor {
     pub id: String,
     pub kind: TargetKind,
     pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
     pub bounds: Bounds,
     pub scale_factor: ScaleFactor,
     pub capabilities: CapabilitySet,
@@ -113,6 +116,8 @@ impl ListInput {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ListOutput {
+    pub adapter: AdapterInfo,
+    pub permissions: Vec<PermissionStatus>,
     pub targets: Vec<TargetDescriptor>,
 }
 
