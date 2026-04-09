@@ -1,5 +1,6 @@
 [package]
 name = "mcp-cli"
+description = "Reusable JSON envelope and MCP stdio helpers for CLI projects"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,7 +9,6 @@ readme.workspace = true
 repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true
-description = "Reusable JSON envelope and MCP stdio helpers for CLI projects"
 keywords = ["cli", "json", "mcp"]
 categories = ["command-line-utilities", "development-tools"]
 

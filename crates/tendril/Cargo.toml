@@ -1,10 +1,10 @@
 [package]
 name = "tendril"
+description = "Stateless desktop inspection and control CLI for agents."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description.workspace = true
 readme.workspace = true
 repository.workspace = true
 homepage.workspace = true

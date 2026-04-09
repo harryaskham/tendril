@@ -8,9 +8,13 @@ Tendril follows [Semantic Versioning](https://semver.org/). Release notes are cu
 ## [Unreleased]
 
 ### Added
-- Tag-triggered GitHub Actions release automation backed by the Nix flake and local pre-merge checks.
+- `PROJECT_HEALTH.md` handoff summary that links the spec, docs, validation, and release surfaces and captures explicit follow-ups.
+- MIT `LICENSE` file and release-artifact packaging that now ships the license and project health summary alongside the changelog and README.
 
 ### Changed
+- README now links the approved spec, managed validation commands, runtime config location, docs publication surface, and handoff health summary.
+- Cargo package metadata now carries shared repository and homepage information for the workspace crates.
+- Tag-triggered GitHub Actions release automation remains backed by the Nix flake and local pre-merge checks.
 - Seeded the changelog and release-note flow so future releases can prepend human-readable summaries when a new `vX.Y.Z` tag is pushed.
 
 ## [0.0.1] - 2026-04-09

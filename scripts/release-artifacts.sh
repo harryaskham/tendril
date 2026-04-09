@@ -32,7 +32,7 @@ mkdir -p "dist/stage/tendril-${version}-${system}"
 nix build .#tendril --out-link dist/result-tendril --print-build-logs
 
 cp -L dist/result-tendril/bin/tendril "dist/stage/tendril-${version}-${system}/tendril"
-cp README.md CHANGELOG.md "dist/stage/tendril-${version}-${system}/"
+cp README.md CHANGELOG.md LICENSE PROJECT_HEALTH.md "dist/stage/tendril-${version}-${system}/"
 
 tar -C dist/stage -czf "dist/${binary_archive}" "tendril-${version}-${system}"
 git archive --format=tar.gz --prefix="tendril-${version}/" -o "dist/${source_archive}" "$archive_ref"

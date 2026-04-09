@@ -12,12 +12,20 @@ It can:
 There is no Tendril daemon and no hidden runtime store. Each command is
 self-contained.
 
+## Primary references
+
+- [Approved spec](SPEC.md)
+- [Project health / handoff summary](PROJECT_HEALTH.md)
+- [Published docs source](docs/src/index.md)
+- [Changelog](CHANGELOG.md)
+
 ## Enter the development environment
 
 This repo is set up for Nix + direnv:
 
 ```bash
 direnv allow
+nix develop
 ```
 
 `.envrc` uses `use flake`, so entering the repo loads the dev shell from
@@ -46,7 +54,9 @@ nix develop --command ./scripts/build-docs.sh
 - `docs/`: mdBook-based documentation site source
 - `flake.nix`: dev shell, packages, checks, and reproducible build outputs
 - `.cacophony/config.yaml`: project bootstrap plus managed build/test defaults
+- `.cacophony/project.yaml`: managed bootstrap/build/test/lint/pre-merge actions
 - `scripts/`: bootstrap, validation, docs, and release helpers
+- `PROJECT_HEALTH.md`: operator-facing repo-health audit summary and follow-ups
 
 ## Stateless runtime and local config
 
@@ -258,3 +268,4 @@ The repository publishes a static docs site built from `docs/`.
 
 - Running `tendril` with no arguments prints agent-oriented help.
 - The workspace version target is `0.0.1`.
+- Remaining handoff follow-ups are captured explicitly in [PROJECT_HEALTH.md](PROJECT_HEALTH.md).
