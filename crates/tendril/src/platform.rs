@@ -2,6 +2,8 @@ use std::env;
 use std::fmt::Write as _;
 use std::time::Duration;
 
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use thiserror::Error;
@@ -15,6 +17,9 @@ use crate::discovery;
 use crate::error::TendrilError;
 use crate::input::{relative_point_to_absolute, reliability_delay};
 use crate::model::{Bounds, InputAction, ModifierKey, MouseButton, ScaleFactor};
+
+const CAPTURE_FIXTURE_ENV: &str = "TENDRIL_CAPTURE_FIXTURE_JSON";
+const INPUT_FIXTURE_ENV: &str = "TENDRIL_INPUT_FIXTURE_JSON";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -413,6 +418,97 @@ pub struct InputOutcome {
     pub notes: Vec<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct CaptureFixture {
+    #[serde(default = "default_capture_fixture_media_type")]
+    media_type: String,
+    image_base64: String,
+    #[serde(default)]
+    captured_at: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct InputFixture {
+    #[serde(default)]
+    action_count: Option<usize>,
+    #[serde(default)]
+    focus_required: bool,
+    #[serde(default)]
+    focus_transferred: bool,
+    #[serde(default)]
+    focused_target: Option<String>,
+    #[serde(default)]
+    notes: Vec<String>,
+}
+
+fn default_capture_fixture_media_type() -> String {
+    "image/png".to_owned()
+}
+
+fn load_capture_fixture(
+    platform: PlatformKind,
+    request: &CaptureRequest,
+) -> Result<Option<CaptureArtifact>, PlatformAdapterError> {
+    let Some(raw) = env::var(CAPTURE_FIXTURE_ENV).ok() else {
+        return Ok(None);
+    };
+
+    let fixture = serde_json::from_str::<CaptureFixture>(&raw).map_err(|error| {
+        PlatformAdapterError::adapter_failure(
+            AdapterOperation::Capture,
+            platform,
+            format!("failed to parse {CAPTURE_FIXTURE_ENV}: {error}"),
+        )
+    })?;
+    let image_bytes = BASE64.decode(&fixture.image_base64).map_err(|error| {
+        PlatformAdapterError::adapter_failure(
+            AdapterOperation::Capture,
+            platform,
+            format!("failed to decode {CAPTURE_FIXTURE_ENV} image bytes: {error}"),
+        )
+    })?;
+
+    Ok(Some(CaptureArtifact {
+        target_id: request.target_id.clone(),
+        media_type: fixture.media_type,
+        image_bytes,
+        captured_at: fixture.captured_at.unwrap_or_else(current_timestamp),
+    }))
+}
+
+fn default_input_action_count(request: &InputRequest) -> usize {
+    request.actions.len() + usize::from(request.text.is_some())
+}
+
+fn load_input_fixture(
+    platform: PlatformKind,
+    request: &InputRequest,
+) -> Result<Option<InputOutcome>, TendrilError> {
+    let Some(raw) = env::var(INPUT_FIXTURE_ENV).ok() else {
+        return Ok(None);
+    };
+
+    let fixture = serde_json::from_str::<InputFixture>(&raw).map_err(|error| {
+        TendrilError::from(PlatformAdapterError::adapter_failure(
+            AdapterOperation::InputControl,
+            platform,
+            format!("failed to parse {INPUT_FIXTURE_ENV}: {error}"),
+        ))
+    })?;
+
+    Ok(Some(InputOutcome {
+        action_count: fixture
+            .action_count
+            .unwrap_or_else(|| default_input_action_count(request)),
+        focus_required: fixture.focus_required,
+        focus_transferred: fixture.focus_transferred,
+        focused_target: fixture
+            .focused_target
+            .or_else(|| fixture.focus_transferred.then(|| request.target_id.clone())),
+        notes: fixture.notes,
+    }))
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AudioProbeRequest {
     pub source: AudioSourceKind,
@@ -556,6 +652,10 @@ impl CaptureAdapter for MacOsAdapter {
     }
 
     fn capture(&self, request: &CaptureRequest) -> Result<CaptureArtifact, PlatformAdapterError> {
+        if let Some(artifact) = load_capture_fixture(self.platform(), request)? {
+            return Ok(artifact);
+        }
+
         let path = unique_temp_path("png");
         let mut command = std::process::Command::new("screencapture");
         command.arg("-x").arg("-t").arg("png");
@@ -626,6 +726,10 @@ impl InputControlAdapter for MacOsAdapter {
     }
 
     fn execute_input(&self, request: &InputRequest) -> Result<InputOutcome, TendrilError> {
+        if let Some(outcome) = load_input_fixture(self.platform(), request)? {
+            return Ok(outcome);
+        }
+
         execute_macos_input(self.platform(), request)
     }
 }
@@ -758,6 +862,10 @@ impl CaptureAdapter for LinuxAdapter {
     }
 
     fn capture(&self, request: &CaptureRequest) -> Result<CaptureArtifact, PlatformAdapterError> {
+        if let Some(artifact) = load_capture_fixture(self.platform(), request)? {
+            return Ok(artifact);
+        }
+
         match self.context.session {
             DesktopSession::X11 => {}
             DesktopSession::Wayland => {
@@ -876,6 +984,10 @@ impl InputControlAdapter for LinuxAdapter {
     }
 
     fn execute_input(&self, request: &InputRequest) -> Result<InputOutcome, TendrilError> {
+        if let Some(outcome) = load_input_fixture(self.platform(), request)? {
+            return Ok(outcome);
+        }
+
         execute_linux_input(self.platform(), self.context.session, request)
     }
 }
@@ -1110,6 +1222,10 @@ impl CaptureAdapter for WindowsAdapter {
     }
 
     fn capture(&self, request: &CaptureRequest) -> Result<CaptureArtifact, PlatformAdapterError> {
+        if let Some(artifact) = load_capture_fixture(self.platform(), request)? {
+            return Ok(artifact);
+        }
+
         let path = unique_temp_path("png");
         match request.target {
             CaptureTargetKind::Display => self.capture_display(&request.target_id, &path)?,
@@ -1142,6 +1258,10 @@ impl InputControlAdapter for WindowsAdapter {
     }
 
     fn execute_input(&self, request: &InputRequest) -> Result<InputOutcome, TendrilError> {
+        if let Some(outcome) = load_input_fixture(self.platform(), request)? {
+            return Ok(outcome);
+        }
+
         execute_windows_input(self.platform(), request)
     }
 }

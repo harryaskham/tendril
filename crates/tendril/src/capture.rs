@@ -339,6 +339,7 @@ mod tests {
     use std::io::Cursor;
 
     use image::{DynamicImage, ImageBuffer, Rgba};
+    use proptest::prelude::*;
 
     use super::{build_capture_output, current_timestamp, resized_dimensions};
     use crate::config::ImageFormat;
@@ -464,6 +465,29 @@ mod tests {
         assert_eq!(output.output_to_source.x_numerator, 64);
         assert_eq!(output.output_to_source.x_denominator, 64);
         assert_eq!(output.media_type, "image/jpeg");
+    }
+
+    proptest! {
+        #[test]
+        fn resized_dimensions_never_exceed_requested_constraints(
+            width in 1u32..5000,
+            height in 1u32..5000,
+            max_width in proptest::option::of(1u32..5000),
+            max_height in proptest::option::of(1u32..5000),
+        ) {
+            let (resized_width, resized_height) = resized_dimensions(width, height, max_width, max_height);
+
+            prop_assert!(resized_width >= 1);
+            prop_assert!(resized_height >= 1);
+            prop_assert!(resized_width <= width);
+            prop_assert!(resized_height <= height);
+            if let Some(limit) = max_width {
+                prop_assert!(resized_width <= limit.max(1).min(width));
+            }
+            if let Some(limit) = max_height {
+                prop_assert!(resized_height <= limit.max(1).min(height));
+            }
+        }
     }
 
     fn sample_png(width: u32, height: u32) -> Vec<u8> {

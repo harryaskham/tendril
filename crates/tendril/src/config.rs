@@ -169,8 +169,6 @@ fn detect_paths(
 
 #[cfg(test)]
 mod tests {
-    use std::time::{SystemTime, UNIX_EPOCH};
-
     use super::{ConfigPaths, ImageFormat, LogLevel, TendrilConfig, detect_paths};
 
     #[test]
@@ -212,7 +210,8 @@ mod tests {
 
     #[test]
     fn load_from_missing_file_returns_defaults() {
-        let path = std::env::temp_dir().join(unique_name("missing-config"));
+        let tempdir = tempfile::tempdir().expect("tempdir should be created");
+        let path = tempdir.path().join("missing-config.yaml");
 
         let config = TendrilConfig::load_from_file(&path).expect("missing config uses defaults");
 
@@ -221,7 +220,9 @@ mod tests {
 
     #[test]
     fn load_from_yaml_applies_partial_defaults() {
+        let tempdir = tempfile::tempdir().expect("tempdir should be created");
         let path = write_temp_config(
+            tempdir.path(),
             r"
 capture:
   format: jpeg
@@ -235,12 +236,13 @@ logging:
         assert_eq!(config.capture.format, ImageFormat::Jpeg);
         assert_eq!(config.capture.compression, 85);
         assert_eq!(config.logging.level, LogLevel::Debug);
-        std::fs::remove_file(path).ok();
     }
 
     #[test]
     fn invalid_yaml_values_are_rejected() {
+        let tempdir = tempfile::tempdir().expect("tempdir should be created");
         let path = write_temp_config(
+            tempdir.path(),
             r"
 capture:
   compression: 255
@@ -250,20 +252,11 @@ capture:
         let error = TendrilConfig::load_from_file(&path).expect_err("invalid config should fail");
 
         assert_eq!(error.code(), "invalid_config");
-        std::fs::remove_file(path).ok();
     }
 
-    fn write_temp_config(contents: &str) -> std::path::PathBuf {
-        let path = std::env::temp_dir().join(unique_name("tendril-config"));
+    fn write_temp_config(dir: &std::path::Path, contents: &str) -> std::path::PathBuf {
+        let path = dir.join("config.yaml");
         std::fs::write(&path, contents).expect("temp config should be writable");
         path
-    }
-
-    fn unique_name(prefix: &str) -> String {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock should be after unix epoch")
-            .as_nanos();
-        format!("{prefix}-{nanos}.yaml")
     }
 }

@@ -816,6 +816,7 @@ mod tests {
     use crate::model::{
         CoordinateTransform, InputAction, ModifierKey, MouseButton, RunInputPayload,
     };
+    use proptest::prelude::*;
 
     #[test]
     fn parser_accepts_initial_action_set() {
@@ -897,6 +898,31 @@ mod tests {
     }
 
     #[test]
+    fn parser_rejects_branchy_invalid_sequences_with_precise_stages() {
+        for (sequence, stage, detail_key) in [
+            ("hold(ctrl),,tab", "parse", Some("action_index")),
+            ("hold(ctrl))", "parse", Some("offset")),
+            (r#"send("unterminated)"#, "parse", None),
+            ("hold(ctrl", "parse", None),
+            (r#"send("hi") trailing"#, "parse", Some("action")),
+            ("drag(1,2,3)", "parse", Some("action")),
+            ("wait(0)", "validate", Some("action")),
+            (r#"send("")"#, "validate", Some("action")),
+            (r#"send("bad\q")"#, "parse", Some("action")),
+        ] {
+            let error = parse_dsl_sequence(sequence).expect_err("sequence should be rejected");
+            let details = error.details().expect("details should be present");
+            assert_eq!(details["stage"], stage, "unexpected stage for `{sequence}`");
+            if let Some(detail_key) = detail_key {
+                assert!(
+                    details.get(detail_key).is_some(),
+                    "expected `{detail_key}` in details for `{sequence}`"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn plain_text_with_commas_remains_text_when_dsl_parse_fails() {
         let payload = parse_input_definition("hello, world").expect("text payload should parse");
         assert_eq!(
@@ -908,9 +934,26 @@ mod tests {
     }
 
     #[test]
+    fn bare_parenthesized_text_promotes_to_dsl_error() {
+        let error = parse_input_definition("send(hello)").expect_err("invalid dsl should fail");
+        assert_eq!(error.code(), "invalid_run_input");
+        assert_eq!(error.details().expect("details")["stage"], "parse");
+    }
+
+    #[test]
     fn top_level_commas_promote_valid_sequences_to_actions() {
         let payload = parse_input_definition("ctrl+c,tab").expect("dsl payload should parse");
         assert!(matches!(payload, RunInputPayload::Actions { .. }));
+    }
+
+    #[test]
+    fn quoted_commas_remain_text_payloads() {
+        let payload = parse_input_definition(r#"send("hello, world")"#)
+            .expect("quoted dsl payload should parse");
+        match payload {
+            RunInputPayload::Actions { actions } => assert_eq!(actions.len(), 1),
+            other => panic!("expected action payload, got {other:?}"),
+        }
     }
 
     #[test]
@@ -926,6 +969,18 @@ mod tests {
     }
 
     #[test]
+    fn remap_rounds_fractional_scale_factors_to_nearest_source_coordinate() {
+        let transform = CoordinateTransform {
+            x_numerator: 3,
+            x_denominator: 2,
+            y_numerator: 5,
+            y_denominator: 4,
+        };
+
+        assert_eq!(remap_output_point_to_source(&transform, 7, 7), (11, 9));
+    }
+
+    #[test]
     fn relative_coordinates_map_to_absolute_source_space() {
         let bounds = crate::model::Bounds {
             x: 50,
@@ -935,5 +990,50 @@ mod tests {
         };
 
         assert_eq!(relative_point_to_absolute(&bounds, 10, 20), (60, 100));
+    }
+
+    proptest! {
+        #[test]
+        fn bare_key_sequences_round_trip_into_ordered_actions(
+            keys in proptest::collection::vec("[A-Za-z0-9_+-]{1,8}", 2..8)
+        ) {
+            let sequence = keys.join(",");
+            let payload = parse_input_definition(&sequence).expect("generated sequence should parse");
+
+            match payload {
+                RunInputPayload::Actions { actions } => {
+                    let expected = keys
+                        .into_iter()
+                        .map(|key| InputAction::KeyTap { key: key.to_ascii_lowercase() })
+                        .collect::<Vec<_>>();
+                    prop_assert_eq!(actions, expected);
+                }
+                other => prop_assert!(false, "expected actions payload, got {other:?}"),
+            }
+        }
+
+        #[test]
+        fn coordinate_remap_is_monotonic_with_positive_scale_factors(
+            x0 in 0i32..5_000,
+            dx in 0i32..128,
+            y0 in 0i32..5_000,
+            dy in 0i32..128,
+            x_num in 1u32..32,
+            x_den in 1u32..32,
+            y_num in 1u32..32,
+            y_den in 1u32..32,
+        ) {
+            let transform = CoordinateTransform {
+                x_numerator: x_num,
+                x_denominator: x_den,
+                y_numerator: y_num,
+                y_denominator: y_den,
+            };
+            let (mapped_x0, mapped_y0) = remap_output_point_to_source(&transform, x0, y0);
+            let (mapped_x1, mapped_y1) = remap_output_point_to_source(&transform, x0 + dx, y0 + dy);
+
+            prop_assert!(mapped_x1 >= mapped_x0);
+            prop_assert!(mapped_y1 >= mapped_y0);
+        }
     }
 }
