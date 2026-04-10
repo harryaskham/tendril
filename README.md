@@ -188,6 +188,9 @@ start a helper daemon to bypass platform rules.
 ### macOS
 
 - `list`/`capture`/`run` are intended for a local GUI session.
+- Target discovery now uses native Swift/AppKit/ApplicationServices APIs rather
+  than a Python bridge, and can coexist with yabai/skhd-managed desktops while
+  keeping Quartz discovery authoritative.
 - Screen capture requires **Screen Recording** consent for the invoking terminal
   or Tendril binary.
 - Input control requires **Accessibility** consent.
@@ -198,8 +201,11 @@ start a helper daemon to bypass platform rules.
 
 - Tendril expects an active graphical session.
 - The generic adapter supports discovery/capture/input on **X11**.
-- The generic adapter does **not** currently provide compositor-portable
-  capture/input support on Wayland.
+- On **Wayland**, Tendril now supports compositor-aware target discovery via
+  Hyprland (`hyprctl`), sway (`swaymsg`), or wlroots output enumeration
+  (`wlr-randr`), and command-scoped capture via `grim`.
+- Wayland input injection remains compositor-specific and is not exposed by the
+  generic adapter surface.
 - Audio probing expects a supported user-session backend such as PipeWire or
   PulseAudio.
 - Linux permissions are usually session/backend constraints rather than central

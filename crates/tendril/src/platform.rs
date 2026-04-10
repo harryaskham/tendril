@@ -844,13 +844,10 @@ impl CaptureAdapter for LinuxAdapter {
             DesktopSession::X11 => Ok(FeatureSupport::available(capability).with_notes(vec![
                 "X11 capture support is adapter-local and command-scoped.".to_owned(),
             ])),
-            DesktopSession::Wayland => Err(PlatformAdapterError::unsupported(
-                capability,
-                self.platform(),
-                CapabilityErrorReason::UnsupportedSession,
-                "The Linux adapter spine does not yet provide a compositor-portable Wayland capture backend.",
-                Some("Use an X11 session or extend the adapter with a portal/compositor backend."),
-            )),
+            DesktopSession::Wayland => Ok(FeatureSupport::available(capability).with_notes(vec![
+                "Wayland capture uses compositor-aware discovery plus grim for command-scoped screenshots."
+                    .to_owned(),
+            ])),
             _ => Err(PlatformAdapterError::unsupported(
                 capability,
                 self.platform(),
@@ -869,18 +866,13 @@ impl CaptureAdapter for LinuxAdapter {
         match self.context.session {
             DesktopSession::X11 => {}
             DesktopSession::Wayland => {
-                return Err(PlatformAdapterError::unsupported(
-                    match request.target {
-                        CaptureTargetKind::Window => Capability::WindowCapture,
-                        CaptureTargetKind::Display => Capability::DisplayCapture,
-                    },
-                    self.platform(),
-                    CapabilityErrorReason::UnsupportedSession,
-                    "The Linux adapter spine does not yet provide a compositor-portable Wayland capture backend.",
-                    Some(
-                        "Use an X11 session or extend the adapter with a portal/compositor backend.",
-                    ),
-                ));
+                let image_bytes = capture_wayland_target(&self.context, request)?;
+                return Ok(CaptureArtifact {
+                    target_id: request.target_id.clone(),
+                    media_type: "image/png".to_owned(),
+                    image_bytes,
+                    captured_at: current_timestamp(),
+                });
             }
             _ => {
                 return Err(PlatformAdapterError::unsupported(
@@ -1353,6 +1345,78 @@ fn parse_display_zero_based(
     })
 }
 
+fn capture_wayland_target(
+    context: &AdapterContext,
+    request: &CaptureRequest,
+) -> Result<Vec<u8>, PlatformAdapterError> {
+    let target = if request.target == CaptureTargetKind::Display {
+        discovery::discover_targets(context, &TargetDiscoveryRequest)?
+            .targets
+            .into_iter()
+            .find(|target| {
+                target.kind == CaptureTargetKind::Display && target.id == request.target_id
+            })
+    } else {
+        discovery::discover_targets(context, &TargetDiscoveryRequest)?
+            .targets
+            .into_iter()
+            .find(|target| {
+                target.kind == CaptureTargetKind::Window && target.id == request.target_id
+            })
+    };
+    let target = target.ok_or_else(|| {
+        PlatformAdapterError::adapter_failure(
+            AdapterOperation::Capture,
+            context.platform,
+            format!(
+                "target `{}` was not found during Wayland capture",
+                request.target_id
+            ),
+        )
+    })?;
+
+    let path = unique_temp_path("png");
+    let geometry = format!(
+        "{}x{}+{}+{}",
+        target.bounds.width, target.bounds.height, target.bounds.x, target.bounds.y
+    );
+    let mut command = std::process::Command::new("grim");
+    command
+        .arg("-t")
+        .arg("png")
+        .arg("-g")
+        .arg(geometry)
+        .arg(&path);
+    let output = command.output().map_err(|error| {
+        PlatformAdapterError::adapter_failure(
+            AdapterOperation::Capture,
+            context.platform,
+            format!("failed to spawn grim: {error}"),
+        )
+    })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(PlatformAdapterError::adapter_failure(
+            AdapterOperation::Capture,
+            context.platform,
+            if stderr.trim().is_empty() {
+                format!("grim exited with status {}", output.status)
+            } else {
+                format!("grim failed: {}", stderr.trim())
+            },
+        ));
+    }
+
+    read_and_remove_temp_capture(&path).map_err(|error| {
+        PlatformAdapterError::adapter_failure(
+            AdapterOperation::Capture,
+            context.platform,
+            error.to_string(),
+        )
+    })
+}
+
 fn execute_linux_input(
     platform: PlatformKind,
     session: DesktopSession,
@@ -1362,10 +1426,10 @@ fn execute_linux_input(
         return Err(TendrilError::from(PlatformAdapterError::unsupported(
             Capability::InputControl,
             platform,
-            CapabilityErrorReason::UnsupportedSession,
-            "The Linux run surface currently requires an X11 session for target-scoped input injection.",
+            CapabilityErrorReason::UnsupportedFeature,
+            "Wayland input injection remains compositor-specific and is not enabled by the generic Linux run surface.",
             Some(
-                "Use an X11 session or extend Tendril with a compositor-specific Wayland input backend.",
+                "Use X11 for input automation today; Wayland support in this bead covers native discovery plus capture backends.",
             ),
         )));
     }

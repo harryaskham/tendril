@@ -96,10 +96,19 @@ fn unsupported_platform_paths_surface_structured_capability_errors() {
         Some(AudioBackend::PipeWire),
     ));
 
-    let capture_error = linux_wayland
+    let capture_support = linux_wayland
         .capture_support(CaptureTargetKind::Window)
-        .expect_err("wayland capture should remain unsupported by the generic adapter");
-    assert_unsupported_session(capture_error, tendril::platform::Capability::WindowCapture);
+        .expect("wayland capture support should describe compositor-aware backends");
+    assert_eq!(
+        capture_support.capability,
+        tendril::platform::Capability::WindowCapture
+    );
+    assert!(
+        capture_support
+            .notes
+            .iter()
+            .any(|note| note.contains("grim") || note.contains("Wayland"))
+    );
 
     let input_error = linux_wayland
         .input_support()

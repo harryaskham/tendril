@@ -1,7 +1,9 @@
 use std::env;
+use std::io::ErrorKind;
 use std::process::Command;
 
 use serde::Deserialize;
+use serde_json::Value;
 
 use crate::model::{Bounds, ScaleFactor};
 use crate::platform::{
@@ -54,21 +56,15 @@ fn discover_linux_targets(
             targets.extend(discover_x11_windows(context)?);
             Ok(sort_inventory(TargetInventory { targets }))
         }
-        DesktopSession::Wayland => Err(PlatformAdapterError::unsupported(
-            Capability::TargetDiscovery,
-            context.platform,
-            CapabilityErrorReason::UnsupportedSession,
-            "Generic Wayland discovery is not yet portable enough to expose stable window and display identifiers.",
-            Some("Use an X11 session for now or add a compositor-specific discovery backend."),
-        )),
+        DesktopSession::Wayland => discover_wayland_targets(context),
         DesktopSession::Unknown
         | DesktopSession::MacOsWindowServer
         | DesktopSession::WindowsDesktop => Err(PlatformAdapterError::unsupported(
             Capability::TargetDiscovery,
             context.platform,
             CapabilityErrorReason::UnsupportedSession,
-            "Target discovery requires a detected interactive X11 desktop session.",
-            Some("Set DISPLAY or run Tendril from an active graphical login session."),
+            "Target discovery requires a detected interactive X11 or Wayland desktop session.",
+            Some("Set XDG_SESSION_TYPE or run Tendril from an active graphical login session."),
         )),
     }
 }
@@ -186,6 +182,363 @@ fn discover_x11_window(context: &AdapterContext, window_id: &str) -> Option<Targ
         app_name: metadata.app_name,
         process_id: metadata.process_id,
     })
+}
+
+fn discover_wayland_targets(
+    context: &AdapterContext,
+) -> Result<TargetInventory, PlatformAdapterError> {
+    if let Some(targets) = discover_hyprland_targets(context)? {
+        return Ok(sort_inventory(TargetInventory { targets }));
+    }
+
+    if let Some(targets) = discover_sway_targets(context)? {
+        return Ok(sort_inventory(TargetInventory { targets }));
+    }
+
+    if let Some(displays) = discover_wlr_randr_displays(context)? {
+        return Ok(sort_inventory(TargetInventory { targets: displays }));
+    }
+
+    Err(PlatformAdapterError::unsupported(
+        Capability::TargetDiscovery,
+        context.platform,
+        CapabilityErrorReason::UnsupportedFeature,
+        "Wayland discovery requires a compositor-aware backend such as Hyprland, sway, or a wlroots compositor exposing wlr-randr.",
+        Some(
+            "Install grim plus hyprctl, swaymsg, or wlr-randr in the active Wayland session, then rerun tendril list.",
+        ),
+    ))
+}
+
+#[allow(clippy::too_many_lines)]
+fn discover_hyprland_targets(
+    context: &AdapterContext,
+) -> Result<Option<Vec<TargetDescriptor>>, PlatformAdapterError> {
+    let Some(monitors_output) = run_optional_command(context, "hyprctl", &["monitors", "-j"])?
+    else {
+        return Ok(None);
+    };
+    let monitors = serde_json::from_str::<Value>(&monitors_output).map_err(|error| {
+        PlatformAdapterError::adapter_failure(
+            AdapterOperation::TargetDiscovery,
+            context.platform,
+            format!("failed to parse hyprctl monitors JSON: {error}"),
+        )
+    })?;
+    let clients_output =
+        run_optional_command(context, "hyprctl", &["clients", "-j"])?.unwrap_or_default();
+    let clients = if clients_output.trim().is_empty() {
+        Value::Array(Vec::new())
+    } else {
+        serde_json::from_str::<Value>(&clients_output).map_err(|error| {
+            PlatformAdapterError::adapter_failure(
+                AdapterOperation::TargetDiscovery,
+                context.platform,
+                format!("failed to parse hyprctl clients JSON: {error}"),
+            )
+        })?
+    };
+
+    let mut targets = Vec::new();
+    if let Some(monitors) = monitors.as_array() {
+        for (index, monitor) in monitors.iter().enumerate() {
+            let width = json_u32(monitor, "width").unwrap_or(0);
+            let height = json_u32(monitor, "height").unwrap_or(0);
+            if width == 0 || height == 0 {
+                continue;
+            }
+            let name = json_str(monitor, "name")
+                .map_or_else(|| format!("display-{}", index + 1), str::to_owned);
+            let scale = json_f64(monitor, "scale").unwrap_or(1.0);
+            targets.push(TargetDescriptor {
+                id: name.clone(),
+                title: None,
+                kind: CaptureTargetKind::Display,
+                name,
+                bounds: Bounds {
+                    x: json_i32(monitor, "x").unwrap_or(0),
+                    y: json_i32(monitor, "y").unwrap_or(0),
+                    width,
+                    height,
+                },
+                scale_factor: scale_factor_from_float(scale),
+                capture_supported: true,
+                input_supported: false,
+                app_name: None,
+                process_id: None,
+            });
+        }
+    }
+
+    if let Some(clients) = clients.as_array() {
+        for client in clients {
+            if json_bool(client, "mapped") == Some(false)
+                || json_bool(client, "hidden") == Some(true)
+            {
+                continue;
+            }
+            let position = json_array_i32_pair(client, "at");
+            let size = json_array_u32_pair(client, "size");
+            let (Some((x, y)), Some((width, height))) = (position, size) else {
+                continue;
+            };
+            if width == 0 || height == 0 {
+                continue;
+            }
+            let title = json_str(client, "title")
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned);
+            let app_name = json_str(client, "class")
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned);
+            let name = title
+                .clone()
+                .or_else(|| app_name.clone())
+                .unwrap_or_else(|| json_str(client, "address").unwrap_or("window").to_owned());
+            let id = format!("hypr:{}", json_str(client, "address").unwrap_or(&name));
+            targets.push(TargetDescriptor {
+                id,
+                title,
+                kind: CaptureTargetKind::Window,
+                name,
+                bounds: Bounds {
+                    x,
+                    y,
+                    width,
+                    height,
+                },
+                scale_factor: ScaleFactor::identity(),
+                capture_supported: true,
+                input_supported: false,
+                app_name,
+                process_id: json_u32(client, "pid"),
+            });
+        }
+    }
+
+    Ok((!targets.is_empty()).then_some(targets))
+}
+
+fn discover_sway_targets(
+    context: &AdapterContext,
+) -> Result<Option<Vec<TargetDescriptor>>, PlatformAdapterError> {
+    let Some(outputs_output) =
+        run_optional_command(context, "swaymsg", &["-r", "-t", "get_outputs"])?
+    else {
+        return Ok(None);
+    };
+    let outputs = serde_json::from_str::<Value>(&outputs_output).map_err(|error| {
+        PlatformAdapterError::adapter_failure(
+            AdapterOperation::TargetDiscovery,
+            context.platform,
+            format!("failed to parse sway output JSON: {error}"),
+        )
+    })?;
+    let tree_output =
+        run_optional_command(context, "swaymsg", &["-r", "-t", "get_tree"])?.unwrap_or_default();
+    let tree = if tree_output.trim().is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_str::<Value>(&tree_output).map_err(|error| {
+            PlatformAdapterError::adapter_failure(
+                AdapterOperation::TargetDiscovery,
+                context.platform,
+                format!("failed to parse sway tree JSON: {error}"),
+            )
+        })?
+    };
+
+    let mut targets = Vec::new();
+    if let Some(outputs) = outputs.as_array() {
+        for output in outputs {
+            if json_bool(output, "active") == Some(false) {
+                continue;
+            }
+            let Some(rect) = output.get("rect") else {
+                continue;
+            };
+            let width = json_u32(rect, "width").unwrap_or(0);
+            let height = json_u32(rect, "height").unwrap_or(0);
+            if width == 0 || height == 0 {
+                continue;
+            }
+            let Some(name) = json_str(output, "name").map(str::to_owned) else {
+                continue;
+            };
+            let scale = json_f64(output, "scale").unwrap_or(1.0);
+            targets.push(TargetDescriptor {
+                id: name.clone(),
+                title: None,
+                kind: CaptureTargetKind::Display,
+                name,
+                bounds: Bounds {
+                    x: json_i32(rect, "x").unwrap_or(0),
+                    y: json_i32(rect, "y").unwrap_or(0),
+                    width,
+                    height,
+                },
+                scale_factor: scale_factor_from_float(scale),
+                capture_supported: true,
+                input_supported: false,
+                app_name: None,
+                process_id: None,
+            });
+        }
+    }
+
+    if !tree.is_null() {
+        collect_sway_windows(&tree, &mut targets);
+    }
+
+    Ok((!targets.is_empty()).then_some(targets))
+}
+
+fn discover_wlr_randr_displays(
+    context: &AdapterContext,
+) -> Result<Option<Vec<TargetDescriptor>>, PlatformAdapterError> {
+    let Some(output) = run_optional_command(context, "wlr-randr", &[])? else {
+        return Ok(None);
+    };
+    let mut displays = Vec::new();
+    let mut current_name: Option<String> = None;
+    let mut current_bounds: Option<Bounds> = None;
+
+    for line in output.lines() {
+        if line.trim().is_empty() {
+            if let (Some(name), Some(bounds)) = (current_name.take(), current_bounds.take())
+                && bounds.width > 0
+                && bounds.height > 0
+            {
+                displays.push(TargetDescriptor {
+                    id: name.clone(),
+                    title: None,
+                    kind: CaptureTargetKind::Display,
+                    name,
+                    bounds,
+                    scale_factor: ScaleFactor::identity(),
+                    capture_supported: true,
+                    input_supported: false,
+                    app_name: None,
+                    process_id: None,
+                });
+            }
+            continue;
+        }
+
+        if !line.starts_with(' ') && !line.starts_with('\t') {
+            current_name = Some(line.trim().to_owned());
+            continue;
+        }
+
+        if let Some(mode) = line.trim().strip_prefix("current ") {
+            current_bounds = parse_wlr_randr_mode(mode);
+        }
+    }
+
+    if let (Some(name), Some(bounds)) = (current_name.take(), current_bounds.take())
+        && bounds.width > 0
+        && bounds.height > 0
+    {
+        displays.push(TargetDescriptor {
+            id: name.clone(),
+            title: None,
+            kind: CaptureTargetKind::Display,
+            name,
+            bounds,
+            scale_factor: ScaleFactor::identity(),
+            capture_supported: true,
+            input_supported: false,
+            app_name: None,
+            process_id: None,
+        });
+    }
+
+    Ok((!displays.is_empty()).then_some(displays))
+}
+
+fn collect_sway_windows(node: &Value, targets: &mut Vec<TargetDescriptor>) {
+    if let Some(object) = node.as_object() {
+        let node_type = object
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let visible = object
+            .get("visible")
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
+        if matches!(node_type, "con" | "floating_con") && visible {
+            if let Some(rect) = object.get("rect") {
+                let width = json_u32(rect, "width").unwrap_or(0);
+                let height = json_u32(rect, "height").unwrap_or(0);
+                if width > 0 && height > 0 {
+                    let title = object
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .map(str::to_owned);
+                    let app_name = object
+                        .get("app_id")
+                        .and_then(Value::as_str)
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .map(str::to_owned)
+                        .or_else(|| {
+                            object
+                                .get("window_properties")
+                                .and_then(|properties| properties.get("class"))
+                                .and_then(Value::as_str)
+                                .map(str::trim)
+                                .filter(|value| !value.is_empty())
+                                .map(str::to_owned)
+                        });
+                    let name = title
+                        .clone()
+                        .or_else(|| app_name.clone())
+                        .unwrap_or_else(|| {
+                            object.get("id").and_then(Value::as_i64).map_or_else(
+                                || "window".to_owned(),
+                                |value| format!("window-{value}"),
+                            )
+                        });
+                    let id = object
+                        .get("id")
+                        .and_then(Value::as_i64)
+                        .map_or_else(|| format!("sway:{name}"), |value| format!("sway:{value}"));
+                    targets.push(TargetDescriptor {
+                        id,
+                        title,
+                        kind: CaptureTargetKind::Window,
+                        name,
+                        bounds: Bounds {
+                            x: json_i32(rect, "x").unwrap_or(0),
+                            y: json_i32(rect, "y").unwrap_or(0),
+                            width,
+                            height,
+                        },
+                        scale_factor: ScaleFactor::identity(),
+                        capture_supported: true,
+                        input_supported: false,
+                        app_name,
+                        process_id: object
+                            .get("pid")
+                            .and_then(Value::as_u64)
+                            .and_then(|value| u32::try_from(value).ok()),
+                    });
+                }
+            }
+        }
+
+        for key in ["nodes", "floating_nodes"] {
+            if let Some(children) = object.get(key).and_then(Value::as_array) {
+                for child in children {
+                    collect_sway_windows(child, targets);
+                }
+            }
+        }
+    }
 }
 
 fn discover_windows_targets(
@@ -334,68 +687,7 @@ Get-Process |
 fn discover_macos_targets(
     context: &AdapterContext,
 ) -> Result<TargetInventory, PlatformAdapterError> {
-    let script = r#"
-set json_text to do shell script "/usr/bin/python3 - <<'PY'
-import json
-from AppKit import NSScreen
-from Quartz import CGWindowListCopyWindowInfo, kCGNullWindowID, kCGWindowListOptionOnScreenOnly
-
-screens = []
-for index, screen in enumerate(NSScreen.screens()):
-    frame = screen.frame()
-    name = screen.localizedName() if hasattr(screen, 'localizedName') else f'Display {index + 1}'
-    screens.append({
-        'id': f'display-{index + 1}',
-        'title': None,
-        'kind': 'display',
-        'name': str(name),
-        'bounds': {
-            'x': int(frame.origin.x),
-            'y': int(frame.origin.y),
-            'width': int(frame.size.width),
-            'height': int(frame.size.height),
-        },
-        'scale_factor': {
-            'numerator': int(round(screen.backingScaleFactor() * 1000)),
-            'denominator': 1000,
-        },
-        'capture_supported': True,
-        'input_supported': True,
-        'app_name': None,
-        'process_id': None,
-    })
-
-windows = []
-for entry in CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly, kCGNullWindowID) or []:
-    bounds = entry.get('kCGWindowBounds') or {}
-    window_id = entry.get('kCGWindowNumber')
-    owner = entry.get('kCGWindowOwnerName')
-    title = entry.get('kCGWindowName')
-    if not window_id or not bounds.get('Width') or not bounds.get('Height'):
-        continue
-    windows.append({
-        'id': str(window_id),
-        'title': title,
-        'kind': 'window',
-        'name': owner or title or str(window_id),
-        'bounds': {
-            'x': int(bounds.get('X', 0)),
-            'y': int(bounds.get('Y', 0)),
-            'width': int(bounds.get('Width', 0)),
-            'height': int(bounds.get('Height', 0)),
-        },
-        'scale_factor': {'numerator': 1, 'denominator': 1},
-        'capture_supported': True,
-        'input_supported': True,
-        'app_name': owner,
-        'process_id': entry.get('kCGWindowOwnerPID'),
-    })
-print(json.dumps({'targets': screens + windows}))
-PY"
-return json_text
-"#;
-
-    match run_osascript(context, script) {
+    match run_swift(context, macos_discovery_script()) {
         Ok(output) => deserialize_json_inventory(&output, context),
         Err(error) if is_macos_permission_error(&error.to_string()) => {
             Err(PlatformAdapterError::missing_permission(
@@ -406,16 +698,123 @@ return json_text
                 "Grant Screen Recording to the invoking terminal or tendril binary, then rerun tendril list.",
             ))
         }
-        Err(_) => Err(PlatformAdapterError::unsupported(
-            Capability::TargetDiscovery,
+        Err(error) => Err(PlatformAdapterError::adapter_failure(
+            AdapterOperation::TargetDiscovery,
             context.platform,
-            CapabilityErrorReason::UnsupportedFeature,
-            "macOS discovery requires system Python with AppKit and Quartz available to the invoking user session.",
-            Some(
-                "Run Tendril from a logged-in macOS desktop session with Screen Recording access.",
-            ),
+            format!("macOS native discovery failed: {error}"),
         )),
     }
+}
+
+#[allow(clippy::too_many_lines)]
+fn macos_discovery_script() -> &'static str {
+    r#"
+import AppKit
+import ApplicationServices
+import Foundation
+
+func emit(_ jsonObject: Any) {
+    guard JSONSerialization.isValidJSONObject(jsonObject) else {
+        fputs("invalid discovery payload\n", stderr)
+        exit(1)
+    }
+    do {
+        let data = try JSONSerialization.data(withJSONObject: jsonObject, options: [])
+        if let text = String(data: data, encoding: .utf8) {
+            print(text)
+        } else {
+            fputs("failed to encode discovery payload\n", stderr)
+            exit(1)
+        }
+    } catch {
+        fputs("\(error)\n", stderr)
+        exit(1)
+    }
+}
+
+let options = CGWindowListOption(arrayLiteral: .optionOnScreenOnly, .excludeDesktopElements)
+let windowInfo = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] ?? []
+let windowLayerKey = kCGWindowLayer as String
+let windowNumberKey = kCGWindowNumber as String
+let windowOwnerNameKey = kCGWindowOwnerName as String
+let windowOwnerPidKey = kCGWindowOwnerPID as String
+let windowNameKey = kCGWindowName as String
+let windowBoundsKey = kCGWindowBounds as String
+let isOnscreenKey = kCGWindowIsOnscreen as String
+let targetIsYabai = ProcessInfo.processInfo.environment["YABAI_SOCKET"] != nil || FileManager.default.fileExists(atPath: "/opt/homebrew/bin/yabai") || FileManager.default.fileExists(atPath: "/usr/local/bin/yabai")
+
+var targets: [[String: Any]] = []
+for (index, screen) in NSScreen.screens.enumerated() {
+    let frame = screen.frame
+    let scale = screen.backingScaleFactor
+    let localizedName = screen.localizedName ?? "Display \(index + 1)"
+    targets.append([
+        "id": "display-\(index + 1)",
+        "title": NSNull(),
+        "kind": "display",
+        "name": localizedName,
+        "bounds": [
+            "x": Int(frame.origin.x.rounded()),
+            "y": Int(frame.origin.y.rounded()),
+            "width": Int(frame.size.width.rounded()),
+            "height": Int(frame.size.height.rounded()),
+        ],
+        "scale_factor": [
+            "numerator": Int((scale * 1000).rounded()),
+            "denominator": 1000,
+        ],
+        "capture_supported": true,
+        "input_supported": true,
+        "app_name": NSNull(),
+        "process_id": NSNull(),
+    ])
+}
+
+for entry in windowInfo {
+    guard let layer = entry[windowLayerKey] as? NSNumber, layer.intValue == 0 else {
+        continue
+    }
+    let onscreen = (entry[isOnscreenKey] as? NSNumber)?.boolValue ?? true
+    guard onscreen else {
+        continue
+    }
+    guard let windowNumber = entry[windowNumberKey] as? NSNumber else {
+        continue
+    }
+    let boundsDictionary = entry[windowBoundsKey] as? NSDictionary ?? [:]
+    let bounds = CGRect(dictionaryRepresentation: boundsDictionary)
+    guard bounds.width > 0, bounds.height > 0 else {
+        continue
+    }
+    let ownerName = (entry[windowOwnerNameKey] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let title = (entry[windowNameKey] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let windowName = title?.isEmpty == false ? title! : (ownerName?.isEmpty == false ? ownerName! : "window-\(windowNumber)")
+    let pid = (entry[windowOwnerPidKey] as? NSNumber)?.intValue
+    targets.append([
+        "id": String(windowNumber.intValue),
+        "title": title?.isEmpty == false ? title! : NSNull(),
+        "kind": "window",
+        "name": windowName,
+        "bounds": [
+            "x": Int(bounds.origin.x.rounded()),
+            "y": Int(bounds.origin.y.rounded()),
+            "width": Int(bounds.width.rounded()),
+            "height": Int(bounds.height.rounded()),
+        ],
+        "scale_factor": [
+            "numerator": 1,
+            "denominator": 1,
+        ],
+        "capture_supported": true,
+        "input_supported": true,
+        "app_name": ownerName?.isEmpty == false ? ownerName! : NSNull(),
+        "process_id": pid ?? NSNull(),
+        "notes": targetIsYabai ? ["yabai detected in session; native Quartz discovery remains authoritative."] : [],
+    ])
+}
+
+emit(["targets": targets])
+"#
 }
 
 fn run_command(
@@ -458,8 +857,56 @@ fn run_powershell(context: &AdapterContext, script: &str) -> Result<String, Plat
     run_command(context, "powershell", &["-NoProfile", "-Command", script])
 }
 
-fn run_osascript(context: &AdapterContext, script: &str) -> Result<String, PlatformAdapterError> {
-    run_command(context, "osascript", &["-e", script])
+fn run_swift(context: &AdapterContext, script: &str) -> Result<String, PlatformAdapterError> {
+    run_command(context, "swift", &["-e", script])
+}
+
+fn run_optional_command(
+    context: &AdapterContext,
+    program: &str,
+    args: &[&str],
+) -> Result<Option<String>, PlatformAdapterError> {
+    let output = Command::new(program).args(args).output();
+    match output {
+        Ok(output) if output.status.success() => {
+            Ok(Some(String::from_utf8_lossy(&output.stdout).into_owned()))
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr).to_ascii_lowercase();
+            let stdout = String::from_utf8_lossy(&output.stdout).to_ascii_lowercase();
+            if stderr.contains("unknown socket")
+                || stderr.contains("unable to retrieve socket path")
+                || stderr.contains("unable to connect")
+                || stderr.contains("ipc")
+                || stdout.contains("unable to connect")
+                || stdout.contains("no running instance")
+            {
+                Ok(None)
+            } else {
+                Err(PlatformAdapterError::adapter_failure(
+                    AdapterOperation::TargetDiscovery,
+                    context.platform,
+                    format!(
+                        "`{program}` exited with status {}: {}{}{}",
+                        output.status,
+                        stdout.trim(),
+                        if stdout.trim().is_empty() || stderr.trim().is_empty() {
+                            ""
+                        } else {
+                            " | "
+                        },
+                        stderr.trim()
+                    ),
+                ))
+            }
+        }
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(PlatformAdapterError::adapter_failure(
+            AdapterOperation::TargetDiscovery,
+            context.platform,
+            format!("failed to execute `{program}`: {error}"),
+        )),
+    }
 }
 
 fn deserialize_json_inventory(
@@ -497,6 +944,81 @@ where
                 format!("failed to parse discovery JSON array: {error}"),
             )
         })
+}
+
+fn json_str<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
+    value.get(key).and_then(Value::as_str)
+}
+
+fn json_i32(value: &Value, key: &str) -> Option<i32> {
+    value
+        .get(key)
+        .and_then(Value::as_i64)
+        .and_then(|raw| i32::try_from(raw).ok())
+}
+
+fn json_u32(value: &Value, key: &str) -> Option<u32> {
+    value
+        .get(key)
+        .and_then(Value::as_u64)
+        .and_then(|raw| u32::try_from(raw).ok())
+}
+
+fn json_f64(value: &Value, key: &str) -> Option<f64> {
+    value.get(key).and_then(Value::as_f64)
+}
+
+fn json_bool(value: &Value, key: &str) -> Option<bool> {
+    value.get(key).and_then(Value::as_bool)
+}
+
+fn json_array_i32_pair(value: &Value, key: &str) -> Option<(i32, i32)> {
+    let values = value.get(key)?.as_array()?;
+    let x = values
+        .first()?
+        .as_i64()
+        .and_then(|raw| i32::try_from(raw).ok())?;
+    let y = values
+        .get(1)?
+        .as_i64()
+        .and_then(|raw| i32::try_from(raw).ok())?;
+    Some((x, y))
+}
+
+fn json_array_u32_pair(value: &Value, key: &str) -> Option<(u32, u32)> {
+    let values = value.get(key)?.as_array()?;
+    let width = values
+        .first()?
+        .as_u64()
+        .and_then(|raw| u32::try_from(raw).ok())?;
+    let height = values
+        .get(1)?
+        .as_u64()
+        .and_then(|raw| u32::try_from(raw).ok())?;
+    Some((width, height))
+}
+
+fn scale_factor_from_float(scale: f64) -> ScaleFactor {
+    let normalized = if scale.is_finite() && scale > 0.0 {
+        scale
+    } else {
+        1.0
+    };
+    let numerator = format!("{:.0}", normalized * 1000.0)
+        .parse::<u32>()
+        .unwrap_or(u32::MAX)
+        .max(1);
+    ScaleFactor {
+        numerator,
+        denominator: 1000,
+    }
+}
+
+fn parse_wlr_randr_mode(line: &str) -> Option<Bounds> {
+    let geometry = line
+        .split_whitespace()
+        .find(|token| token.contains('x') && token.contains('+'))?;
+    parse_simple_geometry(geometry)
 }
 
 fn parse_xrandr_geometry(token: &str) -> Option<Bounds> {
@@ -653,8 +1175,8 @@ const fn target_kind_rank(kind: CaptureTargetKind) -> u8 {
 mod tests {
     use super::{
         Bounds, X11WindowMetadata, extract_all_quoted_strings, parse_simple_geometry,
-        parse_window_id_list, parse_xprop_window_metadata, parse_xrandr_geometry,
-        parse_xwininfo_geometry,
+        parse_window_id_list, parse_wlr_randr_mode, parse_xprop_window_metadata,
+        parse_xrandr_geometry, parse_xwininfo_geometry,
     };
 
     #[test]
@@ -742,6 +1264,25 @@ _NET_WM_PID(CARDINAL) = 12345
         assert_eq!(
             extract_all_quoted_strings(r#"WM_CLASS(STRING) = "Navigator", "firefox""#),
             vec!["Navigator", "firefox"]
+        );
+    }
+
+    #[test]
+    fn parses_wlr_randr_current_mode_line() {
+        assert_eq!(
+            parse_wlr_randr_mode(
+                "1920x1080 px, 60.000 Hz, position 0,0, transform normal, scale 1.000000"
+            ),
+            None
+        );
+        assert_eq!(
+            parse_wlr_randr_mode("1920x1080+0+0"),
+            Some(Bounds {
+                x: 0,
+                y: 0,
+                width: 1920,
+                height: 1080,
+            })
         );
     }
 }
