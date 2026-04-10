@@ -56,12 +56,12 @@ agent_defaults:
   node_selector: local_only
 agents:
   persistent:
-    tndrl-boot:
-      profile: project-bootstrap
-      type: claude
-      auto_start: true
+    tndrl-ctrl:
+      profile: project-controller
+      type: pi
+      auto_start: false
       restart: failure
-      restart_backoff_secs: 600
+      restart_backoff_secs: 60
       cadence:
         inbox_poll_interval_secs: 60
         jitter_secs: 0
