@@ -5,15 +5,13 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
 
 workspace_version() {
-  awk '
-    $0 == "[workspace.package]" { in_block = 1; next }
-    /^\[/ { in_block = 0 }
-    in_block && $1 == "version" {
-      gsub(/"/, "", $3)
-      print $3
-      exit
-    }
-  ' "${repo_root}/Cargo.toml"
+  local manifest="${repo_root}/Cargo.toml"
+
+  if command -v nix >/dev/null 2>&1; then
+    nix eval --impure --raw --expr "let manifest = builtins.fromTOML (builtins.readFile ${manifest}); in manifest.workspace.package.version" 2>/dev/null && return 0
+  fi
+
+  sed -n '/^\[workspace.package\]/,/^\[/{ s/^version = "\([^"]*\)"$/\1/p; }' "${manifest}" | head -n 1
 }
 
 release_tag() {
