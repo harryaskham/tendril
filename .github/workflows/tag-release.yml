@@ -24,6 +24,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Remove stale local build artifacts
+        run: rm -rf target
+
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v16
 
@@ -57,6 +60,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Remove stale local build artifacts
+        run: rm -rf target
 
       - name: Download release artifacts
         uses: actions/download-artifact@v4
