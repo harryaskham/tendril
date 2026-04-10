@@ -11,28 +11,20 @@ if [[ -z "$tag" ]]; then
 fi
 
 version=${tag#v}
+start_line="$({ grep -nE "^## \[(v)?${version//./\\.}\]" CHANGELOG.md || true; } | head -n 1 | cut -d: -f1)"
 
-awk -v version="$version" '
-  BEGIN {
-    in_section = 0
-    found = 0
-  }
-  $0 ~ "^## \\[(v)?" version "\\]" {
-    in_section = 1
-    found = 1
-    print
-    next
-  }
-  in_section && /^## \[/ {
-    exit
-  }
-  in_section {
-    print
-  }
-  END {
-    if (!found) {
-      printf("release notes for version %s were not found in CHANGELOG.md\n", version) > "/dev/stderr"
-      exit 1
-    }
-  }
-' CHANGELOG.md
+if [[ -z "$start_line" ]]; then
+  echo "release notes for version $version were not found in CHANGELOG.md" >&2
+  exit 1
+fi
+
+rest_start=$((start_line + 1))
+next_heading_offset="$({ tail -n +"${rest_start}" CHANGELOG.md | grep -n '^## \[' || true; } | head -n 1 | cut -d: -f1)"
+
+if [[ -n "$next_heading_offset" ]]; then
+  end_line=$((start_line + next_heading_offset - 1))
+else
+  end_line='$'
+fi
+
+sed -n "${start_line},${end_line}p" CHANGELOG.md

@@ -37,10 +37,10 @@ cp README.md CHANGELOG.md LICENSE PROJECT_HEALTH.md "dist/stage/tendril-${versio
 tar -C dist/stage -czf "dist/${binary_archive}" "tendril-${version}-${system}"
 git archive --format=tar.gz --prefix="tendril-${version}/" -o "dist/${source_archive}" "$archive_ref"
 
-binary_sum=$(sha256sum "dist/${binary_archive}" | awk '{ print $1 }')
+binary_sum="$(sha256sum "dist/${binary_archive}" | cut -d' ' -f1)"
 printf '%s  %s\n' "$binary_sum" "$binary_archive" > "dist/${binary_checksum}"
 
-source_sum=$(sha256sum "dist/${source_archive}" | awk '{ print $1 }')
+source_sum="$(sha256sum "dist/${source_archive}" | cut -d' ' -f1)"
 printf '%s  %s\n' "$source_sum" "$source_archive" > "dist/${source_checksum}"
 
 cat > dist/release-manifest.json <<EOF
