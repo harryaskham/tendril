@@ -25,7 +25,7 @@ jobs:
           fetch-depth: 0
 
       - name: Remove stale local build artifacts
-        run: rm -rf target
+        run: rm -rf target dist
 
       - name: Verify Nix is available on the self-hosted runner
         run: nix --version
@@ -33,21 +33,8 @@ jobs:
       - name: Run local pre-merge validation gate
         run: ./scripts/pre-merge.sh
 
-      - name: Build tagged release artifacts
-        run: ./scripts/release-artifacts.sh "$GITHUB_REF_NAME"
-
-      - name: Upload release artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-artifacts
-          path: |
-            dist/*.tar.gz
-            dist/*.sha256
-            dist/release-manifest.json
-          if-no-files-found: error
-
-  publish:
-    name: Publish GitHub release
+  build-linux:
+    name: Build linux release artifacts
     runs-on: [self-hosted, linux]
     timeout-minutes: 30
     needs: verify
@@ -59,16 +46,93 @@ jobs:
           fetch-depth: 0
 
       - name: Remove stale local build artifacts
-        run: rm -rf target
+        run: rm -rf target dist
 
-      - name: Download release artifacts
+      - name: Verify Nix is available on the self-hosted runner
+        run: nix --version
+
+      - name: Build linux release artifacts
+        run: ./scripts/release-artifacts.sh "$GITHUB_REF_NAME"
+
+      - name: Upload linux release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts-linux
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+          if-no-files-found: error
+
+  build-macos:
+    name: Build macOS release artifacts
+    runs-on: [self-hosted, macos]
+    timeout-minutes: 30
+    needs: verify
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Remove stale local build artifacts
+        run: rm -rf target dist
+
+      - name: Verify Nix is available on the self-hosted runner
+        run: nix --version
+
+      - name: Build macOS release artifacts
+        env:
+          TENDRIL_RELEASE_DIST: ${{ github.workspace }}/dist/macos
+        run: ./scripts/stage-release-artifacts.sh "$GITHUB_REF_NAME"
+
+      - name: Upload macOS release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts-macos
+          path: |
+            dist/macos/*.tar.gz
+            dist/macos/*.sha256
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub release
+    runs-on: [self-hosted, linux]
+    timeout-minutes: 30
+    needs:
+      - build-linux
+      - build-macos
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Remove stale local build artifacts
+        run: rm -rf target dist
+
+      - name: Download linux release artifacts
         uses: actions/download-artifact@v4
         with:
-          name: release-artifacts
+          name: release-artifacts-linux
           path: dist
+
+      - name: Download macOS release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts-macos
+          path: dist
+
+      - name: Flatten downloaded artifact directories
+        run: |
+          find dist -mindepth 2 -type f \( -name '*.tar.gz' -o -name '*.sha256' \) -exec cp {} dist/ \;
 
       - name: Extract release notes from changelog
         run: ./scripts/release-notes.sh "$GITHUB_REF_NAME" > dist/release-notes.md
+
+      - name: Write combined release manifest
+        run: ./scripts/write-release-manifest.py "$GITHUB_REF_NAME" dist > dist/release-manifest.json
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2

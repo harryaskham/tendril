@@ -243,8 +243,19 @@ in `Cargo.toml`, and release tags use the `v<semver>` form, for example
 `v0.0.1`.
 
 Pushing a `v*` tag starts the tag-only GitHub Actions release workflow, which
-reruns pre-merge validation, builds the release package, stages artifacts, and
-publishes a GitHub release.
+reruns pre-merge validation, builds Linux artifacts on `[self-hosted, linux]`,
+builds macOS artifacts on `[self-hosted, macos]`, stages the combined asset set,
+and publishes a GitHub release.
+
+The release asset set is intended to include at least:
+
+- `tendril-<semver>-x86_64-linux.tar.gz`
+- `tendril-<semver>-x86_64-linux.sha256`
+- `tendril-<semver>-aarch64-darwin.tar.gz`
+- `tendril-<semver>-aarch64-darwin.sha256`
+- `tendril-<semver>-source.tar.gz`
+- `tendril-<semver>-source.sha256`
+- `release-manifest.json`
 
 Useful local release helpers:
 
