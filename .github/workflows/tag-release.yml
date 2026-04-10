@@ -27,11 +27,8 @@ jobs:
       - name: Remove stale local build artifacts
         run: rm -rf target
 
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v16
-
-      - name: Set up Nix cache
-        uses: DeterminateSystems/magic-nix-cache-action@v8
+      - name: Verify Nix is available on the self-hosted runner
+        run: nix --version
 
       - name: Run local pre-merge validation gate
         run: ./scripts/pre-merge.sh
