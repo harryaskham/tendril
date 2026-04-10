@@ -2305,6 +2305,7 @@ pub fn current_adapter() -> Box<dyn PlatformAdapter> {
     adapter_for_context(AdapterContext::detect())
 }
 
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn detect_linux_session(
     xdg_session_type: Option<&str>,
     display: Option<&std::ffi::OsStr>,
@@ -2325,6 +2326,7 @@ fn detect_linux_session(
     }
 }
 
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn detect_linux_audio_backend(
     pipewire_runtime_dir: Option<&std::ffi::OsStr>,
     pulse_server: Option<&std::ffi::OsStr>,

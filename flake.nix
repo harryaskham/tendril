@@ -162,6 +162,17 @@
         '';
       in
       {
+        apps = {
+          default = flake-utils.lib.mkApp {
+            drv = tendril;
+            exePath = "/bin/tendril";
+          };
+          tendril = flake-utils.lib.mkApp {
+            drv = tendril;
+            exePath = "/bin/tendril";
+          };
+        };
+
         packages = {
           default = tendril;
           tendril = tendril;
