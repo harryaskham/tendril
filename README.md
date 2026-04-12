@@ -180,6 +180,50 @@ Example tool calls:
 
 CLI JSON mode and MCP tool responses share the same structured payload shape.
 
+## macOS operator validation
+
+If you want to validate Tendril on macOS without reading the codebase, run these examples from the repository root:
+
+```bash
+# 1) List targets
+nix run .#tendril -- list
+nix run .#tendril -- list --json
+
+# 2) Capture after copying a display or window id from list output
+nix run .#tendril -- --display <display-id> capture --json --max-width 1440 > /tmp/tendril-capture.json
+nix run .#tendril -- --window <window-id> capture --json > /tmp/tendril-window-capture.json
+
+# 3) Run input against a harmless target such as TextEdit
+nix run .#tendril -- --window <window-id> run --json 'send("hello from Tendril on macOS")'
+
+# 4) Launch MCP stdio
+nix run .#tendril -- mcp stdio
+```
+
+What to expect on macOS:
+
+- `list` and `capture` should succeed once **Screen Recording** is granted.
+- `run` should succeed once **Accessibility** is granted.
+- The permission entries usually appear under **System Settings > Privacy & Security** for the invoking terminal app or Tendril binary.
+- If you see `missing_permission` in JSON mode, the error should tell you which privacy setting to enable.
+
+Representative Screen Recording failure for `list`:
+
+```json
+{
+  "status": "error",
+  "error": {
+    "category": "missing_permission",
+    "code": "missing_permission",
+    "message": "macOS target discovery needs Screen Recording consent to enumerate visible windows."
+  }
+}
+```
+
+If you instead see `error: tool 'swift' not found` or another macOS runtime-toolchain failure, self-containment is not complete yet on that machine. Install Command Line Tools with `xcode-select --install` as a temporary workaround and track the long-term fix under `bd-5c3937`.
+
+For the full operator-facing guide, including a copy-pasteable raw MCP `tools/list` probe and more troubleshooting detail, see [docs/src/macos-operator-validation.md](docs/src/macos-operator-validation.md).
+
 ## Platform and permission expectations
 
 Tendril expects to run inside an active local desktop session. It does not

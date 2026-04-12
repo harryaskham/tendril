@@ -53,6 +53,7 @@ The generated site is built into `target/book/`, and the Pages workflow uploads 
 ## Read this next
 
 - [Quickstart](quickstart.md)
+- [macOS operator validation](macos-operator-validation.md)
 - [CLI guide](cli/index.md)
 - [MCP guide](mcp.md)
 - [Docs publishing and release flow](reference/publishing.md)
