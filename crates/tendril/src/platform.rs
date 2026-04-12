@@ -1,5 +1,4 @@
 use std::env;
-use std::fmt::Write as _;
 use std::time::Duration;
 
 use base64::Engine as _;
@@ -1696,10 +1695,8 @@ fn execute_macos_input(
 
     if matches!(request.target, CaptureTargetKind::Window) {
         if let Some(process_id) = request.process_id {
-            let script = format!(
-                "import AppKit\nif let app = NSRunningApplication(processIdentifier: pid_t({process_id})) {{ _ = app.activate(options: [.activateIgnoringOtherApps]) }} else {{ fputs(\"target process could not be activated\\n\", stderr); exit(1) }}\n"
-            );
-            run_process_for_input("swift", &["-e", script.as_str()], "focus", None, None)?;
+            let script = macos_focus_pid_jxa_script(process_id);
+            run_macos_osascript_jxa_for_input(&script, "focus", None, None)?;
             focus_transferred = true;
             notes.push(
                 "Activated the target macOS application via NSRunningApplication before dispatching input."
@@ -1707,8 +1704,8 @@ fn execute_macos_input(
             );
             std::thread::sleep(reliability_delay());
         } else if let Some(app_name) = &request.app_name {
-            let script = format!(r"tell application {app_name:?} to activate",);
-            run_process_for_input("osascript", &["-e", script.as_str()], "focus", None, None)?;
+            let script = macos_focus_app_jxa_script(app_name);
+            run_macos_osascript_jxa_for_input(&script, "focus", None, None)?;
             focus_transferred = true;
             notes.push(
                 "Activated the target macOS application by name before dispatching input."
@@ -1729,14 +1726,8 @@ fn execute_macos_input(
     }
 
     if let Some(text) = &request.text {
-        let script = macos_text_swift_script(text);
-        run_process_for_input(
-            "swift",
-            &["-e", script.as_str()],
-            "dispatch",
-            Some(0),
-            Some("text"),
-        )?;
+        let script = macos_text_jxa_script(text);
+        run_macos_osascript_jxa_for_input(&script, "dispatch", Some(0), Some("text"))?;
         return Ok(InputOutcome {
             action_count: 1,
             focus_required,
@@ -1783,44 +1774,20 @@ fn dispatch_macos_action(
 ) -> Result<(), TendrilError> {
     match action {
         InputAction::KeyTap { key } => {
-            let script = macos_key_swift_script(key, Some(true), Some(true))?;
-            run_process_for_input(
-                "swift",
-                &["-e", script.as_str()],
-                "dispatch",
-                Some(action_index),
-                Some(label),
-            )
+            let script = macos_key_jxa_script(key, Some(true), Some(true))?;
+            run_macos_osascript_jxa_for_input(&script, "dispatch", Some(action_index), Some(label))
         }
         InputAction::Hold { modifier } => {
-            let script = macos_modifier_swift_script(*modifier, true)?;
-            run_process_for_input(
-                "swift",
-                &["-e", script.as_str()],
-                "dispatch",
-                Some(action_index),
-                Some(label),
-            )
+            let script = macos_modifier_jxa_script(*modifier, true)?;
+            run_macos_osascript_jxa_for_input(&script, "dispatch", Some(action_index), Some(label))
         }
         InputAction::Release { modifier } => {
-            let script = macos_modifier_swift_script(*modifier, false)?;
-            run_process_for_input(
-                "swift",
-                &["-e", script.as_str()],
-                "dispatch",
-                Some(action_index),
-                Some(label),
-            )
+            let script = macos_modifier_jxa_script(*modifier, false)?;
+            run_macos_osascript_jxa_for_input(&script, "dispatch", Some(action_index), Some(label))
         }
         InputAction::Send { text } => {
-            let script = macos_text_swift_script(text);
-            run_process_for_input(
-                "swift",
-                &["-e", script.as_str()],
-                "dispatch",
-                Some(action_index),
-                Some(label),
-            )
+            let script = macos_text_jxa_script(text);
+            run_macos_osascript_jxa_for_input(&script, "dispatch", Some(action_index), Some(label))
         }
         InputAction::Wait { duration_ms } => {
             std::thread::sleep(Duration::from_millis(*duration_ms));
@@ -1828,27 +1795,15 @@ fn dispatch_macos_action(
         }
         InputAction::Click { button, x, y } => {
             let (absolute_x, absolute_y) = relative_point_to_absolute(&request.bounds, *x, *y);
-            let script = macos_mouse_swift_script(*button, absolute_x, absolute_y, None);
-            run_process_for_input(
-                "swift",
-                &["-e", script.as_str()],
-                "dispatch",
-                Some(action_index),
-                Some(label),
-            )
+            let script = macos_mouse_jxa_script(*button, absolute_x, absolute_y, None);
+            run_macos_osascript_jxa_for_input(&script, "dispatch", Some(action_index), Some(label))
         }
         InputAction::Drag { x0, y0, x1, y1 } => {
             let (start_x, start_y) = relative_point_to_absolute(&request.bounds, *x0, *y0);
             let (end_x, end_y) = relative_point_to_absolute(&request.bounds, *x1, *y1);
             let script =
-                macos_mouse_swift_script(MouseButton::Left, start_x, start_y, Some((end_x, end_y)));
-            run_process_for_input(
-                "swift",
-                &["-e", script.as_str()],
-                "dispatch",
-                Some(action_index),
-                Some(label),
-            )
+                macos_mouse_jxa_script(MouseButton::Left, start_x, start_y, Some((end_x, end_y)));
+            run_macos_osascript_jxa_for_input(&script, "dispatch", Some(action_index), Some(label))
         }
     }
 }
@@ -2132,71 +2087,235 @@ fn mouse_button_number(button: MouseButton) -> u8 {
     }
 }
 
-fn swift_string_literal(value: &str) -> String {
-    format!("#{value:?}#")
+fn javascript_string_literal(value: &str) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| String::from("\"\""))
 }
 
-fn macos_text_swift_script(text: &str) -> String {
-    let text = swift_string_literal(text);
+fn macos_focus_pid_jxa_script(process_id: u32) -> String {
     format!(
-        "import ApplicationServices\nimport Foundation\nlet source = CGEventSource(stateID: .hidSystemState)\nlet text = {text}\nif let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true), let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) {{\n  let scalars = Array(text.utf16)\n  keyDown.keyboardSetUnicodeString(stringLength: scalars.count, unicodeString: scalars)\n  keyUp.keyboardSetUnicodeString(stringLength: scalars.count, unicodeString: scalars)\n  keyDown.post(tap: .cghidEventTap)\n  keyUp.post(tap: .cghidEventTap)\n}} else {{\n  fputs(\"failed to create keyboard events\\n\", stderr)\n  exit(1)\n}}\n"
+        r"ObjC.import('AppKit');
+(function () {{
+    var app = $.NSRunningApplication.runningApplicationWithProcessIdentifier({process_id});
+    if (!app) {{
+        throw new Error('target process could not be activated');
+    }}
+    if (!app.activateWithOptions($.NSApplicationActivateIgnoringOtherApps)) {{
+        throw new Error('target process could not be activated');
+    }}
+}}());
+"
     )
 }
 
-fn macos_modifier_swift_script(modifier: ModifierKey, down: bool) -> Result<String, TendrilError> {
+fn macos_focus_app_jxa_script(app_name: &str) -> String {
+    let app_name = javascript_string_literal(app_name);
+    format!(
+        r"var app = Application({app_name});
+app.activate();
+"
+    )
+}
+
+fn macos_text_jxa_script(text: &str) -> String {
+    let text = javascript_string_literal(text);
+    format!(
+        r"var systemEvents = Application('System Events');
+systemEvents.includeStandardAdditions = true;
+systemEvents.keystroke({text});
+"
+    )
+}
+
+fn macos_modifier_jxa_script(modifier: ModifierKey, down: bool) -> Result<String, TendrilError> {
     let key_code = macos_key_code(match modifier {
         ModifierKey::Ctrl => "ctrl",
         ModifierKey::Alt => "alt",
         ModifierKey::Shift => "shift",
         ModifierKey::Meta => "meta",
     })?;
-    Ok(format!(
-        "import ApplicationServices\nif let event = CGEvent(keyboardEventSource: nil, virtualKey: {key_code}, keyDown: {down}) {{ event.post(tap: .cghidEventTap) }} else {{ fputs(\"failed to create modifier event\\n\", stderr); exit(1) }}\n"
-    ))
+    Ok(macos_keyboard_jxa_script(key_code, down, false))
 }
 
-fn macos_key_swift_script(
+fn macos_key_jxa_script(
     key: &str,
     down: Option<bool>,
     up: Option<bool>,
 ) -> Result<String, TendrilError> {
     let key_code = macos_key_code(key)?;
-    let mut script = String::from("import ApplicationServices\n");
-    if down.unwrap_or(true) {
-        let _ = writeln!(
-            script,
-            "if let event = CGEvent(keyboardEventSource: nil, virtualKey: {key_code}, keyDown: true) {{ event.post(tap: .cghidEventTap) }} else {{ fputs(\"failed to create key down event\\n\", stderr); exit(1) }}"
-        );
-    }
-    if up.unwrap_or(true) {
-        let _ = writeln!(
-            script,
-            "if let event = CGEvent(keyboardEventSource: nil, virtualKey: {key_code}, keyDown: false) {{ event.post(tap: .cghidEventTap) }} else {{ fputs(\"failed to create key up event\\n\", stderr); exit(1) }}"
-        );
-    }
-    Ok(script)
+    Ok(macos_keyboard_jxa_script(
+        key_code,
+        down.unwrap_or(true),
+        up.unwrap_or(true),
+    ))
 }
 
-fn macos_mouse_swift_script(
+fn macos_keyboard_jxa_script(key_code: u16, post_down: bool, post_up: bool) -> String {
+    format!(
+        r"ObjC.import('CoreGraphics');
+(function () {{
+    function post(keyDown) {{
+        var event = $.CGEventCreateKeyboardEvent(null, {key_code}, keyDown);
+        if (!event) {{
+            throw new Error('failed to create keyboard event');
+        }}
+        $.CGEventPost($.kCGHIDEventTap, event);
+    }}
+    {post_down_call}{post_up_call}
+}}());
+",
+        post_down_call = if post_down { "post(true);\n    " } else { "" },
+        post_up_call = if post_up { "post(false);\n" } else { "" },
+    )
+}
+
+fn macos_mouse_jxa_script(
     button: MouseButton,
     x: i32,
     y: i32,
     drag_end: Option<(i32, i32)>,
 ) -> String {
     let (down_event, up_event, drag_event, button_code) = match button {
-        MouseButton::Left => ("leftMouseDown", "leftMouseUp", "leftMouseDragged", 0),
-        MouseButton::Right => ("rightMouseDown", "rightMouseUp", "rightMouseDragged", 1),
-        MouseButton::Middle => ("otherMouseDown", "otherMouseUp", "otherMouseDragged", 2),
+        MouseButton::Left => (
+            "kCGEventLeftMouseDown",
+            "kCGEventLeftMouseUp",
+            "kCGEventLeftMouseDragged",
+            0,
+        ),
+        MouseButton::Right => (
+            "kCGEventRightMouseDown",
+            "kCGEventRightMouseUp",
+            "kCGEventRightMouseDragged",
+            1,
+        ),
+        MouseButton::Middle => (
+            "kCGEventOtherMouseDown",
+            "kCGEventOtherMouseUp",
+            "kCGEventOtherMouseDragged",
+            2,
+        ),
     };
     if let Some((end_x, end_y)) = drag_end {
         format!(
-            "import ApplicationServices\nlet start = CGPoint(x: {x}, y: {y})\nlet end = CGPoint(x: {end_x}, y: {end_y})\nCGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: start, mouseButton: .left)?.post(tap: .cghidEventTap)\nCGEvent(mouseEventSource: nil, mouseType: .{down_event}, mouseCursorPosition: start, mouseButton: .left)?.post(tap: .cghidEventTap)\nCGEvent(mouseEventSource: nil, mouseType: .{drag_event}, mouseCursorPosition: end, mouseButton: .left)?.post(tap: .cghidEventTap)\nCGEvent(mouseEventSource: nil, mouseType: .{up_event}, mouseCursorPosition: end, mouseButton: .left)?.post(tap: .cghidEventTap)\n"
+            r"ObjC.import('CoreGraphics');
+(function () {{
+    function point(px, py) {{
+        return $.CGPointMake(px, py);
+    }}
+    function postMouse(eventType, px, py) {{
+        var event = $.CGEventCreateMouseEvent(null, $[eventType], point(px, py), {button_code});
+        if (!event) {{
+            throw new Error('failed to create mouse event');
+        }}
+        $.CGEventPost($.kCGHIDEventTap, event);
+    }}
+    $.CGWarpMouseCursorPosition(point({x}, {y}));
+    postMouse('kCGEventMouseMoved', {x}, {y});
+    postMouse('{down_event}', {x}, {y});
+    postMouse('{drag_event}', {end_x}, {end_y});
+    postMouse('{up_event}', {end_x}, {end_y});
+}}());
+"
         )
     } else {
         format!(
-            "import ApplicationServices\nlet point = CGPoint(x: {x}, y: {y})\nCGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)\nCGEvent(mouseEventSource: nil, mouseType: .{down_event}, mouseCursorPosition: point, mouseButton: CGMouseButton(rawValue: {button_code})!)?.post(tap: .cghidEventTap)\nCGEvent(mouseEventSource: nil, mouseType: .{up_event}, mouseCursorPosition: point, mouseButton: CGMouseButton(rawValue: {button_code})!)?.post(tap: .cghidEventTap)\n"
+            r"ObjC.import('CoreGraphics');
+(function () {{
+    function point(px, py) {{
+        return $.CGPointMake(px, py);
+    }}
+    function postMouse(eventType, px, py) {{
+        var event = $.CGEventCreateMouseEvent(null, $[eventType], point(px, py), {button_code});
+        if (!event) {{
+            throw new Error('failed to create mouse event');
+        }}
+        $.CGEventPost($.kCGHIDEventTap, event);
+    }}
+    $.CGWarpMouseCursorPosition(point({x}, {y}));
+    postMouse('kCGEventMouseMoved', {x}, {y});
+    postMouse('{down_event}', {x}, {y});
+    postMouse('{up_event}', {x}, {y});
+}}());
+"
         )
     }
+}
+
+fn run_macos_osascript_jxa_for_input(
+    script: &str,
+    stage: &'static str,
+    action_index: Option<usize>,
+    action: Option<&str>,
+) -> Result<(), TendrilError> {
+    let output = std::process::Command::new("osascript")
+        .args(["-l", "JavaScript", "-e", script])
+        .output()
+        .map_err(|error| {
+            input_execution_error(
+                "input_spawn_failed",
+                format!("failed to spawn osascript: {error}"),
+                stage,
+                action_index,
+                action,
+            )
+        })?;
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+    let message = if stdout.is_empty() || stderr.is_empty() {
+        format!("{stdout}{stderr}")
+    } else {
+        format!("{stdout} | {stderr}")
+    };
+
+    if is_macos_input_permission_error(&message) {
+        let mut error = TendrilError::from(PlatformAdapterError::missing_permission(
+            Capability::InputControl,
+            PermissionKind::Accessibility,
+            PlatformKind::MacOs,
+            if message.is_empty() {
+                "macOS input control requires Accessibility consent.".to_owned()
+            } else {
+                format!("macOS input control requires Accessibility consent: {message}")
+            },
+            "Grant Accessibility access in System Settings > Privacy & Security > Accessibility, then rerun tendril run.",
+        ))
+        .with_detail_entry("stage", json!(stage));
+        if let Some(action_index) = action_index {
+            error = error.with_detail_entry("action_number", json!(action_index + 1));
+        }
+        if let Some(action) = action {
+            error = error.with_detail_entry("action", json!(action));
+        }
+        return Err(error);
+    }
+
+    Err(input_execution_error(
+        "input_command_failed",
+        if message.is_empty() {
+            format!("osascript exited with status {}", output.status)
+        } else {
+            format!("osascript failed: {message}")
+        },
+        stage,
+        action_index,
+        action,
+    ))
+}
+
+fn is_macos_input_permission_error(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("accessibility")
+        || lower.contains("assistive access")
+        || lower.contains("system events got an error")
+        || lower.contains("apple events")
+        || lower.contains("not authorized")
+        || lower.contains("not permitted")
+        || lower.contains("-1719")
+        || lower.contains("-1743")
 }
 
 fn macos_key_code(key: &str) -> Result<u16, TendrilError> {
@@ -2412,6 +2531,8 @@ mod tests {
         CaptureTargetKind, DesktopSession, InputControlAdapter, LinuxAdapter, MacOsAdapter,
         PermissionAdapter, PermissionKind, PermissionState, PlatformAdapter, PlatformAdapterError,
         PlatformKind, WindowsAdapter, detect_linux_audio_backend, detect_linux_session,
+        is_macos_input_permission_error, javascript_string_literal, macos_focus_pid_jxa_script,
+        macos_text_jxa_script,
     };
     use crate::TendrilError;
     use mcp_cli::ErrorCategory;
@@ -2546,5 +2667,34 @@ mod tests {
             tendril_error.category(),
             ErrorCategory::UnsupportedCapability
         );
+    }
+
+    #[test]
+    fn javascript_string_literal_uses_json_escaping() {
+        assert_eq!(
+            javascript_string_literal("line \"one\"\nline two"),
+            "\"line \\\"one\\\"\\nline two\""
+        );
+    }
+
+    #[test]
+    fn macos_input_permission_classifier_catches_accessibility_failures() {
+        assert!(is_macos_input_permission_error(
+            "System Events got an error: osascript is not allowed assistive access. (-1719)"
+        ));
+        assert!(is_macos_input_permission_error(
+            "Not authorized to send Apple events to System Events. (-1743)"
+        ));
+    }
+
+    #[test]
+    fn macos_osascript_scripts_are_self_contained() {
+        let focus_script = macos_focus_pid_jxa_script(42);
+        let text_script = macos_text_jxa_script("hello");
+
+        assert!(focus_script.contains("NSRunningApplication"));
+        assert!(text_script.contains("System Events"));
+        assert!(!focus_script.contains("swift"));
+        assert!(!text_script.contains("swift"));
     }
 }

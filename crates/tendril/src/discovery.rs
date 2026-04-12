@@ -687,7 +687,7 @@ Get-Process |
 fn discover_macos_targets(
     context: &AdapterContext,
 ) -> Result<TargetInventory, PlatformAdapterError> {
-    match run_swift(context, macos_discovery_script()) {
+    match run_osascript_jxa(context, macos_discovery_script()) {
         Ok(output) => deserialize_json_inventory(&output, context),
         Err(error) if is_macos_permission_error(&error.to_string()) => {
             Err(PlatformAdapterError::missing_permission(
@@ -709,111 +709,145 @@ fn discover_macos_targets(
 #[allow(clippy::too_many_lines)]
 fn macos_discovery_script() -> &'static str {
     r#"
-import AppKit
-import ApplicationServices
-import Foundation
+ObjC.import('AppKit');
+ObjC.import('Foundation');
+ObjC.import('CoreGraphics');
 
-func emit(_ jsonObject: Any) {
-    guard JSONSerialization.isValidJSONObject(jsonObject) else {
-        fputs("invalid discovery payload\n", stderr)
-        exit(1)
+(function () {
+    function emit(jsonObject) {
+        var text = JSON.stringify(jsonObject);
+        $.NSFileHandle.fileHandleWithStandardOutput.writeData(
+            $(text + "\n").dataUsingEncoding($.NSUTF8StringEncoding)
+        );
     }
-    do {
-        let data = try JSONSerialization.data(withJSONObject: jsonObject, options: [])
-        if let text = String(data: data, encoding: .utf8) {
-            print(text)
-        } else {
-            fputs("failed to encode discovery payload\n", stderr)
-            exit(1)
+
+    function trimString(value) {
+        if (value === null || value === undefined) {
+            return null;
         }
-    } catch {
-        fputs("\(error)\n", stderr)
-        exit(1)
+        var text = ObjC.unwrap(value);
+        if (typeof text !== 'string') {
+            text = String(text);
+        }
+        text = text.trim();
+        return text.length > 0 ? text : null;
     }
-}
 
-let options = CGWindowListOption(arrayLiteral: .optionOnScreenOnly, .excludeDesktopElements)
-let windowInfo = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] ?? []
-let windowLayerKey = kCGWindowLayer as String
-let windowNumberKey = kCGWindowNumber as String
-let windowOwnerNameKey = kCGWindowOwnerName as String
-let windowOwnerPidKey = kCGWindowOwnerPID as String
-let windowNameKey = kCGWindowName as String
-let windowBoundsKey = kCGWindowBounds as String
-let isOnscreenKey = kCGWindowIsOnscreen as String
-let targetIsYabai = ProcessInfo.processInfo.environment["YABAI_SOCKET"] != nil || FileManager.default.fileExists(atPath: "/opt/homebrew/bin/yabai") || FileManager.default.fileExists(atPath: "/usr/local/bin/yabai")
+    function numberOr(value, fallback) {
+        if (value === null || value === undefined) {
+            return fallback;
+        }
+        var parsed = Number(value);
+        return isNaN(parsed) ? fallback : parsed;
+    }
 
-var targets: [[String: Any]] = []
-for (index, screen) in NSScreen.screens.enumerated() {
-    let frame = screen.frame
-    let scale = screen.backingScaleFactor
-    let localizedName = screen.localizedName ?? "Display \(index + 1)"
-    targets.append([
-        "id": "display-\(index + 1)",
-        "title": NSNull(),
-        "kind": "display",
-        "name": localizedName,
-        "bounds": [
-            "x": Int(frame.origin.x.rounded()),
-            "y": Int(frame.origin.y.rounded()),
-            "width": Int(frame.size.width.rounded()),
-            "height": Int(frame.size.height.rounded()),
-        ],
-        "scale_factor": [
-            "numerator": Int((scale * 1000).rounded()),
-            "denominator": 1000,
-        ],
-        "capture_supported": true,
-        "input_supported": true,
-        "app_name": NSNull(),
-        "process_id": NSNull(),
-    ])
-}
+    function rectValue(bounds, lowerKey, upperKey) {
+        if (!bounds || typeof bounds !== 'object') {
+            return 0;
+        }
+        if (Object.prototype.hasOwnProperty.call(bounds, upperKey)) {
+            return numberOr(bounds[upperKey], 0);
+        }
+        if (Object.prototype.hasOwnProperty.call(bounds, lowerKey)) {
+            return numberOr(bounds[lowerKey], 0);
+        }
+        return 0;
+    }
 
-for entry in windowInfo {
-    guard let layer = entry[windowLayerKey] as? NSNumber, layer.intValue == 0 else {
-        continue
+    function fileExists(path) {
+        return $.NSFileManager.defaultManager.fileExistsAtPath($(path));
     }
-    let onscreen = (entry[isOnscreenKey] as? NSNumber)?.boolValue ?? true
-    guard onscreen else {
-        continue
-    }
-    guard let windowNumber = entry[windowNumberKey] as? NSNumber else {
-        continue
-    }
-    let boundsDictionary = entry[windowBoundsKey] as? NSDictionary ?? [:]
-    let bounds = CGRect(dictionaryRepresentation: boundsDictionary)
-    guard bounds.width > 0, bounds.height > 0 else {
-        continue
-    }
-    let ownerName = (entry[windowOwnerNameKey] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let title = (entry[windowNameKey] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let windowName = title?.isEmpty == false ? title! : (ownerName?.isEmpty == false ? ownerName! : "window-\(windowNumber)")
-    let pid = (entry[windowOwnerPidKey] as? NSNumber)?.intValue
-    targets.append([
-        "id": String(windowNumber.intValue),
-        "title": title?.isEmpty == false ? title! : NSNull(),
-        "kind": "window",
-        "name": windowName,
-        "bounds": [
-            "x": Int(bounds.origin.x.rounded()),
-            "y": Int(bounds.origin.y.rounded()),
-            "width": Int(bounds.width.rounded()),
-            "height": Int(bounds.height.rounded()),
-        ],
-        "scale_factor": [
-            "numerator": 1,
-            "denominator": 1,
-        ],
-        "capture_supported": true,
-        "input_supported": true,
-        "app_name": ownerName?.isEmpty == false ? ownerName! : NSNull(),
-        "process_id": pid ?? NSNull(),
-        "notes": targetIsYabai ? ["yabai detected in session; native Quartz discovery remains authoritative."] : [],
-    ])
-}
 
-emit(["targets": targets])
+    var screens = $.NSScreen.screens;
+    var targets = [];
+    var screenCount = Number(screens.count);
+    for (var index = 0; index < screenCount; index += 1) {
+        var screen = screens.objectAtIndex(index);
+        var frame = screen.frame;
+        var scale = Number(screen.backingScaleFactor);
+        var localizedName = trimString(screen.localizedName) || ('Display ' + String(index + 1));
+        targets.push({
+            id: 'display-' + String(index + 1),
+            title: null,
+            kind: 'display',
+            name: localizedName,
+            bounds: {
+                x: Math.round(numberOr(frame.origin.x, 0)),
+                y: Math.round(numberOr(frame.origin.y, 0)),
+                width: Math.round(numberOr(frame.size.width, 0)),
+                height: Math.round(numberOr(frame.size.height, 0)),
+            },
+            scale_factor: {
+                numerator: Math.round(scale * 1000),
+                denominator: 1000,
+            },
+            capture_supported: true,
+            input_supported: true,
+            app_name: null,
+            process_id: null,
+        });
+    }
+
+    var options = $.kCGWindowListOptionOnScreenOnly | $.kCGWindowListExcludeDesktopElements;
+    var windowInfo = ObjC.deepUnwrap($.CGWindowListCopyWindowInfo(options, $.kCGNullWindowID)) || [];
+    var environment = $.NSProcessInfo.processInfo.environment;
+    var targetIsYabai = environment.objectForKey($('YABAI_SOCKET')) !== null
+        || fileExists('/opt/homebrew/bin/yabai')
+        || fileExists('/usr/local/bin/yabai');
+
+    for (var i = 0; i < windowInfo.length; i += 1) {
+        var entry = windowInfo[i];
+        if (numberOr(entry.kCGWindowLayer, -1) !== 0) {
+            continue;
+        }
+        if (entry.kCGWindowIsOnscreen === false) {
+            continue;
+        }
+
+        var windowNumber = entry.kCGWindowNumber;
+        if (windowNumber === null || windowNumber === undefined) {
+            continue;
+        }
+
+        var bounds = entry.kCGWindowBounds || {};
+        var width = Math.round(rectValue(bounds, 'width', 'Width'));
+        var height = Math.round(rectValue(bounds, 'height', 'Height'));
+        if (width <= 0 || height <= 0) {
+            continue;
+        }
+
+        var ownerName = trimString(entry.kCGWindowOwnerName);
+        var title = trimString(entry.kCGWindowName);
+        var windowId = String(windowNumber);
+        targets.push({
+            id: windowId,
+            title: title,
+            kind: 'window',
+            name: title || ownerName || ('window-' + windowId),
+            bounds: {
+                x: Math.round(rectValue(bounds, 'x', 'X')),
+                y: Math.round(rectValue(bounds, 'y', 'Y')),
+                width: width,
+                height: height,
+            },
+            scale_factor: {
+                numerator: 1,
+                denominator: 1,
+            },
+            capture_supported: true,
+            input_supported: true,
+            app_name: ownerName,
+            process_id: entry.kCGWindowOwnerPID === null || entry.kCGWindowOwnerPID === undefined
+                ? null
+                : Math.round(numberOr(entry.kCGWindowOwnerPID, 0)),
+            notes: targetIsYabai
+                ? ['yabai detected in session; native Quartz discovery remains authoritative.']
+                : [],
+        });
+    }
+
+    emit({ targets: targets });
+}());
 "#
 }
 
@@ -857,8 +891,11 @@ fn run_powershell(context: &AdapterContext, script: &str) -> Result<String, Plat
     run_command(context, "powershell", &["-NoProfile", "-Command", script])
 }
 
-fn run_swift(context: &AdapterContext, script: &str) -> Result<String, PlatformAdapterError> {
-    run_command(context, "swift", &["-e", script])
+fn run_osascript_jxa(
+    context: &AdapterContext,
+    script: &str,
+) -> Result<String, PlatformAdapterError> {
+    run_command(context, "osascript", &["-l", "JavaScript", "-e", script])
 }
 
 fn run_optional_command(
@@ -1139,8 +1176,12 @@ fn is_macos_permission_error(message: &str) -> bool {
     let lower = message.to_ascii_lowercase();
     lower.contains("not authorized")
         || lower.contains("not permitted")
-        || lower.contains("-1743")
+        || lower.contains("assistive access")
         || lower.contains("screen recording")
+        || lower.contains("screen capture")
+        || lower.contains("apple events")
+        || lower.contains("-1719")
+        || lower.contains("-1743")
 }
 
 fn sort_inventory(mut inventory: TargetInventory) -> TargetInventory {
@@ -1174,9 +1215,9 @@ const fn target_kind_rank(kind: CaptureTargetKind) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::{
-        Bounds, X11WindowMetadata, extract_all_quoted_strings, parse_simple_geometry,
-        parse_window_id_list, parse_wlr_randr_mode, parse_xprop_window_metadata,
-        parse_xrandr_geometry, parse_xwininfo_geometry,
+        Bounds, X11WindowMetadata, extract_all_quoted_strings, is_macos_permission_error,
+        macos_discovery_script, parse_simple_geometry, parse_window_id_list, parse_wlr_randr_mode,
+        parse_xprop_window_metadata, parse_xrandr_geometry, parse_xwininfo_geometry,
     };
 
     #[test]
@@ -1284,5 +1325,24 @@ _NET_WM_PID(CARDINAL) = 12345
                 height: 1080,
             })
         );
+    }
+
+    #[test]
+    fn macos_permission_classifier_catches_osascript_permission_failures() {
+        assert!(is_macos_permission_error(
+            "osascript exited with status 1: System Events got an error: osascript is not allowed assistive access. (-1719)"
+        ));
+        assert!(is_macos_permission_error(
+            "Platform adapter failure during TargetDiscovery on MacOs: screen recording access denied"
+        ));
+    }
+
+    #[test]
+    fn macos_discovery_script_uses_built_in_jxa_bridge() {
+        let script = macos_discovery_script();
+
+        assert!(script.contains("ObjC.import('CoreGraphics')"));
+        assert!(script.contains("CGWindowListCopyWindowInfo"));
+        assert!(!script.contains("import AppKit\nimport ApplicationServices"));
     }
 }

@@ -232,9 +232,9 @@ start a helper daemon to bypass platform rules.
 ### macOS
 
 - `list`/`capture`/`run` are intended for a local GUI session.
-- Target discovery now uses native Swift/AppKit/ApplicationServices APIs rather
-  than a Python bridge, and can coexist with yabai/skhd-managed desktops while
-  keeping Quartz discovery authoritative.
+- Target discovery and input dispatch use built-in macOS Quartz/AppKit paths via
+  `osascript`/JXA rather than a runtime Swift toolchain, and can coexist with
+  yabai/skhd-managed desktops while keeping Quartz discovery authoritative.
 - Screen capture requires **Screen Recording** consent for the invoking terminal
   or Tendril binary.
 - Input control requires **Accessibility** consent.
