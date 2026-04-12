@@ -86,6 +86,11 @@ jobs:
           TENDRIL_RELEASE_DIST: ${{ github.workspace }}/dist/macos
         run: ./scripts/stage-release-artifacts.sh "$GITHUB_REF_NAME"
 
+      - name: Smoke packaged Tendril list flow on macOS
+        env:
+          TENDRIL_RELEASE_DIST: ${{ github.workspace }}/dist/macos
+        run: ./scripts/macos-packaged-smoke.sh "$GITHUB_REF_NAME"
+
       - name: Upload macOS release artifacts
         uses: actions/upload-artifact@v4
         with:
