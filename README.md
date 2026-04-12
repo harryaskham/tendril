@@ -228,7 +228,10 @@ Representative Screen Recording failure for `list`:
 
 If you instead see another macOS runtime-tool failure, the command should surface a structured Tendril error rather than requiring a separate developer toolchain. Use the dedicated macOS operator validation guide below for current troubleshooting steps.
 
-For the full operator-facing guide, including a copy-pasteable raw MCP `tools/list` probe and more troubleshooting detail, see [docs/src/macos-operator-validation.md](docs/src/macos-operator-validation.md).
+For the full operator-facing guides, including packaged-binary smoke checks and troubleshooting detail, see:
+
+- [docs/src/macos-operator-validation.md](docs/src/macos-operator-validation.md)
+- [docs/src/linux-x11-operator-validation.md](docs/src/linux-x11-operator-validation.md)
 
 ## Platform and permission expectations
 
@@ -250,16 +253,17 @@ start a helper daemon to bypass platform rules.
 ### Linux
 
 - Tendril expects an active graphical session.
-- The generic adapter supports discovery/capture/input on **X11**.
+- The generic adapter supports discovery/capture/input on **X11** via an embedded X11/XRandR/XTest backend rather than external helper tools.
 - On **Wayland**, Tendril supports a documented backend matrix: target
   discovery uses Hyprland (`hyprctl`), sway (`swaymsg`), or wlroots output
   enumeration (`wlr-randr`) depending on the active compositor family.
-- Wayland capture now prefers `xdg-desktop-portal` screenshot backends and only
+- Wayland capture prefers `xdg-desktop-portal` screenshot backends and only
   uses `grim` as a compatibility fallback when the portal path is unavailable.
 - Wayland input injection remains compositor-specific and is not exposed by the
   generic adapter surface.
 - For explicit operator validation steps and expected backend failures, see
-  [docs/src/linux-wayland-operator-validation.md](docs/src/linux-wayland-operator-validation.md).
+  [docs/src/linux-x11-operator-validation.md](docs/src/linux-x11-operator-validation.md)
+  and [docs/src/linux-wayland-operator-validation.md](docs/src/linux-wayland-operator-validation.md).
 - Audio probing expects a supported user-session backend such as PipeWire or
   PulseAudio.
 - Linux permissions are usually session/backend constraints rather than central

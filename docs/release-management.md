@@ -55,7 +55,7 @@ Cargo, so Rust package metadata and Nix release assets cannot drift silently.
 
 ## Release helpers
 
-Three scripts are checked into `scripts/` for release automation and local dry runs:
+Four scripts are checked into `scripts/` for release automation and local dry runs:
 
 - `scripts/release-lib.sh`
   - prints the current SemVer, tag, Nix system suffix, and canonical binary file names.
@@ -66,6 +66,10 @@ Three scripts are checked into `scripts/` for release automation and local dry r
 - `scripts/release-artifacts.sh`
   - assembles the current end-to-end GitHub release payload under `dist/`,
   - using the same SemVer/tag validation plus the matching source archive.
+- `scripts/linux-x11-packaged-smoke.sh`
+  - extracts the packaged Linux artifact,
+  - runs packaged `list` and `capture` inside a real X11 session, and
+  - verifies the binary no longer fails on missing `xrandr`, `xprop`, `xwininfo`, `import`, or optional `xdotool` helper dependencies.
 
 Examples:
 
@@ -73,6 +77,7 @@ Examples:
 ./scripts/release-lib.sh version
 ./scripts/release-lib.sh tag
 ./scripts/stage-release-artifacts.sh v0.0.1
+./scripts/linux-x11-packaged-smoke.sh v0.0.1
 ```
 
 ## Publication flow

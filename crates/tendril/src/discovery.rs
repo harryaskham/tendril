@@ -11,6 +11,7 @@ use crate::platform::{
     DesktopSession, PermissionKind, PlatformAdapterError, PlatformKind, TargetDescriptor,
     TargetDiscoveryRequest, TargetInventory,
 };
+use crate::x11;
 
 const TARGET_FIXTURE_ENV: &str = "TENDRIL_TARGET_FIXTURE_JSON";
 
@@ -50,12 +51,7 @@ fn discover_linux_targets(
     context: &AdapterContext,
 ) -> Result<TargetInventory, PlatformAdapterError> {
     match context.session {
-        DesktopSession::X11 => {
-            let mut targets = Vec::new();
-            targets.extend(discover_x11_displays(context)?);
-            targets.extend(discover_x11_windows(context)?);
-            Ok(sort_inventory(TargetInventory { targets }))
-        }
+        DesktopSession::X11 => x11::discover_targets(context).map(sort_inventory),
         DesktopSession::Wayland => discover_wayland_targets(context),
         DesktopSession::Unknown
         | DesktopSession::MacOsWindowServer
@@ -67,121 +63,6 @@ fn discover_linux_targets(
             Some("Set XDG_SESSION_TYPE or run Tendril from an active graphical login session."),
         )),
     }
-}
-
-fn discover_x11_displays(
-    context: &AdapterContext,
-) -> Result<Vec<TargetDescriptor>, PlatformAdapterError> {
-    let output = run_command(context, "xrandr", &["--query"])?;
-    let mut displays = Vec::new();
-
-    for line in output.lines() {
-        if !line.contains(" connected") {
-            continue;
-        }
-
-        let mut parts = line.split_whitespace();
-        let Some(id) = parts.next() else {
-            continue;
-        };
-
-        let bounds = line
-            .split_whitespace()
-            .find_map(parse_xrandr_geometry)
-            .unwrap_or(Bounds {
-                x: 0,
-                y: 0,
-                width: 0,
-                height: 0,
-            });
-
-        if bounds.width == 0 || bounds.height == 0 {
-            continue;
-        }
-
-        displays.push(TargetDescriptor {
-            id: id.to_owned(),
-            title: None,
-            kind: CaptureTargetKind::Display,
-            name: id.to_owned(),
-            bounds,
-            scale_factor: ScaleFactor::identity(),
-            capture_supported: true,
-            input_supported: true,
-            app_name: None,
-            process_id: None,
-        });
-    }
-
-    Ok(displays)
-}
-
-fn discover_x11_windows(
-    context: &AdapterContext,
-) -> Result<Vec<TargetDescriptor>, PlatformAdapterError> {
-    let output = run_command(context, "xprop", &["-root", "_NET_CLIENT_LIST_STACKING"])?;
-    let window_ids = parse_window_id_list(&output);
-    let mut windows = Vec::new();
-
-    for window_id in window_ids {
-        let Some(descriptor) = discover_x11_window(context, &window_id) else {
-            continue;
-        };
-        windows.push(descriptor);
-    }
-
-    Ok(windows)
-}
-
-fn discover_x11_window(context: &AdapterContext, window_id: &str) -> Option<TargetDescriptor> {
-    let xwininfo = run_command(context, "xwininfo", &["-id", window_id]).ok()?;
-    let geometry = parse_xwininfo_geometry(&xwininfo)?;
-    if geometry.width == 0 || geometry.height == 0 {
-        return None;
-    }
-    if !xwininfo
-        .lines()
-        .any(|line| line.contains("Map State: IsViewable"))
-    {
-        return None;
-    }
-
-    let xprop = run_command(
-        context,
-        "xprop",
-        &[
-            "-id",
-            window_id,
-            "_NET_WM_NAME",
-            "WM_NAME",
-            "WM_CLASS",
-            "_NET_WM_PID",
-        ],
-    )
-    .unwrap_or_default();
-    let metadata = parse_xprop_window_metadata(&xprop);
-    let title = metadata
-        .title
-        .or_else(|| parse_xwininfo_title(&xwininfo))
-        .filter(|value| !value.is_empty());
-    let name = metadata
-        .app_name
-        .clone()
-        .or_else(|| title.clone())
-        .unwrap_or_else(|| window_id.to_owned());
-
-    Some(TargetDescriptor {
-        id: window_id.to_owned(),
-        title,
-        kind: CaptureTargetKind::Window,
-        name,
-        bounds: geometry,
-        scale_factor: ScaleFactor::identity(),
-        capture_supported: true,
-        input_supported: true,
-        app_name: metadata.app_name,
-        process_id: metadata.process_id,
-    })
 }
 
 fn discover_wayland_targets(
@@ -1096,13 +977,6 @@ fn parse_wlr_randr_mode(line: &str) -> Option<Bounds> {
     parse_simple_geometry(geometry)
 }
 
-fn parse_xrandr_geometry(token: &str) -> Option<Bounds> {
-    if token.contains('/') {
-        return None;
-    }
-    parse_simple_geometry(token)
-}
-
 fn parse_simple_geometry(token: &str) -> Option<Bounds> {
     let (width, rest) = token.split_once('x')?;
     let x_index = rest.find(['+', '-'])?;
@@ -1116,98 +990,6 @@ fn parse_simple_geometry(token: &str) -> Option<Bounds> {
         width: width.parse::<u32>().ok()?,
         height: height.parse::<u32>().ok()?,
     })
-}
-
-fn parse_window_id_list(output: &str) -> Vec<String> {
-    output
-        .split(|character: char| character.is_whitespace() || character == ',')
-        .filter(|token| token.starts_with("0x"))
-        .map(|token| token.trim().to_owned())
-        .collect()
-}
-
-fn parse_xwininfo_geometry(output: &str) -> Option<Bounds> {
-    let mut x = None;
-    let mut y = None;
-    let mut width = None;
-    let mut height = None;
-
-    for line in output.lines() {
-        let trimmed = line.trim();
-        if let Some(value) = trimmed.strip_prefix("Absolute upper-left X:") {
-            x = value.trim().parse::<i32>().ok();
-        } else if let Some(value) = trimmed.strip_prefix("Absolute upper-left Y:") {
-            y = value.trim().parse::<i32>().ok();
-        } else if let Some(value) = trimmed.strip_prefix("Width:") {
-            width = value.trim().parse::<u32>().ok();
-        } else if let Some(value) = trimmed.strip_prefix("Height:") {
-            height = value.trim().parse::<u32>().ok();
-        }
-    }
-
-    Some(Bounds {
-        x: x?,
-        y: y?,
-        width: width?,
-        height: height?,
-    })
-}
-
-fn parse_xwininfo_title(output: &str) -> Option<String> {
-    output
-        .lines()
-        .next()
-        .and_then(extract_last_quoted_string)
-        .map(str::to_owned)
-}
-
-#[derive(Debug, Default, PartialEq, Eq)]
-struct X11WindowMetadata {
-    title: Option<String>,
-    app_name: Option<String>,
-    process_id: Option<u32>,
-}
-
-fn parse_xprop_window_metadata(output: &str) -> X11WindowMetadata {
-    let mut metadata = X11WindowMetadata::default();
-
-    for line in output.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with("_NET_WM_NAME") || trimmed.starts_with("WM_NAME") {
-            if metadata.title.is_none() {
-                metadata.title = extract_last_quoted_string(trimmed).map(str::to_owned);
-            }
-        } else if trimmed.starts_with("WM_CLASS") {
-            let quoted = extract_all_quoted_strings(trimmed);
-            metadata.app_name = quoted.last().map(|value| (*value).to_owned());
-        } else if let Some((_, value)) = trimmed.split_once('=')
-            && trimmed.starts_with("_NET_WM_PID")
-        {
-            metadata.process_id = value.trim().parse::<u32>().ok();
-        }
-    }
-
-    metadata
-}
-
-fn extract_last_quoted_string(input: &str) -> Option<&str> {
-    extract_all_quoted_strings(input).last().copied()
-}
-
-fn extract_all_quoted_strings(input: &str) -> Vec<&str> {
-    let mut values = Vec::new();
-    let mut rest = input;
-
-    while let Some(start) = rest.find('"') {
-        let after_start = &rest[start + 1..];
-        let Some(end) = after_start.find('"') else {
-            break;
-        };
-        values.push(&after_start[..end]);
-        rest = &after_start[end + 1..];
-    }
-
-    values
 }
 
 fn is_macos_permission_error(message: &str) -> bool {
@@ -1253,32 +1035,11 @@ const fn target_kind_rank(kind: CaptureTargetKind) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::{
-        Bounds, X11WindowMetadata, extract_all_quoted_strings, is_macos_permission_error,
-        macos_discovery_script, parse_simple_geometry, parse_window_id_list, parse_wlr_randr_mode,
-        parse_xprop_window_metadata, parse_xrandr_geometry, parse_xwininfo_geometry,
-        wayland_discovery_backend_error, wayland_discovery_backend_tools_on_path,
+        Bounds, is_macos_permission_error, macos_discovery_script, parse_simple_geometry,
+        parse_wlr_randr_mode, wayland_discovery_backend_error,
+        wayland_discovery_backend_tools_on_path,
     };
     use crate::platform::{AdapterContext, DesktopSession, PlatformAdapterError};
-
-    #[test]
-    fn parses_xrandr_connected_monitor_geometry() {
-        let token = "3840x2160+1920+0";
-
-        assert_eq!(
-            parse_xrandr_geometry(token),
-            Some(Bounds {
-                x: 1920,
-                y: 0,
-                width: 3840,
-                height: 2160,
-            })
-        );
-    }
-
-    #[test]
-    fn rejects_xrandr_physical_size_tokens() {
-        assert_eq!(parse_xrandr_geometry("1920/309x1080/174+0+0"), None);
-    }
 
     #[test]
     fn parses_negative_geometry_offsets() {
@@ -1290,61 +1051,6 @@ mod tests {
                 width: 800,
                 height: 600,
             })
-        );
-    }
-
-    #[test]
-    fn parses_xprop_client_list() {
-        let ids = parse_window_id_list(
-            "_NET_CLIENT_LIST_STACKING(WINDOW): window id # 0x4a00007, 0x5200003, 0x6200012",
-        );
-
-        assert_eq!(ids, vec!["0x4a00007", "0x5200003", "0x6200012"]);
-    }
-
-    #[test]
-    fn parses_xwininfo_geometry_block() {
-        let output = r"
-  Absolute upper-left X:  42
-  Absolute upper-left Y:  77
-  Width: 1280
-  Height: 720
-";
-
-        assert_eq!(
-            parse_xwininfo_geometry(output),
-            Some(Bounds {
-                x: 42,
-                y: 77,
-                width: 1280,
-                height: 720,
-            })
-        );
-    }
-
-    #[test]
-    fn parses_xprop_window_metadata() {
-        let output = r#"
-_NET_WM_NAME(UTF8_STRING) = "Inbox - Mozilla Firefox"
-WM_CLASS(STRING) = "Navigator", "firefox"
-_NET_WM_PID(CARDINAL) = 12345
-"#;
-
-        assert_eq!(
-            parse_xprop_window_metadata(output),
-            X11WindowMetadata {
-                title: Some("Inbox - Mozilla Firefox".to_owned()),
-                app_name: Some("firefox".to_owned()),
-                process_id: Some(12345),
-            }
-        );
-    }
-
-    #[test]
-    fn quoted_string_extraction_preserves_all_values() {
-        assert_eq!(
-            extract_all_quoted_strings(r#"WM_CLASS(STRING) = "Navigator", "firefox""#),
-            vec!["Navigator", "firefox"]
         );
     }
 

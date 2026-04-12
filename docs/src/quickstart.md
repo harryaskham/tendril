@@ -36,7 +36,11 @@ tendril --window <id> capture --json
 tendril --window <id> run 'send("hello")'
 ```
 
-If you are validating Tendril as an operator on a real desktop instead of setting up the development environment, use the dedicated [macOS operator validation](macos-operator-validation.md) or [Linux Wayland operator validation](linux-wayland-operator-validation.md) guides for copy-pasteable `nix run` examples, expected backend/permission failures, and MCP stdio smoke checks.
+If you are validating Tendril as an operator on a real desktop instead of setting up the development environment, use the dedicated platform guides for copy-pasteable validation steps:
+
+- [macOS operator validation](macos-operator-validation.md)
+- [Linux/X11 operator validation](linux-x11-operator-validation.md)
+- [Linux Wayland operator validation](linux-wayland-operator-validation.md)
 
 For repeated use against one target, generate a shell helper instead of storing hidden runtime state:
 

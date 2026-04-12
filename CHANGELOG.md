@@ -13,9 +13,12 @@ Tendril follows [Semantic Versioning](https://semver.org/). Release notes are cu
 - A dedicated macOS operator-validation guide with copy-pasteable `nix run` examples for `list`, `capture`, `run`, and MCP stdio, plus permission-prompt expectations and self-containment troubleshooting.
 - A published Pi/Cacophony-facing MCP integration contract that documents the `tendril mcp stdio` launch expectations, desktop-session and permission assumptions, stable tool names/arguments, and semver alignment with Tendril's MCP schemas.
 - An external-client MCP smoke script and integration test that initialize Tendril over stdio, verify `tools/list` schema metadata, and call the `list` tool against the built binary contract.
+- A Linux/X11 packaged-smoke script and operator guide for validating packaged `list`/`capture` flows, with optional real-input smoke coverage for `run`.
 
 ### Changed
-- README now links the approved spec, managed validation commands, runtime config location, docs publication surface, handoff health summary, and macOS smoke-validation examples.
+- README now links the approved spec, managed validation commands, runtime config location, docs publication surface, handoff health summary, and packaged macOS/Linux smoke-validation examples.
+- Linux/X11 discovery, capture, and input now use an embedded X11/XRandR/XTest backend instead of `xrandr`, `xprop`, `xwininfo`, `import`, or `xdotool` helper tools.
+- The runtime dependency audit now reflects the self-contained Linux/X11 path and the remaining packaged-runtime follow-ups.
 - Cargo package metadata now carries shared repository and homepage information for the workspace crates.
 - Tag-triggered GitHub Actions release automation remains backed by the Nix flake and local pre-merge checks.
 - Seeded the changelog and release-note flow so future releases can prepend human-readable summaries when a new `vX.Y.Z` tag is pushed.

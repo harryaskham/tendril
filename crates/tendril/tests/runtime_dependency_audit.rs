@@ -25,16 +25,11 @@ fn runtime_dependency_audit_mentions_every_spawned_program() {
     let expected_programs = [
         "grim",
         "hyprctl",
-        "import",
         "osascript",
         "powershell",
         "screencapture",
         "swaymsg",
         "wlr-randr",
-        "xdotool",
-        "xprop",
-        "xrandr",
-        "xwininfo",
     ]
     .into_iter()
     .map(str::to_owned)

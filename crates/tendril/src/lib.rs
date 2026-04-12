@@ -8,6 +8,7 @@ pub mod input;
 pub mod logging;
 pub mod model;
 pub mod platform;
+pub(crate) mod x11;
 
 use std::ffi::OsString;
 use std::process::ExitCode;

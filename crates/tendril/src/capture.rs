@@ -1,7 +1,6 @@
 use std::fs;
 use std::io::Cursor;
 use std::path::PathBuf;
-use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::Engine as _;
@@ -17,8 +16,8 @@ use crate::config::ImageFormat;
 use crate::error::TendrilError;
 use crate::model::{Bounds, CaptureInput, CaptureOutput, CoordinateTransform, TargetSelector};
 use crate::platform::{
-    AdapterOperation, CaptureArtifact, CaptureRequest as PlatformCaptureRequest, CaptureTargetKind,
-    PlatformAdapter, TargetDescriptor as PlatformTargetDescriptor, TargetDiscoveryRequest,
+    CaptureArtifact, CaptureRequest as PlatformCaptureRequest, CaptureTargetKind, PlatformAdapter,
+    TargetDescriptor as PlatformTargetDescriptor, TargetDiscoveryRequest,
 };
 
 pub(crate) fn execute_capture(
@@ -307,31 +306,6 @@ pub(crate) fn read_and_remove_temp_capture(path: &PathBuf) -> Result<Vec<u8>, Te
     })?;
     let _ = fs::remove_file(path);
     Ok(bytes)
-}
-
-pub(crate) fn run_capture_command(command: &mut Command) -> Result<Vec<u8>, TendrilError> {
-    let output = command.output().map_err(|error| {
-        TendrilError::from(crate::platform::PlatformAdapterError::adapter_failure(
-            AdapterOperation::Capture,
-            crate::platform::PlatformKind::Linux,
-            format!("failed to spawn capture command: {error}"),
-        ))
-    })?;
-
-    if output.status.success() {
-        Ok(output.stdout)
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
-        Err(TendrilError::execution_failure(
-            "capture_command_failed",
-            if stderr.is_empty() {
-                format!("capture command exited with status {}", output.status)
-            } else {
-                format!("capture command failed: {stderr}")
-            },
-            None,
-        ))
-    }
 }
 
 #[cfg(test)]
