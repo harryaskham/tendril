@@ -180,6 +180,12 @@ Example tool calls:
 
 CLI JSON mode and MCP tool responses share the same structured payload shape.
 
+For Pi and Cacophony consumers, the Tendril-side launch/session/tool contract is documented in [docs/src/reference/pi-cacophony-mcp-contract.md](docs/src/reference/pi-cacophony-mcp-contract.md). A raw external-client smoke probe is available via:
+
+```bash
+./scripts/mcp-stdio-smoke.sh -- nix run .#tendril -- mcp stdio
+```
+
 ## macOS operator validation
 
 If you want to validate Tendril on macOS without reading the codebase, run these examples from the repository root:

@@ -11,6 +11,8 @@ Tendril follows [Semantic Versioning](https://semver.org/). Release notes are cu
 - `PROJECT_HEALTH.md` handoff summary that links the spec, docs, validation, and release surfaces and captures explicit follow-ups.
 - MIT `LICENSE` file and release-artifact packaging that now ships the license and project health summary alongside the changelog and README.
 - A dedicated macOS operator-validation guide with copy-pasteable `nix run` examples for `list`, `capture`, `run`, and MCP stdio, plus permission-prompt expectations and self-containment troubleshooting.
+- A published Pi/Cacophony-facing MCP integration contract that documents the `tendril mcp stdio` launch expectations, desktop-session and permission assumptions, stable tool names/arguments, and semver alignment with Tendril's MCP schemas.
+- An external-client MCP smoke script and integration test that initialize Tendril over stdio, verify `tools/list` schema metadata, and call the `list` tool against the built binary contract.
 
 ### Changed
 - README now links the approved spec, managed validation commands, runtime config location, docs publication surface, handoff health summary, and macOS smoke-validation examples.

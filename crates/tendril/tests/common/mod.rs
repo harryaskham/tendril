@@ -41,6 +41,7 @@ logging:
         }
     }
 
+    #[allow(dead_code)]
     pub fn cli_json(&self, args: &[&str]) -> Value {
         let output = self.command().args(args).output().expect("cli should run");
         assert!(
@@ -88,8 +89,7 @@ logging:
         parse_framed_responses(&output.stdout)
     }
 
-    fn command(&self) -> Command {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_tendril"));
+    pub fn apply_env<'a>(&self, command: &'a mut Command) -> &'a mut Command {
         command
             .env("TENDRIL_CONFIG_DIR", &self.config_dir)
             .env("TENDRIL_TARGET_FIXTURE_JSON", &self.target_fixture)
@@ -97,7 +97,12 @@ logging:
             .env("TENDRIL_INPUT_FIXTURE_JSON", &self.input_fixture)
             .env("XDG_SESSION_TYPE", "x11")
             .env("DISPLAY", ":99")
-            .env_remove("WAYLAND_DISPLAY");
+            .env_remove("WAYLAND_DISPLAY")
+    }
+
+    fn command(&self) -> Command {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_tendril"));
+        self.apply_env(&mut command);
         command
     }
 }

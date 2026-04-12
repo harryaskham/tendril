@@ -18,7 +18,7 @@ Green surfaces:
 | Facet | Status | Evidence |
 | --- | --- | --- |
 | CLI / agent workflow | Ready | `crates/tendril/src/cli.rs`, `crates/tendril/src/commands/mod.rs` |
-| MCP stdio parity | Ready | `crates/tendril/tests/mcp_parity.rs`, `crates/mcp-cli/src/lib.rs` |
+| MCP stdio parity | Ready | `crates/tendril/tests/mcp_parity.rs`, `crates/tendril/tests/mcp_external_smoke.rs`, `scripts/mcp-stdio-smoke.sh`, `crates/mcp-cli/src/lib.rs` |
 | Runtime config | Ready | `crates/tendril/src/config.rs`, `$TENDRIL_CONFIG_DIR/config.yaml` |
 | Packaging / release | Ready | `flake.nix`, `.github/workflows/tag-release.yml`, `scripts/release-artifacts.sh` |
 | Managed build / test surfaces | Ready | `.cacophony/project.yaml`, `caco build run`, `caco test run` |
