@@ -1,8 +1,10 @@
 use std::env;
 use std::time::Duration;
 
+use ashpd::desktop::screenshot::Screenshot as PortalScreenshot;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
+use pollster::block_on;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use thiserror::Error;
@@ -844,7 +846,11 @@ impl CaptureAdapter for LinuxAdapter {
                 "X11 capture support is adapter-local and command-scoped.".to_owned(),
             ])),
             DesktopSession::Wayland => Ok(FeatureSupport::available(capability).with_notes(vec![
-                "Wayland capture uses compositor-aware discovery plus grim for command-scoped screenshots."
+                "Wayland capture prefers xdg-desktop-portal screenshot capture, then crops the requested target bounds locally."
+                    .to_owned(),
+                "If the portal screenshot backend is unavailable, Tendril falls back to grim on compositor stacks that permit geometry-scoped screenshots."
+                    .to_owned(),
+                "Wayland discovery still requires a supported compositor metadata backend: Hyprland (`hyprctl`), sway (`swaymsg`), or wlroots output enumeration (`wlr-randr`)."
                     .to_owned(),
             ])),
             _ => Err(PlatformAdapterError::unsupported(
@@ -1344,36 +1350,226 @@ fn parse_display_zero_based(
     })
 }
 
+#[derive(Debug, Clone)]
+struct WaylandCaptureBackendFailure {
+    message: String,
+    missing_backend: bool,
+}
+
 fn capture_wayland_target(
     context: &AdapterContext,
     request: &CaptureRequest,
 ) -> Result<Vec<u8>, PlatformAdapterError> {
-    let target = if request.target == CaptureTargetKind::Display {
-        discovery::discover_targets(context, &TargetDiscoveryRequest)?
-            .targets
-            .into_iter()
-            .find(|target| {
-                target.kind == CaptureTargetKind::Display && target.id == request.target_id
-            })
-    } else {
-        discovery::discover_targets(context, &TargetDiscoveryRequest)?
-            .targets
-            .into_iter()
-            .find(|target| {
-                target.kind == CaptureTargetKind::Window && target.id == request.target_id
-            })
+    let inventory = discovery::discover_targets(context, &TargetDiscoveryRequest)?;
+    let target = inventory
+        .targets
+        .iter()
+        .find(|target| target.kind == request.target && target.id == request.target_id)
+        .cloned()
+        .ok_or_else(|| {
+            PlatformAdapterError::adapter_failure(
+                AdapterOperation::Capture,
+                context.platform,
+                format!(
+                    "target `{}` was not found during Wayland capture",
+                    request.target_id
+                ),
+            )
+        })?;
+
+    let portal_error = match capture_wayland_target_via_portal(&target, &inventory) {
+        Ok(image_bytes) => return Ok(image_bytes),
+        Err(error) => error,
     };
-    let target = target.ok_or_else(|| {
+
+    if !wayland_capture_program_on_path("grim") {
+        return if portal_error.missing_backend {
+            Err(PlatformAdapterError::unsupported(
+                wayland_capture_capability(request.target),
+                context.platform,
+                CapabilityErrorReason::UnsupportedFeature,
+                format!(
+                    "Wayland capture needs either an xdg-desktop-portal screenshot backend or the `grim` compatibility fallback for this session; portal capture failed: {}",
+                    portal_error.message
+                ),
+                Some(
+                    "Install and run an xdg-desktop-portal screenshot backend for the active compositor, or install `grim` as a compatibility fallback if that compositor permits geometry-scoped screenshots.",
+                ),
+            ))
+        } else {
+            Err(PlatformAdapterError::adapter_failure(
+                AdapterOperation::Capture,
+                context.platform,
+                format!(
+                    "Wayland capture via xdg-desktop-portal screenshot failed (`{}`), and the `grim` compatibility fallback is not installed.",
+                    portal_error.message
+                ),
+            ))
+        };
+    }
+
+    capture_wayland_target_with_grim(&target).map_err(|grim_error| {
         PlatformAdapterError::adapter_failure(
             AdapterOperation::Capture,
             context.platform,
             format!(
-                "target `{}` was not found during Wayland capture",
-                request.target_id
+                "Wayland capture failed via xdg-desktop-portal screenshot (`{}`) and grim fallback (`{grim_error}`).",
+                portal_error.message
             ),
         )
-    })?;
+    })
+}
 
+fn capture_wayland_target_via_portal(
+    target: &TargetDescriptor,
+    inventory: &TargetInventory,
+) -> Result<Vec<u8>, WaylandCaptureBackendFailure> {
+    let screenshot = block_on(async {
+        PortalScreenshot::request()
+            .interactive(false)
+            .modal(true)
+            .send()
+            .await?
+            .response()
+    })
+    .map_err(|error| classify_wayland_portal_capture_error(&error))?;
+
+    let path = screenshot
+        .uri()
+        .to_file_path()
+        .map_err(|()| WaylandCaptureBackendFailure {
+            message: format!(
+                "xdg-desktop-portal screenshot returned a non-file URI: {}",
+                screenshot.uri()
+            ),
+            missing_backend: false,
+        })?;
+    let image_bytes = std::fs::read(&path).map_err(|error| WaylandCaptureBackendFailure {
+        message: format!(
+            "failed to read xdg-desktop-portal screenshot artifact `{}`: {error}",
+            path.display()
+        ),
+        missing_backend: false,
+    })?;
+    let _ = std::fs::remove_file(&path);
+
+    crop_wayland_portal_capture_to_target(&image_bytes, target, inventory)
+}
+
+fn classify_wayland_portal_capture_error(error: &ashpd::Error) -> WaylandCaptureBackendFailure {
+    let missing_backend = match error {
+        ashpd::Error::NoResponse
+        | ashpd::Error::RequiresVersion(_, _)
+        | ashpd::Error::Portal(ashpd::PortalError::NotFound(_)) => true,
+        ashpd::Error::Zbus(zbus_error) => {
+            let message = zbus_error.to_string().to_ascii_lowercase();
+            message.contains("serviceunknown")
+                || message.contains("unknownmethod")
+                || message.contains("name has no owner")
+                || message.contains("org.freedesktop.portal.desktop")
+                || message.contains("org.freedesktop.portal.screenshot")
+        }
+        _ => false,
+    };
+
+    WaylandCaptureBackendFailure {
+        message: error.to_string(),
+        missing_backend,
+    }
+}
+
+fn crop_wayland_portal_capture_to_target(
+    image_bytes: &[u8],
+    target: &TargetDescriptor,
+    inventory: &TargetInventory,
+) -> Result<Vec<u8>, WaylandCaptureBackendFailure> {
+    let image =
+        image::load_from_memory(image_bytes).map_err(|error| WaylandCaptureBackendFailure {
+            message: format!(
+                "failed to decode xdg-desktop-portal screenshot image for `{}`: {error}",
+                target.id
+            ),
+            missing_backend: false,
+        })?;
+
+    let (origin_x, origin_y) = wayland_workspace_origin(inventory);
+    let crop_x = i64::from(target.bounds.x) - i64::from(origin_x);
+    let crop_y = i64::from(target.bounds.y) - i64::from(origin_y);
+
+    if crop_x < 0 || crop_y < 0 {
+        return Err(WaylandCaptureBackendFailure {
+            message: format!(
+                "xdg-desktop-portal screenshot for `{}` did not cover the requested target origin after workspace translation (crop origin {crop_x},{crop_y}).",
+                target.id
+            ),
+            missing_backend: false,
+        });
+    }
+
+    let crop_x = u32::try_from(crop_x).expect("validated crop x should fit u32");
+    let crop_y = u32::try_from(crop_y).expect("validated crop y should fit u32");
+    if crop_x == 0
+        && crop_y == 0
+        && target.bounds.width == image.width()
+        && target.bounds.height == image.height()
+    {
+        return Ok(image_bytes.to_vec());
+    }
+
+    if crop_x.saturating_add(target.bounds.width) > image.width()
+        || crop_y.saturating_add(target.bounds.height) > image.height()
+    {
+        return Err(WaylandCaptureBackendFailure {
+            message: format!(
+                "xdg-desktop-portal screenshot dimensions {}x{} did not cover target `{}` at {}x{}+{}+{}.",
+                image.width(),
+                image.height(),
+                target.id,
+                target.bounds.width,
+                target.bounds.height,
+                target.bounds.x,
+                target.bounds.y,
+            ),
+            missing_backend: false,
+        });
+    }
+
+    let cropped = image.crop_imm(crop_x, crop_y, target.bounds.width, target.bounds.height);
+    let mut encoded = Vec::new();
+    cropped
+        .write_to(
+            &mut std::io::Cursor::new(&mut encoded),
+            image::ImageFormat::Png,
+        )
+        .map_err(|error| WaylandCaptureBackendFailure {
+            message: format!(
+                "failed to encode cropped xdg-desktop-portal screenshot for `{}`: {error}",
+                target.id
+            ),
+            missing_backend: false,
+        })?;
+    Ok(encoded)
+}
+
+fn wayland_workspace_origin(inventory: &TargetInventory) -> (i32, i32) {
+    let mut displays = inventory
+        .targets
+        .iter()
+        .filter(|target| target.kind == CaptureTargetKind::Display)
+        .map(|target| (target.bounds.x, target.bounds.y));
+    let Some((mut min_x, mut min_y)) = displays.next() else {
+        return (0, 0);
+    };
+
+    for (x, y) in displays {
+        min_x = min_x.min(x);
+        min_y = min_y.min(y);
+    }
+
+    (min_x, min_y)
+}
+
+fn capture_wayland_target_with_grim(target: &TargetDescriptor) -> Result<Vec<u8>, String> {
     let path = unique_temp_path("png");
     let geometry = format!(
         "{}x{}+{}+{}",
@@ -1386,33 +1582,44 @@ fn capture_wayland_target(
         .arg("-g")
         .arg(geometry)
         .arg(&path);
-    let output = command.output().map_err(|error| {
-        PlatformAdapterError::adapter_failure(
-            AdapterOperation::Capture,
-            context.platform,
-            format!("failed to spawn grim: {error}"),
-        )
-    })?;
+    let output = command
+        .output()
+        .map_err(|error| format!("failed to spawn grim: {error}"))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(PlatformAdapterError::adapter_failure(
-            AdapterOperation::Capture,
-            context.platform,
-            if stderr.trim().is_empty() {
-                format!("grim exited with status {}", output.status)
-            } else {
-                format!("grim failed: {}", stderr.trim())
-            },
-        ));
+        return Err(if stderr.trim().is_empty() {
+            format!("grim exited with status {}", output.status)
+        } else {
+            format!("grim failed: {}", stderr.trim())
+        });
     }
 
-    read_and_remove_temp_capture(&path).map_err(|error| {
-        PlatformAdapterError::adapter_failure(
-            AdapterOperation::Capture,
-            context.platform,
-            error.to_string(),
-        )
+    read_and_remove_temp_capture(&path).map_err(|error| error.to_string())
+}
+
+fn wayland_capture_capability(target: CaptureTargetKind) -> Capability {
+    match target {
+        CaptureTargetKind::Window => Capability::WindowCapture,
+        CaptureTargetKind::Display => Capability::DisplayCapture,
+    }
+}
+
+fn wayland_capture_program_on_path(program: &str) -> bool {
+    env::var_os("PATH").is_some_and(|path| {
+        env::split_paths(&path).any(|entry| {
+            let candidate = entry.join(program);
+            candidate.is_file() || {
+                #[cfg(windows)]
+                {
+                    entry.join(format!("{program}.exe")).is_file()
+                }
+                #[cfg(not(windows))]
+                {
+                    false
+                }
+            }
+        })
     })
 }
 
@@ -2530,9 +2737,10 @@ mod tests {
         AdapterContext, AudioBackend, AudioCapabilityProbe, AudioSourceKind, CaptureAdapter,
         CaptureTargetKind, DesktopSession, InputControlAdapter, LinuxAdapter, MacOsAdapter,
         PermissionAdapter, PermissionKind, PermissionState, PlatformAdapter, PlatformAdapterError,
-        PlatformKind, WindowsAdapter, detect_linux_audio_backend, detect_linux_session,
+        PlatformKind, TargetDescriptor, TargetInventory, WindowsAdapter,
+        crop_wayland_portal_capture_to_target, detect_linux_audio_backend, detect_linux_session,
         is_macos_input_permission_error, javascript_string_literal, macos_focus_pid_jxa_script,
-        macos_text_jxa_script,
+        macos_text_jxa_script, wayland_capture_program_on_path, wayland_workspace_origin,
     };
     use crate::TendrilError;
     use mcp_cli::ErrorCategory;
@@ -2696,5 +2904,130 @@ mod tests {
         assert!(text_script.contains("System Events"));
         assert!(!focus_script.contains("swift"));
         assert!(!text_script.contains("swift"));
+    }
+
+    #[test]
+    fn wayland_capture_support_notes_describe_portal_first_strategy() {
+        let adapter = LinuxAdapter::new(AdapterContext::linux(
+            DesktopSession::Wayland,
+            Some(AudioBackend::PipeWire),
+        ));
+        let support = adapter
+            .capture_support(CaptureTargetKind::Window)
+            .expect("wayland capture support should be described");
+
+        assert!(
+            support
+                .notes
+                .iter()
+                .any(|note| note.contains("xdg-desktop-portal"))
+        );
+        assert!(support.notes.iter().any(|note| note.contains("grim")));
+        assert!(support.notes.iter().any(|note| note.contains("hyprctl")));
+    }
+
+    #[test]
+    fn wayland_workspace_origin_tracks_leftmost_display() {
+        let inventory = TargetInventory {
+            targets: vec![
+                display_target("display-left", -1920, 40, 1920, 1080),
+                display_target("display-main", 0, 0, 2560, 1440),
+            ],
+        };
+
+        assert_eq!(wayland_workspace_origin(&inventory), (-1920, 0));
+    }
+
+    #[test]
+    fn wayland_portal_crop_translates_global_bounds_into_workspace_space() {
+        let inventory = TargetInventory {
+            targets: vec![
+                display_target("display-left", -2, 0, 2, 2),
+                display_target("display-main", 0, 0, 2, 2),
+            ],
+        };
+        let target = TargetDescriptor {
+            id: "window-1".to_owned(),
+            title: Some("Example".to_owned()),
+            kind: CaptureTargetKind::Window,
+            name: "Example".to_owned(),
+            bounds: crate::model::Bounds {
+                x: 0,
+                y: 0,
+                width: 2,
+                height: 2,
+            },
+            scale_factor: crate::model::ScaleFactor::identity(),
+            capture_supported: true,
+            input_supported: false,
+            app_name: Some("example".to_owned()),
+            process_id: Some(7),
+        };
+
+        let cropped = crop_wayland_portal_capture_to_target(
+            &sample_png(
+                4,
+                2,
+                image::Rgba([0, 0, 255, 255]),
+                image::Rgba([255, 0, 0, 255]),
+            ),
+            &target,
+            &inventory,
+        )
+        .expect("portal crop should succeed");
+        let decoded = image::load_from_memory(&cropped)
+            .expect("cropped image should decode")
+            .to_rgba8();
+
+        assert_eq!(decoded.width(), 2);
+        assert_eq!(decoded.height(), 2);
+        assert_eq!(*decoded.get_pixel(0, 0), image::Rgba([255, 0, 0, 255]));
+    }
+
+    #[test]
+    fn wayland_capture_path_lookup_only_checks_known_program_names() {
+        assert!(!wayland_capture_program_on_path(
+            "grim definitely does not exist"
+        ));
+    }
+
+    fn display_target(id: &str, x: i32, y: i32, width: u32, height: u32) -> TargetDescriptor {
+        TargetDescriptor {
+            id: id.to_owned(),
+            title: None,
+            kind: CaptureTargetKind::Display,
+            name: id.to_owned(),
+            bounds: crate::model::Bounds {
+                x,
+                y,
+                width,
+                height,
+            },
+            scale_factor: crate::model::ScaleFactor::identity(),
+            capture_supported: true,
+            input_supported: false,
+            app_name: None,
+            process_id: None,
+        }
+    }
+
+    fn sample_png(
+        width: u32,
+        height: u32,
+        left: image::Rgba<u8>,
+        right: image::Rgba<u8>,
+    ) -> Vec<u8> {
+        let image =
+            image::DynamicImage::ImageRgba8(image::ImageBuffer::from_fn(width, height, |x, _| {
+                if x < width / 2 { left } else { right }
+            }));
+        let mut bytes = Vec::new();
+        image
+            .write_to(
+                &mut std::io::Cursor::new(&mut bytes),
+                image::ImageFormat::Png,
+            )
+            .expect("sample png should encode");
+        bytes
     }
 }

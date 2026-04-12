@@ -3,6 +3,7 @@
 - [Overview](index.md)
 - [Quickstart](quickstart.md)
 - [macOS operator validation](macos-operator-validation.md)
+- [Linux Wayland operator validation](linux-wayland-operator-validation.md)
 - [CLI guide](cli/index.md)
   - [`tendril list`](cli/list.md)
   - [`tendril capture`](cli/capture.md)

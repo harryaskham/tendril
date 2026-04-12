@@ -199,15 +199,53 @@ fn discover_wayland_targets(
         return Ok(sort_inventory(TargetInventory { targets: displays }));
     }
 
-    Err(PlatformAdapterError::unsupported(
+    Err(wayland_discovery_backend_error(context))
+}
+
+fn wayland_discovery_backend_error(context: &AdapterContext) -> PlatformAdapterError {
+    let on_path = wayland_discovery_backend_tools_on_path();
+    let detected = if on_path.is_empty() {
+        "none detected on PATH".to_owned()
+    } else {
+        format!("detected on PATH: {}", on_path.join(", "))
+    };
+
+    PlatformAdapterError::unsupported(
         Capability::TargetDiscovery,
         context.platform,
         CapabilityErrorReason::UnsupportedFeature,
-        "Wayland discovery requires a compositor-aware backend such as Hyprland, sway, or a wlroots compositor exposing wlr-randr.",
-        Some(
-            "Install grim plus hyprctl, swaymsg, or wlr-randr in the active Wayland session, then rerun tendril list.",
+        format!(
+            "Wayland discovery requires compositor metadata from one of the supported backends: Hyprland (`hyprctl`), sway (`swaymsg`), or wlroots output enumeration (`wlr-randr`); {detected}."
         ),
-    ))
+        Some(
+            "Use the backend that matches the active Wayland session: `hyprctl` for Hyprland, `swaymsg` for sway, or `wlr-randr` for wlroots-based display discovery. Capture no longer requires `grim` when an xdg-desktop-portal screenshot backend is available.",
+        ),
+    )
+}
+
+fn wayland_discovery_backend_tools_on_path() -> Vec<&'static str> {
+    ["hyprctl", "swaymsg", "wlr-randr"]
+        .into_iter()
+        .filter(|program| program_on_path(program))
+        .collect()
+}
+
+fn program_on_path(program: &str) -> bool {
+    env::var_os("PATH").is_some_and(|path| {
+        env::split_paths(&path).any(|entry| {
+            let candidate = entry.join(program);
+            candidate.is_file() || {
+                #[cfg(windows)]
+                {
+                    entry.join(format!("{program}.exe")).is_file()
+                }
+                #[cfg(not(windows))]
+                {
+                    false
+                }
+            }
+        })
+    })
 }
 
 #[allow(clippy::too_many_lines)]
@@ -1218,7 +1256,9 @@ mod tests {
         Bounds, X11WindowMetadata, extract_all_quoted_strings, is_macos_permission_error,
         macos_discovery_script, parse_simple_geometry, parse_window_id_list, parse_wlr_randr_mode,
         parse_xprop_window_metadata, parse_xrandr_geometry, parse_xwininfo_geometry,
+        wayland_discovery_backend_error, wayland_discovery_backend_tools_on_path,
     };
+    use crate::platform::{AdapterContext, DesktopSession, PlatformAdapterError};
 
     #[test]
     fn parses_xrandr_connected_monitor_geometry() {
@@ -1344,5 +1384,37 @@ _NET_WM_PID(CARDINAL) = 12345
         assert!(script.contains("ObjC.import('CoreGraphics')"));
         assert!(script.contains("CGWindowListCopyWindowInfo"));
         assert!(!script.contains("import AppKit\nimport ApplicationServices"));
+    }
+
+    #[test]
+    fn wayland_backend_diagnostic_only_reports_supported_matrix_tools() {
+        let detected = wayland_discovery_backend_tools_on_path();
+
+        assert!(
+            detected
+                .iter()
+                .all(|tool| matches!(*tool, "hyprctl" | "swaymsg" | "wlr-randr"))
+        );
+    }
+
+    #[test]
+    fn wayland_backend_error_describes_supported_matrices_without_grim_requirement() {
+        let error =
+            wayland_discovery_backend_error(&AdapterContext::linux(DesktopSession::Wayland, None));
+
+        match error {
+            PlatformAdapterError::UnsupportedCapability(capability) => {
+                assert!(capability.message.contains("hyprctl"));
+                assert!(capability.message.contains("swaymsg"));
+                assert!(capability.message.contains("wlr-randr"));
+                assert!(!capability.message.contains("grim"));
+                assert!(
+                    capability.suggested_action.as_deref().is_some_and(
+                        |message| message.contains("Capture no longer requires `grim`")
+                    )
+                );
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
     }
 }

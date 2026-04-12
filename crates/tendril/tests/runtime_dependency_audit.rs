@@ -29,7 +29,6 @@ fn runtime_dependency_audit_mentions_every_spawned_program() {
         "osascript",
         "powershell",
         "screencapture",
-        "swift",
         "swaymsg",
         "wlr-randr",
         "xdotool",

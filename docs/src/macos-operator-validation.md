@@ -192,33 +192,7 @@ If the prompt does not appear automatically, check the Accessibility settings pa
 
 This page focuses on `list`, `capture`, `run`, and MCP stdio, but if you later validate `listen --source microphone`, macOS should use **System Settings > Privacy & Security > Microphone** for that consent boundary.
 
-## Troubleshooting self-containment failures
-
-These are not the desired long-term operator experience, but they are useful for diagnosing current macOS validation failures.
-
-### `swift` is missing
-
-Symptoms may look like:
-
-- `platform_adapter_failure` during `list`,
-- `execution_failure` or `input_spawn_failed` during `run`, or
-- stderr text such as `error: tool 'swift' not found`.
-
-What it means:
-
-- the current macOS adapter still shells out to the Swift toolchain for some discovery and input paths,
-- so the binary is not yet fully self-contained on macOS, and
-- permission guidance may be masked by the missing runtime dependency.
-
-Current tracking bug: `bd-5c3937`.
-
-Temporary workaround if you need to continue local validation today:
-
-```bash
-xcode-select --install
-```
-
-Then rerun the Tendril command after the Command Line Tools install completes.
+## Troubleshooting
 
 ### Permissions were granted but the command still fails
 
