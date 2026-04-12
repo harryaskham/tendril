@@ -18,3 +18,4 @@ Tendril is designed around a platform adapter boundary so the CLI and MCP surfac
 - Discovery currently focuses on windows and displays.
 - Audio source modeling exists, but end-to-end audio artifact capture is not yet shipped.
 - The docs site intentionally documents both fully implemented features and probe-first surfaces so the published contract matches the repository state.
+- For a source-backed inventory of runtime subprocess/tool dependencies and their current self-containment classification, see [Runtime dependency audit](runtime-dependencies.md).

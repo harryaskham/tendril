@@ -263,6 +263,10 @@ start a helper daemon to bypass platform rules.
 - Microphone paths may depend on **Settings > Privacy & security > Microphone**
   for desktop apps.
 
+For a source-backed inventory of the current runtime subprocess/tool surface and
+its self-containment classification, see
+[`docs/src/reference/runtime-dependencies.md`](docs/src/reference/runtime-dependencies.md).
+
 ## Audio capture status
 
 For v0.0.1, `tendril listen` ships a probe-first slice:

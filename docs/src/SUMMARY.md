@@ -14,5 +14,6 @@
   - [Configuration](reference/configuration.md)
   - [JSON envelopes](reference/json-envelopes.md)
   - [Platform support and rollout status](reference/platform-support.md)
+  - [Runtime dependency audit](reference/runtime-dependencies.md)
   - [Docs publishing and release flow](reference/publishing.md)
   - [Rust API docs](reference/api.md)
