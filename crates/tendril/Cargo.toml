@@ -27,6 +27,7 @@ clap.workspace = true
 image.workspace = true
 mcp-cli = { path = "../mcp-cli" }
 pollster.workspace = true
+tendril-win32 = { path = "../tendril-win32" }
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true

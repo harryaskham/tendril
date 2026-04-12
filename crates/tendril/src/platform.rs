@@ -1028,109 +1028,12 @@ impl WindowsAdapter {
         )
     }
 
-    fn capture_display(
-        &self,
-        target_id: &str,
-        path: &std::path::Path,
-    ) -> Result<(), PlatformAdapterError> {
-        let display_index = parse_display_zero_based(target_id, self.platform())?;
-        let script = format!(
-            r"
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
-$screen = [System.Windows.Forms.Screen]::AllScreens[{display_index}]
-$bounds = $screen.Bounds
-$bitmap = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
-$graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-$graphics.CopyFromScreen($bounds.X, $bounds.Y, 0, 0, $bounds.Size)
-$bitmap.Save('{path}', [System.Drawing.Imaging.ImageFormat]::Png)
-$graphics.Dispose()
-$bitmap.Dispose()
-",
-            path = path.display()
-        );
-        self.run_powershell_capture(script)
+    fn capture_display(&self, target_id: &str) -> Result<Vec<u8>, PlatformAdapterError> {
+        WINDOWS_RUNTIME.capture_display(self.platform(), target_id)
     }
 
-    fn capture_window(
-        &self,
-        target_id: &str,
-        path: &std::path::Path,
-    ) -> Result<(), PlatformAdapterError> {
-        let script = format!(
-            r#"
-Add-Type -AssemblyName System.Drawing
-Add-Type @"
-using System;
-using System.Drawing;
-using System.Drawing.Imaging;
-using System.Runtime.InteropServices;
-public static class TendrilCapture {{
-  [StructLayout(LayoutKind.Sequential)]
-  public struct RECT {{ public int Left; public int Top; public int Right; public int Bottom; }}
-  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
-  [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdcBlt, uint nFlags);
-}}
-"@
-$hwnd = [IntPtr]::new([Int64]{hwnd})
-$rect = New-Object TendrilCapture+RECT
-if (-not [TendrilCapture]::GetWindowRect($hwnd, [ref]$rect)) {{ throw 'GetWindowRect failed' }}
-$width = $rect.Right - $rect.Left
-$height = $rect.Bottom - $rect.Top
-$bitmap = New-Object System.Drawing.Bitmap $width, $height
-$graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-$hdc = $graphics.GetHdc()
-try {{
-  if (-not [TendrilCapture]::PrintWindow($hwnd, $hdc, 0)) {{
-    $graphics.ReleaseHdc($hdc)
-    $hdc = [IntPtr]::Zero
-    $graphics.CopyFromScreen($rect.Left, $rect.Top, 0, 0, $bitmap.Size)
-  }}
-}} finally {{
-  if ($hdc -ne [IntPtr]::Zero) {{ $graphics.ReleaseHdc($hdc) }}
-}}
-$bitmap.Save('{path}', [System.Drawing.Imaging.ImageFormat]::Png)
-$graphics.Dispose()
-$bitmap.Dispose()
-"#,
-            hwnd = target_id,
-            path = path.display()
-        );
-        self.run_powershell_capture(script)
-    }
-
-    fn run_powershell_capture(&self, script: String) -> Result<(), PlatformAdapterError> {
-        let output = std::process::Command::new("powershell")
-            .arg("-NoProfile")
-            .arg("-NonInteractive")
-            .arg("-Command")
-            .arg(script)
-            .output()
-            .map_err(|error| {
-                PlatformAdapterError::adapter_failure(
-                    AdapterOperation::Capture,
-                    self.platform(),
-                    format!("failed to spawn PowerShell capture helper: {error}"),
-                )
-            })?;
-
-        if output.status.success() {
-            Ok(())
-        } else {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            Err(PlatformAdapterError::adapter_failure(
-                AdapterOperation::Capture,
-                self.platform(),
-                if stderr.trim().is_empty() {
-                    format!(
-                        "PowerShell capture helper exited with status {}",
-                        output.status
-                    )
-                } else {
-                    format!("PowerShell capture helper failed: {}", stderr.trim())
-                },
-            ))
-        }
+    fn capture_window(&self, target_id: &str) -> Result<Vec<u8>, PlatformAdapterError> {
+        WINDOWS_RUNTIME.capture_window(self.platform(), target_id)
     }
 }
 
@@ -1172,19 +1075,10 @@ impl CaptureAdapter for WindowsAdapter {
             return Ok(artifact);
         }
 
-        let path = unique_temp_path("png");
-        match request.target {
-            CaptureTargetKind::Display => self.capture_display(&request.target_id, &path)?,
-            CaptureTargetKind::Window => self.capture_window(&request.target_id, &path)?,
-        }
-
-        let image_bytes = read_and_remove_temp_capture(&path).map_err(|error| {
-            PlatformAdapterError::adapter_failure(
-                AdapterOperation::Capture,
-                self.platform(),
-                error.to_string(),
-            )
-        })?;
+        let image_bytes = match request.target {
+            CaptureTargetKind::Display => self.capture_display(&request.target_id)?,
+            CaptureTargetKind::Window => self.capture_window(&request.target_id)?,
+        };
 
         Ok(CaptureArtifact {
             target_id: request.target_id.clone(),
@@ -1281,20 +1175,6 @@ fn parse_display_index(
             AdapterOperation::Capture,
             platform,
             format!("display target id `{target_id}` could not be parsed: {error}"),
-        )
-    })
-}
-
-fn parse_display_zero_based(
-    target_id: &str,
-    platform: PlatformKind,
-) -> Result<u32, PlatformAdapterError> {
-    let one_based = parse_display_index(target_id, platform)?;
-    one_based.checked_sub(1).ok_or_else(|| {
-        PlatformAdapterError::adapter_failure(
-            AdapterOperation::Capture,
-            platform,
-            format!("display target id `{target_id}` must be one-based"),
         )
     })
 }
@@ -1716,9 +1596,120 @@ fn dispatch_macos_action(
     }
 }
 
+trait WindowsRuntimeBackend {
+    fn capture_display(
+        &self,
+        platform: PlatformKind,
+        target_id: &str,
+    ) -> Result<Vec<u8>, PlatformAdapterError>;
+    fn capture_window(
+        &self,
+        platform: PlatformKind,
+        target_id: &str,
+    ) -> Result<Vec<u8>, PlatformAdapterError>;
+    fn focus_window(&self, target_id: &str) -> Result<(), String>;
+    fn send_text(&self, text: &str) -> Result<(), String>;
+    fn tap_key(&self, key: &str) -> Result<(), String>;
+    fn hold_modifier(&self, modifier: ModifierKey) -> Result<(), String>;
+    fn release_modifier(&self, modifier: ModifierKey) -> Result<(), String>;
+    fn click_mouse(&self, button: MouseButton, x: i32, y: i32) -> Result<(), String>;
+    fn drag_mouse(
+        &self,
+        button: MouseButton,
+        start_x: i32,
+        start_y: i32,
+        end_x: i32,
+        end_y: i32,
+    ) -> Result<(), String>;
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct NativeWindowsRuntime;
+
+static WINDOWS_RUNTIME: NativeWindowsRuntime = NativeWindowsRuntime;
+
+impl WindowsRuntimeBackend for NativeWindowsRuntime {
+    fn capture_display(
+        &self,
+        platform: PlatformKind,
+        target_id: &str,
+    ) -> Result<Vec<u8>, PlatformAdapterError> {
+        tendril_win32::capture_display_png(target_id).map_err(|error| {
+            PlatformAdapterError::adapter_failure(
+                AdapterOperation::Capture,
+                platform,
+                format!("Windows display capture failed: {error}"),
+            )
+        })
+    }
+
+    fn capture_window(
+        &self,
+        platform: PlatformKind,
+        target_id: &str,
+    ) -> Result<Vec<u8>, PlatformAdapterError> {
+        tendril_win32::capture_window_png(target_id).map_err(|error| {
+            PlatformAdapterError::adapter_failure(
+                AdapterOperation::Capture,
+                platform,
+                format!("Windows window capture failed: {error}"),
+            )
+        })
+    }
+
+    fn focus_window(&self, target_id: &str) -> Result<(), String> {
+        tendril_win32::focus_window(target_id)
+    }
+
+    fn send_text(&self, text: &str) -> Result<(), String> {
+        tendril_win32::send_text(text)
+    }
+
+    fn tap_key(&self, key: &str) -> Result<(), String> {
+        tendril_win32::tap_key(key)
+    }
+
+    fn hold_modifier(&self, modifier: ModifierKey) -> Result<(), String> {
+        tendril_win32::hold_modifier(windows_runtime_modifier(modifier))
+    }
+
+    fn release_modifier(&self, modifier: ModifierKey) -> Result<(), String> {
+        tendril_win32::release_modifier(windows_runtime_modifier(modifier))
+    }
+
+    fn click_mouse(&self, button: MouseButton, x: i32, y: i32) -> Result<(), String> {
+        tendril_win32::click_mouse(windows_runtime_mouse_button(button), x, y)
+    }
+
+    fn drag_mouse(
+        &self,
+        button: MouseButton,
+        start_x: i32,
+        start_y: i32,
+        end_x: i32,
+        end_y: i32,
+    ) -> Result<(), String> {
+        tendril_win32::drag_mouse(
+            windows_runtime_mouse_button(button),
+            start_x,
+            start_y,
+            end_x,
+            end_y,
+        )
+    }
+}
+
 fn execute_windows_input(
+    platform: PlatformKind,
+    request: &InputRequest,
+) -> Result<InputOutcome, TendrilError> {
+    execute_windows_input_with_runtime(platform, request, &WINDOWS_RUNTIME)
+}
+
+fn execute_windows_input_with_runtime(
     _platform: PlatformKind,
     request: &InputRequest,
+    runtime: &dyn WindowsRuntimeBackend,
 ) -> Result<InputOutcome, TendrilError> {
     let keyboard_input = request.text.is_some() || request.actions.iter().any(action_is_keyboard);
     let mut focus_required = keyboard_input || matches!(request.target, CaptureTargetKind::Window);
@@ -1726,35 +1717,15 @@ fn execute_windows_input(
     let mut notes = Vec::new();
 
     if matches!(request.target, CaptureTargetKind::Window) {
-        let focus_script = format!(
-            r#"
-Add-Type @"
-using System;
-using System.Runtime.InteropServices;
-public static class TendrilFocus {{
-  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
-}}
-"@
-$hwnd = [IntPtr]::new([Int64]{})
-if (-not [TendrilFocus]::SetForegroundWindow($hwnd)) {{ throw 'SetForegroundWindow failed' }}
-"#,
-            request.target_id
-        );
-        run_process_for_input(
-            "powershell",
-            &[
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                focus_script.as_str(),
-            ],
+        run_windows_step(
+            runtime.focus_window(&request.target_id),
             "focus",
             None,
             None,
         )?;
         focus_transferred = true;
         notes.push(
-            "Activated the target window with SetForegroundWindow before dispatching Windows input."
+            "Activated the target window with native Win32 focus APIs before dispatching Windows input."
                 .to_owned(),
         );
         std::thread::sleep(reliability_delay());
@@ -1766,14 +1737,7 @@ if (-not [TendrilFocus]::SetForegroundWindow($hwnd)) {{ throw 'SetForegroundWind
     }
 
     if let Some(text) = &request.text {
-        let script = windows_sendkeys_script(&windows_sendkeys_text(text));
-        run_process_for_input(
-            "powershell",
-            &["-NoProfile", "-NonInteractive", "-Command", script.as_str()],
-            "dispatch",
-            Some(0),
-            Some("text"),
-        )?;
+        run_windows_step(runtime.send_text(text), "dispatch", Some(0), Some("text"))?;
         return Ok(InputOutcome {
             action_count: 1,
             focus_required,
@@ -1789,7 +1753,7 @@ if (-not [TendrilFocus]::SetForegroundWindow($hwnd)) {{ throw 'SetForegroundWind
 
     for (action_index, action) in request.actions.iter().enumerate() {
         let label = action_label(action);
-        dispatch_windows_action(request, action, action_index, &label)?;
+        dispatch_windows_action_with_runtime(runtime, request, action, action_index, &label)?;
         if !matches!(action, InputAction::Wait { .. }) {
             std::thread::sleep(reliability_delay());
         }
@@ -1812,7 +1776,8 @@ if (-not [TendrilFocus]::SetForegroundWindow($hwnd)) {{ throw 'SetForegroundWind
     })
 }
 
-fn dispatch_windows_action(
+fn dispatch_windows_action_with_runtime(
+    runtime: &dyn WindowsRuntimeBackend,
     request: &InputRequest,
     action: &InputAction,
     action_index: usize,
@@ -1820,53 +1785,46 @@ fn dispatch_windows_action(
 ) -> Result<(), TendrilError> {
     match action {
         InputAction::KeyTap { key } => {
-            let sequence = windows_sendkeys_key(key)?;
-            let script = windows_sendkeys_script(&sequence);
-            run_process_for_input(
-                "powershell",
-                &["-NoProfile", "-NonInteractive", "-Command", script.as_str()],
+            if !windows_key_is_supported(key) {
+                return Err(TendrilError::execution_failure(
+                    "unsupported_key",
+                    format!("unsupported Windows key `{key}`"),
+                    None,
+                ));
+            }
+            run_windows_step(
+                runtime.tap_key(key),
                 "dispatch",
                 Some(action_index),
                 Some(label),
             )
         }
-        InputAction::Hold { modifier } => {
-            let sequence = match modifier {
-                ModifierKey::Ctrl => "^",
-                ModifierKey::Alt => "%",
-                ModifierKey::Shift => "+",
-                ModifierKey::Meta => "^{ESC}",
-            };
-            let script = windows_sendkeys_script(sequence);
-            run_process_for_input(
-                "powershell",
-                &["-NoProfile", "-NonInteractive", "-Command", script.as_str()],
-                "dispatch",
-                Some(action_index),
-                Some(label),
-            )
-        }
-        InputAction::Release { .. } => Ok(()),
-        InputAction::Send { text } => {
-            let script = windows_sendkeys_script(&windows_sendkeys_text(text));
-            run_process_for_input(
-                "powershell",
-                &["-NoProfile", "-NonInteractive", "-Command", script.as_str()],
-                "dispatch",
-                Some(action_index),
-                Some(label),
-            )
-        }
+        InputAction::Hold { modifier } => run_windows_step(
+            runtime.hold_modifier(*modifier),
+            "dispatch",
+            Some(action_index),
+            Some(label),
+        ),
+        InputAction::Release { modifier } => run_windows_step(
+            runtime.release_modifier(*modifier),
+            "dispatch",
+            Some(action_index),
+            Some(label),
+        ),
+        InputAction::Send { text } => run_windows_step(
+            runtime.send_text(text),
+            "dispatch",
+            Some(action_index),
+            Some(label),
+        ),
         InputAction::Wait { duration_ms } => {
             std::thread::sleep(Duration::from_millis(*duration_ms));
             Ok(())
         }
         InputAction::Click { button, x, y } => {
             let (absolute_x, absolute_y) = relative_point_to_absolute(&request.bounds, *x, *y);
-            let script = windows_mouse_script(*button, absolute_x, absolute_y, None);
-            run_process_for_input(
-                "powershell",
-                &["-NoProfile", "-NonInteractive", "-Command", script.as_str()],
+            run_windows_step(
+                runtime.click_mouse(*button, absolute_x, absolute_y),
                 "dispatch",
                 Some(action_index),
                 Some(label),
@@ -1875,17 +1833,71 @@ fn dispatch_windows_action(
         InputAction::Drag { x0, y0, x1, y1 } => {
             let (start_x, start_y) = relative_point_to_absolute(&request.bounds, *x0, *y0);
             let (end_x, end_y) = relative_point_to_absolute(&request.bounds, *x1, *y1);
-            let script =
-                windows_mouse_script(MouseButton::Left, start_x, start_y, Some((end_x, end_y)));
-            run_process_for_input(
-                "powershell",
-                &["-NoProfile", "-NonInteractive", "-Command", script.as_str()],
+            run_windows_step(
+                runtime.drag_mouse(MouseButton::Left, start_x, start_y, end_x, end_y),
                 "dispatch",
                 Some(action_index),
                 Some(label),
             )
         }
     }
+}
+
+fn run_windows_step(
+    result: Result<(), String>,
+    stage: &'static str,
+    action_index: Option<usize>,
+    action: Option<&str>,
+) -> Result<(), TendrilError> {
+    result.map_err(|error| {
+        input_execution_error(
+            "input_command_failed",
+            format!("Windows input failed: {error}"),
+            stage,
+            action_index,
+            action,
+        )
+    })
+}
+
+fn windows_runtime_modifier(modifier: ModifierKey) -> tendril_win32::ModifierKey {
+    match modifier {
+        ModifierKey::Ctrl => tendril_win32::ModifierKey::Ctrl,
+        ModifierKey::Alt => tendril_win32::ModifierKey::Alt,
+        ModifierKey::Shift => tendril_win32::ModifierKey::Shift,
+        ModifierKey::Meta => tendril_win32::ModifierKey::Meta,
+    }
+}
+
+fn windows_runtime_mouse_button(button: MouseButton) -> tendril_win32::MouseButton {
+    match button {
+        MouseButton::Left => tendril_win32::MouseButton::Left,
+        MouseButton::Middle => tendril_win32::MouseButton::Middle,
+        MouseButton::Right => tendril_win32::MouseButton::Right,
+    }
+}
+
+fn windows_key_is_supported(key: &str) -> bool {
+    matches!(
+        key.to_ascii_lowercase().as_str(),
+        "enter"
+            | "return"
+            | "esc"
+            | "escape"
+            | "tab"
+            | "space"
+            | "backspace"
+            | "delete"
+            | "del"
+            | "left"
+            | "right"
+            | "up"
+            | "down"
+            | "home"
+            | "end"
+            | "pageup"
+            | "pagedown"
+    ) || key.chars().count() == 1
 }
 
 fn action_is_keyboard(action: &InputAction) -> bool {
@@ -1900,44 +1912,6 @@ fn action_is_keyboard(action: &InputAction) -> bool {
 
 fn action_label(action: &InputAction) -> String {
     serde_json::to_string(action).unwrap_or_else(|_| format!("{action:?}"))
-}
-
-fn run_process_for_input(
-    program: &str,
-    args: &[&str],
-    stage: &'static str,
-    action_index: Option<usize>,
-    action: Option<&str>,
-) -> Result<(), TendrilError> {
-    let output = std::process::Command::new(program)
-        .args(args)
-        .output()
-        .map_err(|error| {
-            input_execution_error(
-                "input_spawn_failed",
-                format!("failed to spawn {program}: {error}"),
-                stage,
-                action_index,
-                action,
-            )
-        })?;
-
-    if output.status.success() {
-        return Ok(());
-    }
-
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
-    Err(input_execution_error(
-        "input_command_failed",
-        if stderr.is_empty() {
-            format!("{program} exited with status {}", output.status)
-        } else {
-            format!("{program} failed: {stderr}")
-        },
-        stage,
-        action_index,
-        action,
-    ))
 }
 
 fn input_execution_error(
@@ -2262,89 +2236,6 @@ fn macos_key_code(key: &str) -> Result<u16, TendrilError> {
     }
 }
 
-fn windows_sendkeys_script(sequence: &str) -> String {
-    format!(
-        r"
-Add-Type -AssemblyName System.Windows.Forms
-[System.Windows.Forms.SendKeys]::SendWait({sequence:?})
-"
-    )
-}
-
-fn windows_sendkeys_text(text: &str) -> String {
-    text.replace('{', "{{}").replace('}', "{}}")
-}
-
-fn windows_sendkeys_key(key: &str) -> Result<String, TendrilError> {
-    Ok(match key.to_ascii_lowercase().as_str() {
-        "enter" | "return" => "{ENTER}".to_owned(),
-        "esc" | "escape" => "{ESC}".to_owned(),
-        "tab" => "{TAB}".to_owned(),
-        "backspace" => "{BACKSPACE}".to_owned(),
-        "delete" | "del" => "{DELETE}".to_owned(),
-        "left" => "{LEFT}".to_owned(),
-        "right" => "{RIGHT}".to_owned(),
-        "up" => "{UP}".to_owned(),
-        "down" => "{DOWN}".to_owned(),
-        other if other.len() == 1 => other.to_owned(),
-        other => {
-            return Err(TendrilError::execution_failure(
-                "unsupported_key",
-                format!("unsupported Windows key `{other}`"),
-                None,
-            ));
-        }
-    })
-}
-
-fn windows_mouse_script(
-    button: MouseButton,
-    x: i32,
-    y: i32,
-    drag_end: Option<(i32, i32)>,
-) -> String {
-    let (down_flag, up_flag) = match button {
-        MouseButton::Left => (0x0002_u32, 0x0004_u32),
-        MouseButton::Right => (0x0008_u32, 0x0010_u32),
-        MouseButton::Middle => (0x0020_u32, 0x0040_u32),
-    };
-    if let Some((end_x, end_y)) = drag_end {
-        format!(
-            r#"
-Add-Type @"
-using System;
-using System.Runtime.InteropServices;
-public static class TendrilMouse {{
-  [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
-  [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo);
-}}
-"@
-[TendrilMouse]::SetCursorPos({x}, {y}) | Out-Null
-[TendrilMouse]::mouse_event({down_flag}, 0, 0, 0, [UIntPtr]::Zero)
-Start-Sleep -Milliseconds 20
-[TendrilMouse]::SetCursorPos({end_x}, {end_y}) | Out-Null
-[TendrilMouse]::mouse_event({up_flag}, 0, 0, 0, [UIntPtr]::Zero)
-"#
-        )
-    } else {
-        format!(
-            r#"
-Add-Type @"
-using System;
-using System.Runtime.InteropServices;
-public static class TendrilMouse {{
-  [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
-  [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo);
-}}
-"@
-[TendrilMouse]::SetCursorPos({x}, {y}) | Out-Null
-[TendrilMouse]::mouse_event({down_flag}, 0, 0, 0, [UIntPtr]::Zero)
-[TendrilMouse]::mouse_event({up_flag}, 0, 0, 0, [UIntPtr]::Zero)
-"#
-        )
-    }
-}
-
 #[must_use]
 pub fn adapter_for_context(context: AdapterContext) -> Box<dyn PlatformAdapter> {
     match context.platform {
@@ -2398,15 +2289,17 @@ fn detect_linux_audio_backend(
 #[cfg(test)]
 mod tests {
     use super::{
-        AdapterContext, AudioBackend, AudioCapabilityProbe, AudioSourceKind, CaptureAdapter,
-        CaptureTargetKind, DesktopSession, InputControlAdapter, LinuxAdapter, MacOsAdapter,
-        PermissionAdapter, PermissionKind, PermissionState, PlatformAdapter, PlatformAdapterError,
-        PlatformKind, TargetDescriptor, TargetInventory, WindowsAdapter,
+        AdapterContext, AudioBackend, AudioCapabilityProbe, AudioSourceKind, Bounds,
+        CaptureAdapter, CaptureTargetKind, DesktopSession, InputControlAdapter, InputRequest,
+        LinuxAdapter, MacOsAdapter, ModifierKey, MouseButton, PermissionAdapter, PermissionKind,
+        PermissionState, PlatformAdapter, PlatformAdapterError, PlatformKind, TargetDescriptor,
+        TargetInventory, WindowsAdapter, WindowsRuntimeBackend,
         crop_wayland_portal_capture_to_target, detect_linux_audio_backend, detect_linux_session,
-        is_macos_input_permission_error, javascript_string_literal, macos_focus_pid_jxa_script,
-        macos_text_jxa_script, wayland_capture_program_on_path, wayland_workspace_origin,
+        execute_windows_input_with_runtime, is_macos_input_permission_error,
+        javascript_string_literal, macos_focus_pid_jxa_script, macos_text_jxa_script,
+        wayland_capture_program_on_path, wayland_workspace_origin, windows_key_is_supported,
     };
-    use crate::TendrilError;
+    use crate::{TendrilError, model::InputAction};
     use mcp_cli::ErrorCategory;
 
     #[test]
@@ -2522,6 +2415,193 @@ mod tests {
         assert_eq!(adapter.info().platform, PlatformKind::Windows11);
         assert!(adapter.info().stateless);
         assert_eq!(permissions.len(), 3);
+    }
+
+    #[derive(Default)]
+    struct MockWindowsRuntime {
+        calls: std::sync::Mutex<Vec<String>>,
+    }
+
+    impl MockWindowsRuntime {
+        fn calls(&self) -> Vec<String> {
+            self.calls.lock().expect("mutex poisoned").clone()
+        }
+
+        fn push(&self, call: impl Into<String>) {
+            self.calls.lock().expect("mutex poisoned").push(call.into());
+        }
+    }
+
+    impl WindowsRuntimeBackend for MockWindowsRuntime {
+        fn capture_display(
+            &self,
+            _platform: PlatformKind,
+            target_id: &str,
+        ) -> Result<Vec<u8>, PlatformAdapterError> {
+            self.push(format!("capture_display:{target_id}"));
+            Ok(vec![1, 2, 3])
+        }
+
+        fn capture_window(
+            &self,
+            _platform: PlatformKind,
+            target_id: &str,
+        ) -> Result<Vec<u8>, PlatformAdapterError> {
+            self.push(format!("capture_window:{target_id}"));
+            Ok(vec![4, 5, 6])
+        }
+
+        fn focus_window(&self, target_id: &str) -> Result<(), String> {
+            self.push(format!("focus:{target_id}"));
+            Ok(())
+        }
+
+        fn send_text(&self, text: &str) -> Result<(), String> {
+            self.push(format!("text:{text}"));
+            Ok(())
+        }
+
+        fn tap_key(&self, key: &str) -> Result<(), String> {
+            self.push(format!("tap:{key}"));
+            Ok(())
+        }
+
+        fn hold_modifier(&self, modifier: ModifierKey) -> Result<(), String> {
+            self.push(format!("hold:{modifier:?}"));
+            Ok(())
+        }
+
+        fn release_modifier(&self, modifier: ModifierKey) -> Result<(), String> {
+            self.push(format!("release:{modifier:?}"));
+            Ok(())
+        }
+
+        fn click_mouse(&self, button: MouseButton, x: i32, y: i32) -> Result<(), String> {
+            self.push(format!("click:{button:?}:{x}:{y}"));
+            Ok(())
+        }
+
+        fn drag_mouse(
+            &self,
+            button: MouseButton,
+            start_x: i32,
+            start_y: i32,
+            end_x: i32,
+            end_y: i32,
+        ) -> Result<(), String> {
+            self.push(format!(
+                "drag:{button:?}:{start_x}:{start_y}:{end_x}:{end_y}"
+            ));
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn windows_native_runtime_flow_focuses_and_dispatches_actions() {
+        let runtime = MockWindowsRuntime::default();
+        let request = InputRequest {
+            target: CaptureTargetKind::Window,
+            target_id: "0x10".to_owned(),
+            target_name: "Inbox".to_owned(),
+            bounds: Bounds {
+                x: 100,
+                y: 200,
+                width: 400,
+                height: 300,
+            },
+            app_name: Some("Notepad".to_owned()),
+            process_id: Some(42),
+            text: None,
+            actions: vec![
+                InputAction::Hold {
+                    modifier: ModifierKey::Ctrl,
+                },
+                InputAction::KeyTap {
+                    key: "c".to_owned(),
+                },
+                InputAction::Release {
+                    modifier: ModifierKey::Ctrl,
+                },
+                InputAction::Click {
+                    button: MouseButton::Left,
+                    x: 5,
+                    y: 7,
+                },
+                InputAction::Drag {
+                    x0: 1,
+                    y0: 2,
+                    x1: 20,
+                    y1: 25,
+                },
+            ],
+        };
+
+        let outcome =
+            execute_windows_input_with_runtime(PlatformKind::Windows11, &request, &runtime)
+                .expect("mocked windows input should succeed");
+
+        assert!(outcome.focus_required);
+        assert!(outcome.focus_transferred);
+        assert_eq!(outcome.focused_target.as_deref(), Some("0x10"));
+        assert!(
+            outcome
+                .notes
+                .iter()
+                .any(|note| note.contains("native Win32 focus APIs"))
+        );
+        assert_eq!(
+            runtime.calls(),
+            vec![
+                "focus:0x10",
+                "hold:Ctrl",
+                "tap:c",
+                "release:Ctrl",
+                "click:Left:105:207",
+                "drag:Left:101:202:120:225",
+            ]
+        );
+    }
+
+    #[test]
+    fn windows_native_runtime_text_flow_preserves_display_focus_guidance() {
+        let runtime = MockWindowsRuntime::default();
+        let request = InputRequest {
+            target: CaptureTargetKind::Display,
+            target_id: "display-1".to_owned(),
+            target_name: "Display 1".to_owned(),
+            bounds: Bounds {
+                x: 0,
+                y: 0,
+                width: 1920,
+                height: 1080,
+            },
+            app_name: None,
+            process_id: None,
+            text: Some("hello".to_owned()),
+            actions: Vec::new(),
+        };
+
+        let outcome =
+            execute_windows_input_with_runtime(PlatformKind::Windows11, &request, &runtime)
+                .expect("mocked windows text input should succeed");
+
+        assert!(outcome.focus_required);
+        assert!(!outcome.focus_transferred);
+        assert_eq!(runtime.calls(), vec!["text:hello"]);
+        assert!(
+            outcome
+                .notes
+                .iter()
+                .any(|note| note.contains("currently focused Windows control"))
+        );
+    }
+
+    #[test]
+    fn windows_key_support_matches_native_runtime_contract() {
+        assert!(windows_key_is_supported("enter"));
+        assert!(windows_key_is_supported("A"));
+        assert!(windows_key_is_supported("💡"));
+        assert!(!windows_key_is_supported("ctrl+alt+delete"));
     }
 
     #[test]

@@ -24,15 +24,15 @@ programs in the Tendril runtime path.
 | `list` | Linux/Wayland | `hyprctl` | Hyprland monitor/client discovery | Documented backend prerequisite today | Prefer compositor-native bindings or another embedded backend if a stable option exists | `bd-e4edee` |
 | `list` | Linux/Wayland | `swaymsg` | sway output/tree discovery | Documented backend prerequisite today | Prefer compositor-native bindings or another embedded backend if a stable option exists | `bd-e4edee` |
 | `list` | Linux/Wayland | `wlr-randr` | wlroots output enumeration fallback | Documented backend prerequisite today | Evaluate portal/native alternatives for supported matrices | `bd-e4edee` |
-| `list` | Windows 11 | `powershell` | Display and window discovery scripts | **Bug** | Replace with native Win32 bindings for monitor/window enumeration | `bd-a3357b` |
+| `list` | Windows 11 | _none_ | Native Win32 monitor/window enumeration inside the Tendril binary | Self-contained | Keep the embedded Win32 backend covered by binary-flow tests | `bd-a3357b` |
 | `capture` | macOS | `screencapture` | Window/display PNG capture | Documented platform prerequisite | Replace with native ScreenCaptureKit/Quartz capture when ready for tighter packaging control | audited in `bd-d513d4` |
 | `capture` | Linux/X11 | _none_ | Native X11 image capture path | Self-contained today | Continue validating packaged flows against real X11 sessions | `bd-a279ed` |
 | `capture` | Linux/Wayland | `grim` | Compatibility fallback when portal screenshot capture is unavailable | Documented compatibility fallback | Keep the portal-backed path primary; retain `grim` only as a clearly diagnosed fallback for supported compositor families | `bd-e4edee` |
-| `capture` | Windows 11 | `powershell` | Display/window capture scripts using Win32 APIs through PowerShell | **Bug** | Replace with native Win32/GDI/Windows Graphics Capture bindings | `bd-a3357b` |
+| `capture` | Windows 11 | _none_ | Native Win32/GDI capture inside the Tendril binary | Self-contained | Continue hardening the embedded capture backend and smoke coverage | `bd-a3357b` |
 | `run` | macOS | `osascript` | Focus transfer by PID/app name, text entry, key events, mouse clicks/drags via JXA/AppleScript | Documented platform prerequisite | Native accessibility/input bindings would still reduce subprocess overhead, but packaged usability no longer depends on the Swift toolchain | `bd-5c3937` |
 | `run` | Linux/X11 | _none_ | Native X11/XTest focus, keyboard, and mouse injection | Self-contained today | Continue real-session validation, especially around keyboard-map edge cases | `bd-a279ed` |
 | `run` | Linux/Wayland | _none_ | Generic Wayland input is intentionally unsupported | Not applicable | Keep explicit unsupported-capability reporting until a compositor-specific backend exists | `bd-e4edee` |
-| `run` | Windows 11 | `powershell` | Focus transfer, SendKeys text/key dispatch, mouse input | **Bug** | Replace with native Win32 input/focus APIs | `bd-a3357b` |
+| `run` | Windows 11 | _none_ | Native Win32 focus transfer plus keyboard/mouse injection inside the Tendril binary | Self-contained | Continue hardening the embedded input backend and smoke coverage | `bd-a3357b` |
 
 ## Classification summary
 
@@ -58,15 +58,14 @@ Why they are only *conditionally* acceptable:
 
 ### Self-containment/usability bugs still open
 
-These dependencies still undermine the “download one binary and run it” goal:
+These dependencies materially undermine the “download one binary and run it”
+goal. Windows PowerShell-backed discovery, capture, and input were removed in
+`bd-a3357b`, so they no longer appear in this section:
 
-- Linux/Wayland capture backend availability remains a packaging and
-  documentation concern because operators still need either a working
-  xdg-desktop-portal screenshot backend or the documented `grim` fallback for
-  some sessions (`bd-e4edee`)
-- Windows `powershell` because the binary still outsources its core runtime
-  surface to an external scripting host instead of embedding Win32 bindings
-  (`bd-a3357b`)
+- Linux/Wayland capture backend availability remains a packaging/documentation
+  concern because operators still need either a working xdg-desktop-portal
+  screenshot backend or the documented `grim` fallback for some sessions
+  (`bd-e4edee`)
 
 ## Recent self-containment improvements
 
@@ -81,13 +80,11 @@ source tree:
 
 ## Prioritized native/embedded follow-up work
 
-1. **Windows PowerShell removal** — `bd-a3357b` should move discovery, capture,
-   and input to native Win32-backed Rust code for true binary self-containment.
-2. **Wayland capture/backend hardening** — `bd-e4edee` now treats compositor-
+1. **Wayland capture/backend hardening** — `bd-e4edee` now treats compositor-
    coupled discovery as a documented matrix, prefers xdg-desktop-portal for
    capture, and retains `grim` only as a compatibility fallback with clearer
    diagnostics for missing session tools.
-3. **Further macOS/Linux backend hardening** — the major helper-tool blockers
+2. **Further macOS/Linux backend hardening** — the major helper-tool blockers
    are removed, but more real-session packaged smoke coverage and edge-case
    polish remain worthwhile.
 

@@ -2080,11 +2080,20 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "tempfile",
+ "tendril-win32",
  "thiserror",
  "time",
  "tracing",
  "tracing-subscriber",
  "x11rb",
+]
+
+[[package]]
+name = "tendril-win32"
+version = "0.0.1"
+dependencies = [
+ "image",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

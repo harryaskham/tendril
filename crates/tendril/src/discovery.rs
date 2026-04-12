@@ -2,7 +2,6 @@ use std::env;
 use std::io::ErrorKind;
 use std::process::Command;
 
-use serde::Deserialize;
 use serde_json::Value;
 
 use crate::model::{Bounds, ScaleFactor};
@@ -460,64 +459,64 @@ fn collect_sway_windows(node: &Value, targets: &mut Vec<TargetDescriptor>) {
     }
 }
 
+trait WindowsDiscoveryBackend {
+    fn discover_displays(&self) -> Result<Vec<tendril_win32::DisplayInfo>, String>;
+    fn discover_windows(&self) -> Result<Vec<tendril_win32::WindowInfo>, String>;
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct NativeWindowsDiscoveryBackend;
+
+impl WindowsDiscoveryBackend for NativeWindowsDiscoveryBackend {
+    fn discover_displays(&self) -> Result<Vec<tendril_win32::DisplayInfo>, String> {
+        tendril_win32::discover_displays()
+    }
+
+    fn discover_windows(&self) -> Result<Vec<tendril_win32::WindowInfo>, String> {
+        tendril_win32::discover_windows()
+    }
+}
+
 fn discover_windows_targets(
     context: &AdapterContext,
 ) -> Result<TargetInventory, PlatformAdapterError> {
+    discover_windows_targets_with_backend(context, &NativeWindowsDiscoveryBackend)
+}
+
+fn discover_windows_targets_with_backend(
+    context: &AdapterContext,
+    backend: &dyn WindowsDiscoveryBackend,
+) -> Result<TargetInventory, PlatformAdapterError> {
     let mut targets = Vec::new();
-    targets.extend(discover_windows_displays(context)?);
-    targets.extend(discover_windows_windows(context)?);
+    targets.extend(discover_windows_displays_with_backend(context, backend)?);
+    targets.extend(discover_windows_windows_with_backend(context, backend)?);
     Ok(sort_inventory(TargetInventory { targets }))
 }
 
-fn discover_windows_displays(
+fn discover_windows_displays_with_backend(
     context: &AdapterContext,
+    backend: &dyn WindowsDiscoveryBackend,
 ) -> Result<Vec<TargetDescriptor>, PlatformAdapterError> {
-    #[derive(Debug, Deserialize)]
-    struct ScreenBounds {
-        x: i32,
-        y: i32,
-        width: u32,
-        height: u32,
-    }
+    let displays = backend.discover_displays().map_err(|error| {
+        PlatformAdapterError::adapter_failure(
+            AdapterOperation::TargetDiscovery,
+            context.platform,
+            format!("Windows display discovery failed: {error}"),
+        )
+    })?;
 
-    #[derive(Debug, Deserialize)]
-    struct ScreenRecord {
-        id: String,
-        name: String,
-        bounds: ScreenBounds,
-    }
-
-    let script = r"
-Add-Type -AssemblyName System.Windows.Forms
-[System.Windows.Forms.Screen]::AllScreens |
-  ForEach-Object {
-    [pscustomobject]@{
-      id = $_.DeviceName
-      name = $_.DeviceName
-      bounds = [pscustomobject]@{
-        x = $_.Bounds.X
-        y = $_.Bounds.Y
-        width = $_.Bounds.Width
-        height = $_.Bounds.Height
-      }
-    }
-  } | ConvertTo-Json -Compress
-";
-    let output = run_powershell(context, script)?;
-    let screens = deserialize_json_array::<ScreenRecord>(&output, context)?;
-
-    Ok(screens
+    Ok(displays
         .into_iter()
-        .map(|screen| TargetDescriptor {
-            id: screen.id,
+        .map(|display| TargetDescriptor {
+            id: display.id,
             title: None,
             kind: CaptureTargetKind::Display,
-            name: screen.name,
+            name: display.name,
             bounds: Bounds {
-                x: screen.bounds.x,
-                y: screen.bounds.y,
-                width: screen.bounds.width,
-                height: screen.bounds.height,
+                x: display.bounds.x,
+                y: display.bounds.y,
+                width: display.bounds.width,
+                height: display.bounds.height,
             },
             scale_factor: ScaleFactor::identity(),
             capture_supported: true,
@@ -528,77 +527,41 @@ Add-Type -AssemblyName System.Windows.Forms
         .collect())
 }
 
-fn discover_windows_windows(
+fn discover_windows_windows_with_backend(
     context: &AdapterContext,
+    backend: &dyn WindowsDiscoveryBackend,
 ) -> Result<Vec<TargetDescriptor>, PlatformAdapterError> {
-    #[derive(Debug, Deserialize)]
-    struct WindowBounds {
-        x: i32,
-        y: i32,
-        width: u32,
-        height: u32,
-    }
-
-    #[derive(Debug, Deserialize)]
-    struct WindowRecord {
-        id: String,
-        title: String,
-        app_name: String,
-        process_id: u32,
-        bounds: WindowBounds,
-    }
-
-    let script = r#"
-Add-Type @"
-using System;
-using System.Runtime.InteropServices;
-public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
-public static class TendrilNative {
-  [DllImport("user32.dll")]
-  public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
-}
-"@
-Get-Process |
-  Where-Object { $_.MainWindowHandle -ne 0 -and -not [string]::IsNullOrWhiteSpace($_.MainWindowTitle) } |
-  ForEach-Object {
-    $rect = New-Object RECT
-    [void][TendrilNative]::GetWindowRect($_.MainWindowHandle, [ref]$rect)
-    [pscustomobject]@{
-      id = ('0x{0:X}' -f $_.MainWindowHandle)
-      title = $_.MainWindowTitle
-      app_name = $_.ProcessName
-      process_id = $_.Id
-      bounds = [pscustomobject]@{
-        x = $rect.Left
-        y = $rect.Top
-        width = [Math]::Max(0, $rect.Right - $rect.Left)
-        height = [Math]::Max(0, $rect.Bottom - $rect.Top)
-      }
-    }
-  } | ConvertTo-Json -Compress
-"#;
-    let output = run_powershell(context, script)?;
-    let windows = deserialize_json_array::<WindowRecord>(&output, context)?;
+    let windows = backend.discover_windows().map_err(|error| {
+        PlatformAdapterError::adapter_failure(
+            AdapterOperation::TargetDiscovery,
+            context.platform,
+            format!("Windows window discovery failed: {error}"),
+        )
+    })?;
 
     Ok(windows
         .into_iter()
         .filter(|window| window.bounds.width > 0 && window.bounds.height > 0)
-        .map(|window| TargetDescriptor {
-            id: window.id,
-            title: Some(window.title.clone()),
-            kind: CaptureTargetKind::Window,
-            name: window.app_name.clone(),
-            bounds: Bounds {
-                x: window.bounds.x,
-                y: window.bounds.y,
-                width: window.bounds.width,
-                height: window.bounds.height,
-            },
-            scale_factor: ScaleFactor::identity(),
-            capture_supported: true,
-            input_supported: true,
-            app_name: Some(window.app_name),
-            process_id: Some(window.process_id),
+        .map(|window| {
+            let app_name = window.app_name;
+            let name = app_name.clone().unwrap_or_else(|| window.title.clone());
+            TargetDescriptor {
+                id: window.id,
+                title: Some(window.title),
+                kind: CaptureTargetKind::Window,
+                name,
+                bounds: Bounds {
+                    x: window.bounds.x,
+                    y: window.bounds.y,
+                    width: window.bounds.width,
+                    height: window.bounds.height,
+                },
+                scale_factor: ScaleFactor::identity(),
+                capture_supported: true,
+                input_supported: true,
+                app_name,
+                process_id: Some(window.process_id),
+            }
         })
         .collect())
 }
@@ -806,10 +769,6 @@ fn run_command(
     }
 }
 
-fn run_powershell(context: &AdapterContext, script: &str) -> Result<String, PlatformAdapterError> {
-    run_command(context, "powershell", &["-NoProfile", "-Command", script])
-}
-
 fn run_osascript_jxa(
     context: &AdapterContext,
     script: &str,
@@ -877,29 +836,6 @@ fn deserialize_json_inventory(
         )
     })?;
     Ok(sort_inventory(inventory))
-}
-
-fn deserialize_json_array<T>(
-    output: &str,
-    context: &AdapterContext,
-) -> Result<Vec<T>, PlatformAdapterError>
-where
-    T: for<'de> Deserialize<'de>,
-{
-    let trimmed = output.trim();
-    if trimmed.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    serde_json::from_str::<Vec<T>>(trimmed)
-        .or_else(|_| serde_json::from_str::<T>(trimmed).map(|value| vec![value]))
-        .map_err(|error| {
-            PlatformAdapterError::adapter_failure(
-                AdapterOperation::TargetDiscovery,
-                context.platform,
-                format!("failed to parse discovery JSON array: {error}"),
-            )
-        })
 }
 
 fn json_str<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
@@ -1035,11 +971,14 @@ const fn target_kind_rank(kind: CaptureTargetKind) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::{
-        Bounds, is_macos_permission_error, macos_discovery_script, parse_simple_geometry,
+        Bounds, WindowsDiscoveryBackend, discover_windows_targets_with_backend,
+        is_macos_permission_error, macos_discovery_script, parse_simple_geometry,
         parse_wlr_randr_mode, wayland_discovery_backend_error,
         wayland_discovery_backend_tools_on_path,
     };
-    use crate::platform::{AdapterContext, DesktopSession, PlatformAdapterError};
+    use crate::platform::{
+        AdapterContext, CaptureTargetKind, DesktopSession, PlatformAdapterError, PlatformKind,
+    };
 
     #[test]
     fn parses_negative_geometry_offsets() {
@@ -1071,6 +1010,86 @@ mod tests {
                 height: 1080,
             })
         );
+    }
+
+    struct MockWindowsDiscoveryBackend;
+
+    impl WindowsDiscoveryBackend for MockWindowsDiscoveryBackend {
+        fn discover_displays(&self) -> Result<Vec<tendril_win32::DisplayInfo>, String> {
+            Ok(vec![tendril_win32::DisplayInfo {
+                id: "display-1".to_owned(),
+                name: r"\\.\DISPLAY1".to_owned(),
+                bounds: tendril_win32::Bounds {
+                    x: 0,
+                    y: 0,
+                    width: 1920,
+                    height: 1080,
+                },
+            }])
+        }
+
+        fn discover_windows(&self) -> Result<Vec<tendril_win32::WindowInfo>, String> {
+            Ok(vec![tendril_win32::WindowInfo {
+                id: "0x10".to_owned(),
+                title: "Inbox".to_owned(),
+                app_name: Some("OUTLOOK".to_owned()),
+                process_id: 4242,
+                bounds: tendril_win32::Bounds {
+                    x: 120,
+                    y: 80,
+                    width: 1440,
+                    height: 900,
+                },
+            }])
+        }
+    }
+
+    #[test]
+    fn windows_native_discovery_backend_maps_display_and_window_targets() {
+        let inventory = discover_windows_targets_with_backend(
+            &AdapterContext::windows11(),
+            &MockWindowsDiscoveryBackend,
+        )
+        .expect("mocked windows discovery should succeed");
+
+        assert_eq!(inventory.targets.len(), 2);
+        assert_eq!(inventory.targets[0].kind, CaptureTargetKind::Display);
+        assert_eq!(inventory.targets[0].id, "display-1");
+        assert_eq!(inventory.targets[0].name, r"\\.\DISPLAY1");
+        assert_eq!(inventory.targets[1].kind, CaptureTargetKind::Window);
+        assert_eq!(inventory.targets[1].id, "0x10");
+        assert_eq!(inventory.targets[1].title.as_deref(), Some("Inbox"));
+        assert_eq!(inventory.targets[1].name, "OUTLOOK");
+        assert_eq!(inventory.targets[1].process_id, Some(4242));
+    }
+
+    #[test]
+    fn windows_native_discovery_errors_are_structured() {
+        struct FailingBackend;
+
+        impl WindowsDiscoveryBackend for FailingBackend {
+            fn discover_displays(&self) -> Result<Vec<tendril_win32::DisplayInfo>, String> {
+                Err("EnumDisplayMonitors failed".to_owned())
+            }
+
+            fn discover_windows(&self) -> Result<Vec<tendril_win32::WindowInfo>, String> {
+                Ok(Vec::new())
+            }
+        }
+
+        let error =
+            discover_windows_targets_with_backend(&AdapterContext::windows11(), &FailingBackend)
+                .expect_err("mocked discovery failure should surface as an adapter error");
+
+        match error {
+            PlatformAdapterError::AdapterFailure {
+                platform, message, ..
+            } => {
+                assert_eq!(platform, PlatformKind::Windows11);
+                assert!(message.contains("EnumDisplayMonitors failed"));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
     }
 
     #[test]

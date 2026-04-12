@@ -26,7 +26,6 @@ fn runtime_dependency_audit_mentions_every_spawned_program() {
         "grim",
         "hyprctl",
         "osascript",
-        "powershell",
         "screencapture",
         "swaymsg",
         "wlr-randr",
