@@ -61,12 +61,5 @@ agents:
       type: pi
       auto_start: false
       restart: failure
-      restart_backoff_secs: 60
-      cadence:
-        inbox_poll_interval_secs: 60
-        jitter_secs: 0
-      wait:
-        inbox_delay_secs: 60
-        choice_timeout_secs: null
       nodes:
         - helsinki
