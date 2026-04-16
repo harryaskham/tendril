@@ -1163,18 +1163,11 @@ fn parse_display_index(
     target_id: &str,
     platform: PlatformKind,
 ) -> Result<u32, PlatformAdapterError> {
-    let suffix = target_id.strip_prefix("display-").ok_or_else(|| {
+    target_id.parse::<u32>().map_err(|error| {
         PlatformAdapterError::adapter_failure(
             AdapterOperation::Capture,
             platform,
-            format!("display target id `{target_id}` must use the `display-<n>` format"),
-        )
-    })?;
-    suffix.parse::<u32>().map_err(|error| {
-        PlatformAdapterError::adapter_failure(
-            AdapterOperation::Capture,
-            platform,
-            format!("display target id `{target_id}` could not be parsed: {error}"),
+            format!("display target id `{target_id}` must be a numeric index (e.g. 1, 2): {error}"),
         )
     })
 }
@@ -2567,7 +2560,7 @@ mod tests {
         let runtime = MockWindowsRuntime::default();
         let request = InputRequest {
             target: CaptureTargetKind::Display,
-            target_id: "display-1".to_owned(),
+            target_id: "1".to_owned(),
             target_name: "Display 1".to_owned(),
             bounds: Bounds {
                 x: 0,
@@ -2674,8 +2667,8 @@ mod tests {
     fn wayland_workspace_origin_tracks_leftmost_display() {
         let inventory = TargetInventory {
             targets: vec![
-                display_target("display-left", -1920, 40, 1920, 1080),
-                display_target("display-main", 0, 0, 2560, 1440),
+                display_target("1", -1920, 40, 1920, 1080),
+                display_target("2", 0, 0, 2560, 1440),
             ],
         };
 
@@ -2686,8 +2679,8 @@ mod tests {
     fn wayland_portal_crop_translates_global_bounds_into_workspace_space() {
         let inventory = TargetInventory {
             targets: vec![
-                display_target("display-left", -2, 0, 2, 2),
-                display_target("display-main", 0, 0, 2, 2),
+                display_target("1", -2, 0, 2, 2),
+                display_target("2", 0, 0, 2, 2),
             ],
         };
         let target = TargetDescriptor {

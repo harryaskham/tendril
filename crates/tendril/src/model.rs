@@ -492,7 +492,7 @@ mod tests {
     fn run_validation_rejects_empty_text_payload() {
         let input = RunInput {
             target: TargetSelector::Display {
-                id: "display-1".into(),
+                id: "1".into(),
             },
             payload: RunInputPayload::Text {
                 text: String::new(),

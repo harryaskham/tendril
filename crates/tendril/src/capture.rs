@@ -394,13 +394,13 @@ mod tests {
     #[test]
     fn capture_output_keeps_identity_mapping_without_resize() {
         let artifact = CaptureArtifact {
-            target_id: "display-1".to_owned(),
+            target_id: "1".to_owned(),
             media_type: "image/png".to_owned(),
             image_bytes: sample_png(64, 32),
             captured_at: current_timestamp(),
         };
         let target = TargetDescriptor {
-            id: "display-1".to_owned(),
+            id: "1".to_owned(),
             title: None,
             kind: CaptureTargetKind::Display,
             name: "Display".to_owned(),
@@ -418,7 +418,7 @@ mod tests {
         };
         let input = CaptureInput {
             target: TargetSelector::Display {
-                id: "display-1".to_owned(),
+                id: "1".to_owned(),
             },
             max_width: None,
             max_height: None,

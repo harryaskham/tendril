@@ -166,7 +166,7 @@ fn discover_hyprland_targets(
                 continue;
             }
             let name = json_str(monitor, "name")
-                .map_or_else(|| format!("display-{}", index + 1), str::to_owned);
+                .map_or_else(|| format!("Display {}", index + 1), str::to_owned);
             let scale = json_f64(monitor, "scale").unwrap_or(1.0);
             targets.push(TargetDescriptor {
                 id: name.clone(),
@@ -649,7 +649,7 @@ ObjC.import('CoreGraphics');
         var scale = Number(screen.backingScaleFactor);
         var localizedName = trimString(screen.localizedName) || ('Display ' + String(index + 1));
         targets.push({
-            id: 'display-' + String(index + 1),
+            id: String(index + 1),
             title: null,
             kind: 'display',
             name: localizedName,
@@ -958,6 +958,17 @@ fn sort_inventory(mut inventory: TargetInventory) -> TargetInventory {
         );
         left_key.cmp(&right_key)
     });
+
+    // Assign stable sequential numeric IDs to display targets so users can
+    // simply write `--display 1`, `--display 2`, etc.
+    let mut display_index: u32 = 0;
+    for target in &mut inventory.targets {
+        if target.kind == CaptureTargetKind::Display {
+            display_index += 1;
+            target.id = display_index.to_string();
+        }
+    }
+
     inventory
 }
 
@@ -1017,7 +1028,7 @@ mod tests {
     impl WindowsDiscoveryBackend for MockWindowsDiscoveryBackend {
         fn discover_displays(&self) -> Result<Vec<tendril_win32::DisplayInfo>, String> {
             Ok(vec![tendril_win32::DisplayInfo {
-                id: "display-1".to_owned(),
+                id: "1".to_owned(),
                 name: r"\\.\DISPLAY1".to_owned(),
                 bounds: tendril_win32::Bounds {
                     x: 0,
@@ -1054,7 +1065,7 @@ mod tests {
 
         assert_eq!(inventory.targets.len(), 2);
         assert_eq!(inventory.targets[0].kind, CaptureTargetKind::Display);
-        assert_eq!(inventory.targets[0].id, "display-1");
+        assert_eq!(inventory.targets[0].id, "1");
         assert_eq!(inventory.targets[0].name, r"\\.\DISPLAY1");
         assert_eq!(inventory.targets[1].kind, CaptureTargetKind::Window);
         assert_eq!(inventory.targets[1].id, "0x10");

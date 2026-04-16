@@ -211,7 +211,7 @@ mod imp {
         });
 
         for (index, display) in displays.iter_mut().enumerate() {
-            display.id = format!("display-{}", index + 1);
+            display.id = format!("{}", index + 1);
         }
 
         Ok(displays)

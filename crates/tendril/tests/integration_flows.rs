@@ -16,7 +16,7 @@ fn list_capture_and_run_flow_uses_isolated_config_and_dynamic_fixtures() {
             .len(),
         2
     );
-    assert_eq!(list_json["data"]["targets"][0]["id"], "display-1");
+    assert_eq!(list_json["data"]["targets"][0]["id"], "1");
     assert_eq!(list_json["data"]["targets"][1]["id"], "window-1");
 
     let capture_json = harness.cli_json(&["--json", "--window", "window-1", "capture"]);

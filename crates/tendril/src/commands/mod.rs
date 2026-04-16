@@ -1326,7 +1326,7 @@ mod tests {
         let request = CaptureRequest {
             target: TargetScope {
                 window: None,
-                display: Some("display-1".to_string()),
+                display: Some("1".to_string()),
             },
             options: CaptureCommand {
                 max_width: Some(800),
@@ -1336,7 +1336,7 @@ mod tests {
             },
         };
 
-        assert_eq!(request.target.display.as_deref(), Some("display-1"));
+        assert_eq!(request.target.display.as_deref(), Some("1"));
         assert_eq!(request.options.max_width, Some(800));
         assert_eq!(request.options.compression, Some(90));
     }
@@ -1487,7 +1487,7 @@ mod tests {
             &TendrilCli {
                 json: true,
                 window: Some("window-1".to_owned()),
-                display: Some("display-1".to_owned()),
+                display: Some("1".to_owned()),
                 command: Some(Command::Capture(CaptureCommand::default())),
             },
             &TendrilConfig::default(),
@@ -1504,7 +1504,7 @@ mod tests {
             "capture",
             &json!({
                 "window": "window-1",
-                "display": "display-1"
+                "display": "1"
             }),
         );
 
@@ -1573,7 +1573,7 @@ mod tests {
         let error = build_capture_input(
             &TargetScope {
                 window: Some("window-1".to_owned()),
-                display: Some("display-1".to_owned()),
+                display: Some("1".to_owned()),
             },
             &CaptureCommand::default(),
             &TendrilConfig::default(),

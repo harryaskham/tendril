@@ -221,7 +221,7 @@ fn discover_displays(
         }
         let id = connection
             .atom_name(monitor.name)
-            .unwrap_or_else(|| format!("display-{}", index + 1));
+            .unwrap_or_else(|| format!("{}", index + 1));
         displays.push(TargetDescriptor {
             id: id.clone(),
             title: None,

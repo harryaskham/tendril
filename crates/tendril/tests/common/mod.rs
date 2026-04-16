@@ -165,7 +165,7 @@ fn sample_target_fixture() -> Value {
                 "process_id": 4242
             },
             {
-                "id": "display-1",
+                "id": "1",
                 "title": null,
                 "kind": "display",
                 "name": "Fixture Display",
