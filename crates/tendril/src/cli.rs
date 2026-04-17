@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use clap::{Args, Parser, Subcommand};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -37,7 +39,7 @@ impl TendrilCli {
     #[must_use]
     pub fn agent_help() -> String {
         format!(
-            "Tendril is a stateless desktop inspection and control CLI for agents.\n\nWorkflow:\n  1. list targets:   tendril list --json\n  2. capture state:  tendril --window <id> capture --json\n  3. run input:      tendril --window <id> run 'send(\"hello\")'\n  4. reuse a target: eval \"$(tendril --window <id> alias --name desk)\"\n\nCommands:\n  list     Discover windows and displays\n  capture  Capture a screenshot from a window or display\n  run      Type text or execute an input sequence against a target\n  alias    Emit a shell helper that pre-fills --window/--display\n  listen   Probe supported audio capture paths\n  mcp      Serve Tendril over MCP stdio\n\nUse --json for machine-readable success/error envelopes.\nUse --help on any subcommand for detailed flags.\n\n{WORKFLOW_HINT}\n"
+            "Tendril is a stateless desktop inspection and control CLI for agents.\n\nWorkflow:\n  1. list targets:   tendril list --json\n  2. capture state:  tendril --window <id> capture --json\n  3. save to file:   tendril --window <id> capture -o /tmp/screen.png\n  4. run input:      tendril --window <id> run 'send(\"hello\")'\n  5. reuse a target: eval \"$(tendril --window <id> alias --name desk)\"\n\nCommands:\n  list     Discover windows and displays\n  capture  Capture a screenshot from a window or display\n  run      Type text or execute an input sequence against a target\n  alias    Emit a shell helper that pre-fills --window/--display\n  listen   Probe supported audio capture paths\n  mcp      Serve Tendril over MCP stdio\n\nUse --json for machine-readable success/error envelopes.\nUse -o/--output on capture to save the image directly to a file.\nUse --help on any subcommand for detailed flags.\n\n{WORKFLOW_HINT}\n"
         )
     }
 }
@@ -89,6 +91,12 @@ pub struct CaptureCommand {
 
     #[arg(long)]
     pub compression: Option<u8>,
+
+    /// Write the decoded image to a file. Side-effecting: when combined with
+    /// --json the JSON envelope is still printed to stdout.
+    #[arg(short = 'o', long)]
+    #[serde(skip)]
+    pub output: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Args, Serialize, Deserialize, JsonSchema)]
@@ -144,6 +152,7 @@ mod tests {
         assert!(help.contains("Workflow:"));
         assert!(help.contains("tendril list --json"));
         assert!(help.contains("capture --json"));
+        assert!(help.contains("capture -o /tmp/screen.png"));
         assert!(help.contains(" run 'send(\"hello\")'"));
         assert!(help.contains("alias --name desk"));
     }

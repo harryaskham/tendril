@@ -1,4 +1,5 @@
 use std::fmt::Write as _;
+use std::path::Path;
 use std::sync::Arc;
 
 use mcp_cli::{JsonEnvelope, McpServer, StdioServerConfig, ToolRouter};
@@ -205,6 +206,9 @@ fn dispatch_cli_command(
             );
             let adapter = adapter_for_context(AdapterContext::detect());
             let output = execute_capture(&input, adapter.as_ref())?;
+            if let Some(path) = &command.output {
+                write_capture_to_file(&output.image_base64, path)?;
+            }
             Ok(render_command_output(
                 "capture",
                 cli.json,
@@ -390,6 +394,10 @@ fn build_help_output() -> HelpOutput {
                 description: "Capture target state and keep resize metadata in JSON.".to_owned(),
             },
             HelpWorkflowStep {
+                command: "tendril --window <id> capture -o /tmp/screen.png".to_owned(),
+                description: "Save the captured image directly to a file.".to_owned(),
+            },
+            HelpWorkflowStep {
                 command: "tendril --window <id> run 'send(\"hello\")'".to_owned(),
                 description: "Execute text or input sequences against the chosen target.".to_owned(),
             },
@@ -430,12 +438,21 @@ fn build_help_output() -> HelpOutput {
                 command: "tendril --window <id> capture --json".to_owned(),
             },
             HelpExample {
+                description: "Save a capture directly to a file".to_owned(),
+                command: "tendril --display <id> capture -o /tmp/screen.png".to_owned(),
+            },
+            HelpExample {
+                description: "Capture to file and get JSON metadata".to_owned(),
+                command: "tendril --window <id> capture --json -o /tmp/screen.png".to_owned(),
+            },
+            HelpExample {
                 description: "Create a reusable wrapper for repeated targeting".to_owned(),
                 command: "eval \"$(tendril --window <id> alias --name desk)\"".to_owned(),
             },
         ],
         notes: vec![
             "Use --json for machine-readable success and error envelopes.".to_owned(),
+            "Use -o/--output on capture to save the decoded image directly to a file; combine with --json to also get the JSON envelope.".to_owned(),
             "Alias helpers are plain shell wrappers around explicit tendril arguments; Tendril does not store session state.".to_owned(),
         ],
     }
@@ -504,6 +521,41 @@ fn build_capture_input(
     };
     input.validate()?;
     Ok(input)
+}
+
+fn write_capture_to_file(image_base64: &str, path: &Path) -> Result<(), TendrilError> {
+    use base64::Engine as _;
+    use base64::engine::general_purpose::STANDARD as BASE64;
+
+    let bytes = BASE64.decode(image_base64).map_err(|error| {
+        TendrilError::execution_failure(
+            "capture_decode_failed",
+            format!("failed to decode base64 image for --output: {error}"),
+            None,
+        )
+    })?;
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent).map_err(|error| {
+                TendrilError::execution_failure(
+                    "capture_write_failed",
+                    format!(
+                        "failed to create parent directory `{}`: {error}",
+                        parent.display()
+                    ),
+                    None,
+                )
+            })?;
+        }
+    }
+    std::fs::write(path, &bytes).map_err(|error| {
+        TendrilError::execution_failure(
+            "capture_write_failed",
+            format!("failed to write capture to `{}`: {error}", path.display()),
+            None,
+        )
+    })?;
+    Ok(())
 }
 
 fn capture_response_value(
@@ -1173,6 +1225,10 @@ mod tests {
                 );
                 assert_eq!(
                     value["data"]["workflow_steps"][2]["command"],
+                    "tendril --window <id> capture -o /tmp/screen.png"
+                );
+                assert_eq!(
+                    value["data"]["workflow_steps"][3]["command"],
                     "tendril --window <id> run 'send(\"hello\")'"
                 );
             }
@@ -1193,6 +1249,7 @@ mod tests {
                 max_height: None,
                 format: None,
                 compression: None,
+                output: None,
             },
             &TendrilConfig::default(),
         )
@@ -1333,6 +1390,7 @@ mod tests {
                 max_height: Some(600),
                 format: Some("png".to_string()),
                 compression: Some(90),
+                output: None,
             },
         };
 
@@ -1596,5 +1654,48 @@ mod tests {
             command: Some(Command::Capture(CaptureCommand::default())),
         };
         assert!(matches!(cli.command, Some(Command::Capture(_))));
+    }
+
+    #[test]
+    fn write_capture_to_file_creates_image_on_disk() {
+        use base64::Engine as _;
+        use base64::engine::general_purpose::STANDARD as BASE64;
+
+        let dir = tempfile::tempdir().expect("temp dir should create");
+        let path = dir.path().join("screenshot.png");
+        let image_bytes = sample_png_bytes();
+        let image_base64 = BASE64.encode(&image_bytes);
+
+        super::write_capture_to_file(&image_base64, &path).expect("write should succeed");
+
+        let written = std::fs::read(&path).expect("file should be readable");
+        assert_eq!(written, image_bytes);
+    }
+
+    #[test]
+    fn write_capture_to_file_creates_parent_directories() {
+        use base64::Engine as _;
+        use base64::engine::general_purpose::STANDARD as BASE64;
+
+        let dir = tempfile::tempdir().expect("temp dir should create");
+        let path = dir.path().join("sub").join("dir").join("capture.png");
+        let image_bytes = sample_png_bytes();
+        let image_base64 = BASE64.encode(&image_bytes);
+
+        super::write_capture_to_file(&image_base64, &path).expect("write should succeed");
+
+        let written = std::fs::read(&path).expect("file should be readable");
+        assert_eq!(written, image_bytes);
+    }
+
+    #[test]
+    fn capture_command_output_field_excluded_from_json_schema() {
+        let schema = serde_json::to_value(schemars::schema_for!(CaptureRequest))
+            .expect("capture schema should serialize");
+
+        assert!(
+            schema["properties"].get("output").is_none(),
+            "output should not appear in the MCP schema"
+        );
     }
 }
