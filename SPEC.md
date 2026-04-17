@@ -418,6 +418,286 @@ The strategy will combine:
 - **Minimal user disruption:** avoid focus stealing where possible; report when it cannot be avoided.
 - **Documentation:** publish project documentation via GitHub Pages, preferably from a Rust-friendly documentation setup such as mdBook or a static docs site.
 
+## Concrete User Journeys
+
+These journeys describe end-to-end workflows that agents are expected to accomplish using Tendril. Each journey exercises the core list → capture → run loop and validates that Tendril's command surface, coordinate transforms, and DSL are sufficient for real-world desktop automation tasks.
+
+### CUJ 1: Agent navigates a browser to find a nearby restaurant
+
+Scenario: An agent is asked to find the highest-rated Chinese restaurant nearby. A browser window is already open on the desktop.
+
+1. **Discover the browser window.**
+   ```bash
+   tendril --json list
+   ```
+   The agent parses the target list and identifies the browser window by its title or app name (e.g. a target with `app_name` containing "Firefox" or "Chrome").
+
+2. **Capture the current browser state.**
+   ```bash
+   tendril --json --window <browser-window-id> capture --max-width 1440
+   ```
+   The agent receives a base64-encoded screenshot plus `output_to_source` coordinate transforms. It sends the image to a vision model to understand the current page layout.
+
+3. **Click the browser address bar.**
+   The vision model identifies the address bar at image-space coordinates `(img_x, img_y)`. The agent remaps to source-space:
+   ```
+   source_x = img_x * output_to_source.x_numerator / output_to_source.x_denominator
+   source_y = img_y * output_to_source.y_numerator / output_to_source.y_denominator
+   ```
+   Then clicks:
+   ```bash
+   tendril --json --window <browser-window-id> run 'lclick(<source_x>,<source_y>)'
+   ```
+
+4. **Type a search query.**
+   ```bash
+   tendril --json --window <browser-window-id> run 'hold(ctrl),a,release(ctrl),send("best chinese restaurant near me"),wait(200ms)'
+   ```
+   The `hold(ctrl),a,release(ctrl)` selects any existing address bar text before overwriting it.
+
+5. **Press Enter to navigate.**
+   ```bash
+   tendril --json --window <browser-window-id> run 'Return'
+   ```
+   `Return` is a key tap, not a modifier, so it is used as a bare action rather than `hold()`/`release()`.
+
+6. **Capture results and identify the top restaurant.**
+   ```bash
+   tendril --json --window <browser-window-id> capture --max-width 1440
+   ```
+   The agent sends the new screenshot to a vision model, which identifies the highest-rated restaurant listing and its click coordinates.
+
+7. **Click the top result.**
+   After remapping coordinates as in step 3:
+   ```bash
+   tendril --json --window <browser-window-id> run 'lclick(<source_x>,<source_y>)'
+   ```
+
+Key Tendril features exercised:
+- Target discovery by app name/title filtering
+- Scaled capture with coordinate transforms for vision-model consumption
+- Coordinate remapping from image-space back to source-space for accurate clicks
+- Text entry with modifier keys (select-all before typing)
+- Sequential multi-step interaction with the same target
+
+### CUJ 2: Agent fills out a multi-field form
+
+Scenario: An agent needs to fill out a registration form in a desktop application with name, email, and address fields, then submit it.
+
+1. **Discover and capture the form window.**
+   ```bash
+   tendril --json list
+   tendril --json --window <form-window-id> capture --max-width 1280
+   ```
+
+2. **Identify the first field (Name) via vision and click it.**
+   ```bash
+   tendril --json --window <form-window-id> run 'lclick(<name_field_x>,<name_field_y>)'
+   ```
+
+3. **Type the name, then Tab to the next field.**
+   ```bash
+   tendril --json --window <form-window-id> run 'send("Jane Smith"),wait(100ms),Tab'
+   ```
+
+4. **Type the email, then Tab again.**
+   ```bash
+   tendril --json --window <form-window-id> run 'send("jane@example.com"),wait(100ms),Tab'
+   ```
+
+5. **Type the address.**
+   ```bash
+   tendril --json --window <form-window-id> run 'send("123 Main Street, Springfield")'
+   ```
+
+6. **Capture to verify all fields are filled correctly.**
+   ```bash
+   tendril --json --window <form-window-id> capture --max-width 1280
+   ```
+   The agent sends the screenshot to a vision model to confirm the fields are populated as expected before submitting.
+
+7. **Click the Submit button.**
+   ```bash
+   tendril --json --window <form-window-id> run 'lclick(<submit_x>,<submit_y>)'
+   ```
+
+8. **Capture the result page to confirm success.**
+   ```bash
+   tendril --json --window <form-window-id> capture --max-width 1280
+   ```
+
+Key Tendril features exercised:
+- Sequential field-by-field text entry with Tab navigation
+- Mid-workflow capture for visual verification before committing an action
+- Click targeting for both input fields and buttons
+- Stateless re-capture without needing to re-discover the target
+
+### CUJ 3: Agent copies content between two applications
+
+Scenario: An agent needs to copy a code snippet from a documentation browser window and paste it into a terminal editor.
+
+1. **Discover all windows and identify both targets.**
+   ```bash
+   tendril --json list
+   ```
+   The agent identifies the browser window (source) and the terminal window (destination) from the target list.
+
+2. **Capture the browser and locate the code snippet.**
+   ```bash
+   tendril --json --window <browser-id> capture --max-width 1440
+   ```
+   A vision model identifies the start and end coordinates of the code block.
+
+3. **Select the code snippet by click-and-drag.**
+   ```bash
+   tendril --json --window <browser-id> run 'lclick(<start_x>,<start_y>),drag(<start_x>,<start_y>,<end_x>,<end_y>)'
+   ```
+
+4. **Copy the selection to clipboard.**
+   ```bash
+   tendril --json --window <browser-id> run 'hold(ctrl),c,release(ctrl)'
+   ```
+
+5. **Switch to the terminal and paste.**
+   ```bash
+   tendril --json --window <terminal-id> run 'lclick(<cursor_x>,<cursor_y>),wait(200ms),hold(ctrl),hold(shift),v,release(shift),release(ctrl)'
+   ```
+   Note: terminal paste often uses Ctrl+Shift+V rather than Ctrl+V.
+
+6. **Capture the terminal to verify the paste succeeded.**
+   ```bash
+   tendril --json --window <terminal-id> capture --max-width 1280
+   ```
+
+Key Tendril features exercised:
+- Multi-window workflow: discovering and operating on two different windows
+- Drag gesture for text selection
+- Clipboard interaction via keyboard shortcuts
+- Cross-application coordination without Tendril-side state
+- Target-scoped input so each `run` call goes to the correct window
+
+### CUJ 4: Agent monitors a dashboard and reacts to an alert
+
+Scenario: An agent periodically screenshots a monitoring dashboard and, when an alert appears, clicks the "Acknowledge" button.
+
+1. **Discover the dashboard window once.**
+   ```bash
+   tendril --json list
+   ```
+
+2. **Periodic capture loop.**
+   The agent polls on a schedule:
+   ```bash
+   tendril --json --window <dashboard-id> capture --max-width 1440 --format jpeg --compression 70
+   ```
+   Using JPEG with moderate compression keeps the payload small for repeated polling. The agent sends each screenshot to a vision model and asks: "Is there an active alert banner visible?"
+
+3. **When an alert is detected, locate and click Acknowledge.**
+   ```bash
+   tendril --json --window <dashboard-id> run 'lclick(<ack_button_x>,<ack_button_y>)'
+   ```
+
+4. **Capture to confirm the alert was dismissed.**
+   ```bash
+   tendril --json --window <dashboard-id> capture --max-width 1440 --format jpeg --compression 70
+   ```
+
+5. **Resume periodic monitoring.**
+
+Key Tendril features exercised:
+- Repeated stateless captures of the same target (no session drift)
+- JPEG format with compression tuning for efficient polling
+- Reactive click based on vision-model analysis of captured state
+- Long-running workflow that relies on Tendril's stateless model
+
+### CUJ 5: Agent uses keyboard shortcuts to operate a desktop application
+
+Scenario: An agent needs to create a new document in a text editor, type content, save it with a specific filename, and close the editor.
+
+1. **Discover the text editor window.**
+   ```bash
+   tendril --json list
+   ```
+
+2. **Create a new document via keyboard shortcut.**
+   ```bash
+   tendril --json --window <editor-id> run 'hold(ctrl),n,release(ctrl),wait(500ms)'
+   ```
+
+3. **Type document content.**
+   ```bash
+   tendril --json --window <editor-id> run 'send("Meeting Notes - April 2026\n\nAttendees: Alice, Bob, Charlie\n\nAction items:\n1. Review Q2 roadmap\n2. Schedule follow-up")'
+   ```
+
+4. **Save with Ctrl+S, which opens a Save dialog.**
+   ```bash
+   tendril --json --window <editor-id> run 'hold(ctrl),s,release(ctrl),wait(1s)'
+   ```
+
+5. **Capture the Save dialog to verify it appeared.**
+   ```bash
+   tendril --json --window <editor-id> capture --max-width 1280
+   ```
+   The agent confirms a Save dialog is visible and the filename field is focused.
+
+6. **Type the filename and press Enter to save.**
+   ```bash
+   tendril --json --window <editor-id> run 'hold(ctrl),a,release(ctrl),send("meeting-notes-2026-04.txt"),wait(200ms),Return'
+   ```
+
+7. **Close the editor.**
+   ```bash
+   tendril --json --window <editor-id> run 'hold(ctrl),w,release(ctrl)'
+   ```
+
+Key Tendril features exercised:
+- Keyboard shortcut sequences for application control (new, save, close)
+- Multi-line text entry with newlines
+- Wait durations between actions to allow the application to respond
+- Mid-workflow capture to verify dialog state before proceeding
+- Full document lifecycle without any mouse interaction
+
+### CUJ 6: Agent reads and interacts with a map application
+
+Scenario: An agent needs to search for a location on a map application, zoom in, and capture a detailed view.
+
+1. **Discover and capture the map window.**
+   ```bash
+   tendril --json list
+   tendril --json --window <map-id> capture --max-width 1920
+   ```
+   A larger `max-width` preserves detail for map reading.
+
+2. **Click the search box and type a location.**
+   ```bash
+   tendril --json --window <map-id> run 'lclick(<search_x>,<search_y>),wait(200ms),send("Golden Gate Bridge, San Francisco"),wait(500ms),Return'
+   ```
+
+3. **Wait for the map to pan and capture the result.**
+   ```bash
+   tendril --json --window <map-id> capture --max-width 1920
+   ```
+
+4. **Zoom in using keyboard shortcuts.**
+   ```bash
+   tendril --json --window <map-id> run 'hold(ctrl),hold(shift),send("+++"),release(shift),release(ctrl),wait(1s)'
+   ```
+   Or using scroll simulation if the platform supports it (future DSL extension).
+
+5. **Capture the zoomed-in view for detailed analysis.**
+   ```bash
+   tendril --json --window <map-id> run 'wait(2s)'
+   tendril --json --window <map-id> capture --max-width 1920 --format png
+   ```
+   PNG is used here for lossless detail. The wait lets tiles finish loading.
+
+Key Tendril features exercised:
+- Search box interaction with text entry and Enter confirmation
+- Application-specific keyboard shortcuts for zoom
+- Strategic use of `wait()` to allow async UI updates before capture
+- Format selection based on use case (PNG for detail, JPEG for polling)
+- High-resolution capture for detailed visual analysis
+
 ## Documentation Plan
 
 The repository should eventually include:
