@@ -383,9 +383,34 @@ fn capture_display(
     connection: &X11Connection,
     target_id: &str,
 ) -> Result<Vec<u8>, PlatformAdapterError> {
-    let display = discover_displays(context, connection)?
-        .into_iter()
-        .find(|target| target.id == target_id)
+    let mut displays = discover_displays(context, connection)?;
+    // Sort displays the same way sort_inventory does so numeric index lookup
+    // matches the sequential IDs assigned by discovery.
+    displays.sort_by(|left, right| {
+        let left_key = (
+            left.bounds.y,
+            left.bounds.x,
+            left.name.to_ascii_lowercase(),
+            left.id.to_ascii_lowercase(),
+        );
+        let right_key = (
+            right.bounds.y,
+            right.bounds.x,
+            right.name.to_ascii_lowercase(),
+            right.id.to_ascii_lowercase(),
+        );
+        left_key.cmp(&right_key)
+    });
+    // target_id is a 1-based numeric index assigned by sort_inventory.
+    let index: usize = target_id.parse().map_err(|_| {
+        PlatformAdapterError::adapter_failure(
+            AdapterOperation::Capture,
+            context.platform,
+            format!("display `{target_id}` is not a valid numeric display index"),
+        )
+    })?;
+    let display = displays
+        .get(index.saturating_sub(1))
         .ok_or_else(|| {
             PlatformAdapterError::adapter_failure(
                 AdapterOperation::Capture,
