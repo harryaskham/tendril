@@ -37,7 +37,7 @@ Representative success shape:
       { "permission": "screen_capture" }
     ],
     "targets": [
-      { "kind": "display", "id": "display-1" }
+      { "kind": "display", "id": "1" }
     ]
   }
 }
