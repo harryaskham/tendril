@@ -71,6 +71,18 @@
         };
         cargoArtifacts = craneLib.buildDepsOnly commonArgs;
 
+        linuxRuntimeDeps = lib.optionals pkgs.stdenv.isLinux (with pkgs; [
+          # Wayland compositor discovery
+          hyprland # hyprctl
+          sway # swaymsg
+          wlr-randr
+          # Wayland screen capture fallback
+          grim
+          # Wayland input injection
+          ydotool
+          wtype
+        ]);
+
         tendril = craneLib.buildPackage (
           commonArgs
           // {
@@ -78,6 +90,11 @@
             pname = "tendril";
             version = workspaceVersion;
             cargoExtraArgs = "-p tendril";
+            nativeBuildInputs = [ pkgs.makeWrapper ];
+            postFixup = lib.optionalString pkgs.stdenv.isLinux ''
+              wrapProgram $out/bin/tendril \
+                --suffix PATH : ${lib.makeBinPath linuxRuntimeDeps}
+            '';
             meta = {
               description = "Stateless Rust CLI for agent-driven desktop inspection and control";
               homepage = repositoryUrl;
