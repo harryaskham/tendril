@@ -76,6 +76,8 @@ impl AdapterContext {
                     env::var_os("PIPEWIRE_RUNTIME_DIR").as_deref(),
                     env::var_os("PULSE_SERVER").as_deref(),
                     env::var_os("PULSE_RUNTIME_PATH").as_deref(),
+                    env::var_os("XDG_RUNTIME_DIR").as_deref(),
+                    &|path| std::path::Path::new(path).exists(),
                 ),
             )
         }
@@ -2282,14 +2284,29 @@ fn detect_linux_audio_backend(
     pipewire_runtime_dir: Option<&std::ffi::OsStr>,
     pulse_server: Option<&std::ffi::OsStr>,
     pulse_runtime_path: Option<&std::ffi::OsStr>,
+    xdg_runtime_dir: Option<&std::ffi::OsStr>,
+    path_exists: &dyn Fn(&std::path::Path) -> bool,
 ) -> Option<AudioBackend> {
     if pipewire_runtime_dir.is_some() {
-        Some(AudioBackend::PipeWire)
-    } else if pulse_server.is_some() || pulse_runtime_path.is_some() {
-        Some(AudioBackend::PulseAudio)
-    } else {
-        None
+        return Some(AudioBackend::PipeWire);
     }
+    if pulse_server.is_some() || pulse_runtime_path.is_some() {
+        return Some(AudioBackend::PulseAudio);
+    }
+    // Fall back to probing well-known sockets under XDG_RUNTIME_DIR. On many
+    // NixOS/systemd setups the PIPEWIRE_RUNTIME_DIR / PULSE_SERVER env vars
+    // are not exported even though the daemons are running and reachable via
+    // their default sockets.
+    if let Some(runtime_dir) = xdg_runtime_dir {
+        let base = std::path::Path::new(runtime_dir);
+        if path_exists(&base.join("pipewire-0")) {
+            return Some(AudioBackend::PipeWire);
+        }
+        if path_exists(&base.join("pulse/native")) {
+            return Some(AudioBackend::PulseAudio);
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -2323,9 +2340,56 @@ mod tests {
             Some(std::ffi::OsStr::new("/run/user/1000")),
             Some(std::ffi::OsStr::new("unix:/tmp/pulse")),
             None,
+            None,
+            &|_| false,
         );
 
         assert_eq!(detected, Some(AudioBackend::PipeWire));
+    }
+
+    #[test]
+    fn linux_audio_backend_falls_back_to_pipewire_socket_probe() {
+        let detected = detect_linux_audio_backend(
+            None,
+            None,
+            None,
+            Some(std::ffi::OsStr::new("/run/user/1000")),
+            &|path| path == std::path::Path::new("/run/user/1000/pipewire-0"),
+        );
+
+        assert_eq!(detected, Some(AudioBackend::PipeWire));
+    }
+
+    #[test]
+    fn linux_audio_backend_falls_back_to_pulse_socket_probe() {
+        let detected = detect_linux_audio_backend(
+            None,
+            None,
+            None,
+            Some(std::ffi::OsStr::new("/run/user/1000")),
+            &|path| path == std::path::Path::new("/run/user/1000/pulse/native"),
+        );
+
+        assert_eq!(detected, Some(AudioBackend::PulseAudio));
+    }
+
+    #[test]
+    fn linux_audio_backend_prefers_pipewire_socket_over_pulse_socket() {
+        let detected = detect_linux_audio_backend(
+            None,
+            None,
+            None,
+            Some(std::ffi::OsStr::new("/run/user/1000")),
+            &|_| true,
+        );
+
+        assert_eq!(detected, Some(AudioBackend::PipeWire));
+    }
+
+    #[test]
+    fn linux_audio_backend_returns_none_without_env_or_sockets() {
+        let detected = detect_linux_audio_backend(None, None, None, None, &|_| false);
+        assert_eq!(detected, None);
     }
 
     #[test]
