@@ -1393,9 +1393,22 @@ fn wayland_workspace_origin(inventory: &TargetInventory) -> (i32, i32) {
 
 fn capture_wayland_target_with_grim(target: &TargetDescriptor) -> Result<Vec<u8>, String> {
     let path = unique_temp_path("png");
+    if target.bounds.width == 0 || target.bounds.height == 0 {
+        return Err(format!(
+            "target `{}` has empty bounds ({}x{}); refusing to invoke grim",
+            target.id, target.bounds.width, target.bounds.height
+        ));
+    }
+    if target.bounds.x < 0 || target.bounds.y < 0 {
+        return Err(format!(
+            "target `{}` has negative origin ({},{}); grim cannot capture off-screen regions",
+            target.id, target.bounds.x, target.bounds.y
+        ));
+    }
+    // grim expects slurp-compatible geometry: "X,Y WxH" (e.g. "0,0 1920x1080").
     let geometry = format!(
-        "{}x{}+{}+{}",
-        target.bounds.width, target.bounds.height, target.bounds.x, target.bounds.y
+        "{},{} {}x{}",
+        target.bounds.x, target.bounds.y, target.bounds.width, target.bounds.height
     );
     let mut command = std::process::Command::new("grim");
     command
@@ -2290,7 +2303,8 @@ mod tests {
         crop_wayland_portal_capture_to_target, detect_linux_audio_backend, detect_linux_session,
         execute_windows_input_with_runtime, is_macos_input_permission_error,
         javascript_string_literal, macos_focus_pid_jxa_script, macos_text_jxa_script,
-        wayland_capture_program_on_path, wayland_workspace_origin, windows_key_is_supported,
+        capture_wayland_target_with_grim, wayland_capture_program_on_path,
+        wayland_workspace_origin, windows_key_is_supported,
     };
     use crate::{TendrilError, model::InputAction};
     use mcp_cli::ErrorCategory;
@@ -2726,6 +2740,28 @@ mod tests {
         assert!(!wayland_capture_program_on_path(
             "grim definitely does not exist"
         ));
+    }
+
+    #[test]
+    fn grim_rejects_negative_origin_targets() {
+        let target = display_target("off-screen", -1585, 0, 1920, 1080);
+        let error = capture_wayland_target_with_grim(&target)
+            .expect_err("negative origin should be rejected before invoking grim");
+        assert!(
+            error.contains("negative origin"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn grim_rejects_empty_bounds() {
+        let target = display_target("empty", 0, 0, 0, 0);
+        let error = capture_wayland_target_with_grim(&target)
+            .expect_err("empty bounds should be rejected before invoking grim");
+        assert!(
+            error.contains("empty bounds"),
+            "unexpected error: {error}"
+        );
     }
 
     fn display_target(id: &str, x: i32, y: i32, width: u32, height: u32) -> TargetDescriptor {
