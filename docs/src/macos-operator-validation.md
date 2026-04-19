@@ -126,7 +126,7 @@ Expected permission-guided behavior:
 - macOS should ask for **Accessibility** access the first time Tendril tries to control input, or
 - the invoking terminal / Tendril binary should appear under **System Settings > Privacy & Security > Accessibility**.
 
-If input does not execute and you see a runtime/tooling error instead of Accessibility guidance, jump to [Troubleshooting self-containment failures](#troubleshooting-self-containment-failures).
+If input does not execute and you see a runtime/tooling error instead of Accessibility guidance, jump to [Troubleshooting](#troubleshooting).
 
 ### 4. Launch MCP stdio
 
