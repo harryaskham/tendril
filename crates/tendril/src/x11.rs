@@ -321,6 +321,9 @@ fn discover_window(connection: &X11Connection, window: Window) -> Option<TargetD
         .filter(|value| !value.is_empty());
     let app_name = connection.class_name(window);
     let process_id = connection.cardinal_property(window, connection.atoms._NET_WM_PID);
+    if crate::discovery::is_filtered_system_window(app_name.as_deref(), title.as_deref()) {
+        return None;
+    }
     let name = app_name
         .clone()
         .or_else(|| title.clone())
@@ -409,15 +412,13 @@ fn capture_display(
             format!("display `{target_id}` is not a valid numeric display index"),
         )
     })?;
-    let display = displays
-        .get(index.saturating_sub(1))
-        .ok_or_else(|| {
-            PlatformAdapterError::adapter_failure(
-                AdapterOperation::Capture,
-                context.platform,
-                format!("display `{target_id}` was not found during capture"),
-            )
-        })?;
+    let display = displays.get(index.saturating_sub(1)).ok_or_else(|| {
+        PlatformAdapterError::adapter_failure(
+            AdapterOperation::Capture,
+            context.platform,
+            format!("display `{target_id}` was not found during capture"),
+        )
+    })?;
 
     let x = clamp_i16(display.bounds.x).map_err(|message| {
         PlatformAdapterError::adapter_failure(AdapterOperation::Capture, context.platform, message)

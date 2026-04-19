@@ -17,6 +17,7 @@ Tendril follows [Semantic Versioning](https://semver.org/). Release notes are cu
 - A Linux/X11 packaged-smoke script and operator guide for validating packaged `list`/`capture` flows, with optional real-input smoke coverage for `run`.
 
 ### Changed
+- Wayland (Hyprland), sway, and X11 target discovery now filter out `xdg-desktop-portal-*` dialog windows so failed portal capture attempts cannot pollute `tendril list` output with stale authorization dialogs (bd-b6adf6).
 - Windows 11 discovery, capture, and input no longer depend on spawning `powershell`; Tendril now uses embedded Win32 bindings for packaged-binary self-containment and covers the native flow with Windows-focused unit tests.
 - README now links the approved spec, managed validation commands, runtime config location, docs publication surface, handoff health summary, and packaged macOS/Linux smoke-validation examples.
 - Linux/X11 discovery, capture, and input now use an embedded X11/XRandR/XTest backend instead of `xrandr`, `xprop`, `xwininfo`, `import`, or `xdotool` helper tools.

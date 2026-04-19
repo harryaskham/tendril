@@ -417,9 +417,7 @@ mod tests {
             process_id: None,
         };
         let input = CaptureInput {
-            target: TargetSelector::Display {
-                id: "1".to_owned(),
-            },
+            target: TargetSelector::Display { id: "1".to_owned() },
             max_width: None,
             max_height: None,
             format: ImageFormat::Jpeg,

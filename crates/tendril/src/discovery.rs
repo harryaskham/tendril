@@ -211,6 +211,9 @@ fn discover_hyprland_targets(
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
                 .map(str::to_owned);
+            if is_filtered_system_window(app_name.as_deref(), title.as_deref()) {
+                continue;
+            }
             let name = title
                 .clone()
                 .or_else(|| app_name.clone())
@@ -412,39 +415,44 @@ fn collect_sway_windows(node: &Value, targets: &mut Vec<TargetDescriptor>) {
                                 .filter(|value| !value.is_empty())
                                 .map(str::to_owned)
                         });
-                    let name = title
-                        .clone()
-                        .or_else(|| app_name.clone())
-                        .unwrap_or_else(|| {
-                            object.get("id").and_then(Value::as_i64).map_or_else(
-                                || "window".to_owned(),
-                                |value| format!("window-{value}"),
-                            )
+                    if is_filtered_system_window(app_name.as_deref(), title.as_deref()) {
+                        // Skip portal/system dialog windows that pollute capture target lists.
+                    } else {
+                        let name =
+                            title
+                                .clone()
+                                .or_else(|| app_name.clone())
+                                .unwrap_or_else(|| {
+                                    object.get("id").and_then(Value::as_i64).map_or_else(
+                                        || "window".to_owned(),
+                                        |value| format!("window-{value}"),
+                                    )
+                                });
+                        let id = object.get("id").and_then(Value::as_i64).map_or_else(
+                            || format!("sway:{name}"),
+                            |value| format!("sway:{value}"),
+                        );
+                        targets.push(TargetDescriptor {
+                            id,
+                            title,
+                            kind: CaptureTargetKind::Window,
+                            name,
+                            bounds: Bounds {
+                                x: json_i32(rect, "x").unwrap_or(0),
+                                y: json_i32(rect, "y").unwrap_or(0),
+                                width,
+                                height,
+                            },
+                            scale_factor: ScaleFactor::identity(),
+                            capture_supported: true,
+                            input_supported: false,
+                            app_name,
+                            process_id: object
+                                .get("pid")
+                                .and_then(Value::as_u64)
+                                .and_then(|value| u32::try_from(value).ok()),
                         });
-                    let id = object
-                        .get("id")
-                        .and_then(Value::as_i64)
-                        .map_or_else(|| format!("sway:{name}"), |value| format!("sway:{value}"));
-                    targets.push(TargetDescriptor {
-                        id,
-                        title,
-                        kind: CaptureTargetKind::Window,
-                        name,
-                        bounds: Bounds {
-                            x: json_i32(rect, "x").unwrap_or(0),
-                            y: json_i32(rect, "y").unwrap_or(0),
-                            width,
-                            height,
-                        },
-                        scale_factor: ScaleFactor::identity(),
-                        capture_supported: true,
-                        input_supported: false,
-                        app_name,
-                        process_id: object
-                            .get("pid")
-                            .and_then(Value::as_u64)
-                            .and_then(|value| u32::try_from(value).ok()),
-                    });
+                    }
                 }
             }
         }
@@ -976,17 +984,102 @@ const fn target_kind_rank(kind: CaptureTargetKind) -> u8 {
     }
 }
 
+/// Apps/windows that are owned by the desktop session itself (e.g. xdg-desktop-portal
+/// authorization dialogs, notification daemons) and should never appear as capture
+/// targets. These windows leak into compositor client lists when portal interactions
+/// fail (see bd-b6adf6) and pollute target discovery for agents.
+///
+/// Matching is case-insensitive on the application identifier (Hyprland `class` /
+/// sway `app_id`/window-class) with a small allowance for matching by window title
+/// when the app id is unavailable.
+pub(crate) fn is_filtered_system_window(app_name: Option<&str>, title: Option<&str>) -> bool {
+    const FILTERED_APP_PREFIXES: &[&str] = &[
+        "xdg-desktop-portal",
+        "org.freedesktop.impl.portal",
+        "org.freedesktop.portal",
+    ];
+
+    if let Some(app) = app_name {
+        let app_lower = app.to_ascii_lowercase();
+        if FILTERED_APP_PREFIXES
+            .iter()
+            .any(|prefix| app_lower.starts_with(prefix))
+        {
+            return true;
+        }
+    }
+
+    // Fall back to title only when there is no app id at all, since titles are
+    // user-facing strings that could legitimately mention these names.
+    if app_name.is_none()
+        && let Some(title) = title
+    {
+        let title_lower = title.to_ascii_lowercase();
+        if FILTERED_APP_PREFIXES
+            .iter()
+            .any(|prefix| title_lower.starts_with(prefix))
+        {
+            return true;
+        }
+    }
+
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         Bounds, WindowsDiscoveryBackend, discover_windows_targets_with_backend,
-        is_macos_permission_error, macos_discovery_script, parse_simple_geometry,
-        parse_wlr_randr_mode, wayland_discovery_backend_error,
+        is_filtered_system_window, is_macos_permission_error, macos_discovery_script,
+        parse_simple_geometry, parse_wlr_randr_mode, wayland_discovery_backend_error,
         wayland_discovery_backend_tools_on_path,
     };
     use crate::platform::{
         AdapterContext, CaptureTargetKind, DesktopSession, PlatformAdapterError, PlatformKind,
     };
+
+    #[test]
+    fn filters_xdg_desktop_portal_windows_by_app_id() {
+        // Hyprland reports portal dialogs with class "xdg-desktop-portal-gtk" (bd-b6adf6).
+        assert!(is_filtered_system_window(
+            Some("xdg-desktop-portal-gtk"),
+            Some("Open File")
+        ));
+        assert!(is_filtered_system_window(
+            Some("xdg-desktop-portal-hyprland"),
+            None
+        ));
+        assert!(is_filtered_system_window(
+            Some("org.freedesktop.impl.portal.desktop.gtk"),
+            None
+        ));
+        assert!(is_filtered_system_window(
+            Some("XDG-Desktop-Portal-GTK"),
+            None
+        ));
+    }
+
+    #[test]
+    fn keeps_regular_application_windows() {
+        assert!(!is_filtered_system_window(
+            Some("firefox"),
+            Some("Mozilla Firefox")
+        ));
+        assert!(!is_filtered_system_window(Some("Alacritty"), None));
+        assert!(!is_filtered_system_window(
+            Some("editor"),
+            Some("xdg-desktop-portal docs")
+        ));
+    }
+
+    #[test]
+    fn falls_back_to_title_when_app_id_missing() {
+        assert!(is_filtered_system_window(
+            None,
+            Some("xdg-desktop-portal-gtk")
+        ));
+        assert!(!is_filtered_system_window(None, Some("Untitled document")));
+    }
 
     #[test]
     fn parses_negative_geometry_offsets() {
