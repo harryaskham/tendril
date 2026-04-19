@@ -432,8 +432,42 @@ impl AliasInput {
             .with_field("name"));
         }
 
+        if is_shell_reserved_word(&self.name) {
+            return Err(TendrilError::validation(format!(
+                "alias name '{}' is a shell reserved word and cannot be used as a function name",
+                self.name
+            ))
+            .with_code("invalid_alias_input")
+            .with_field("name"));
+        }
+
         Ok(())
     }
+}
+
+/// Returns true if `name` is a reserved word in bash/zsh that cannot be used
+/// as a shell function name. Using one of these as an alias name produces a
+/// syntax error when the generated `name() { ... }` definition is evaluated.
+fn is_shell_reserved_word(name: &str) -> bool {
+    matches!(
+        name,
+        "if" | "then"
+            | "else"
+            | "elif"
+            | "fi"
+            | "for"
+            | "while"
+            | "until"
+            | "do"
+            | "done"
+            | "case"
+            | "esac"
+            | "function"
+            | "select"
+            | "in"
+            | "time"
+            | "coproc"
+    )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -535,6 +569,27 @@ mod tests {
         };
 
         input.validate().expect("alias name should be valid");
+    }
+
+    #[test]
+    fn alias_validation_rejects_shell_reserved_words() {
+        for reserved in [
+            "if", "then", "else", "elif", "fi", "for", "while", "until", "do", "done",
+            "case", "esac", "function", "select", "in", "time", "coproc",
+        ] {
+            let input = AliasInput {
+                target: TargetSelector::Window {
+                    id: "window-1".into(),
+                },
+                shell: ShellKind::Bash,
+                name: reserved.into(),
+            };
+
+            let error = input
+                .validate()
+                .expect_err(&format!("reserved word '{reserved}' should be rejected"));
+            assert_eq!(error.code(), "invalid_alias_input");
+        }
     }
 
     #[test]
