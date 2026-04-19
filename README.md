@@ -111,6 +111,12 @@ tendril --json --display <display-id> capture \
   --format jpeg \
   --compression 80
 
+# Save a capture directly to a file with -o/--output
+# (works with or without --json; --json still prints the envelope to stdout)
+
+tendril --window <window-id> capture -o /tmp/screen.png
+tendril --json --window <window-id> capture -o /tmp/screen.png
+
 # Type text or run the input DSL against a target
 
 tendril --json --window <window-id> run 'send("hello")'

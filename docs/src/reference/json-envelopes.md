@@ -2,6 +2,20 @@
 
 When `--json` is enabled, Tendril emits stable success and error envelopes shared with the MCP tool surface.
 
+## Side-effecting flags alongside `--json`
+
+A few flags produce side effects in addition to (or instead of) the JSON
+envelope. The current example is `capture`'s `-o/--output`:
+
+- Without `--json`, `tendril ... capture -o <path>` writes the decoded image
+  to `<path>` and emits no JSON on stdout.
+- With `--json`, `tendril --json ... capture -o <path>` still writes the
+  decoded image to `<path>` *and* prints the standard success/error JSON
+  envelope on stdout.
+
+Agents that consume JSON should treat `-o/--output` as a request for an
+additional filesystem side effect, not as a replacement for the envelope.
+
 ## Success shape
 
 ```json

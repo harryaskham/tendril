@@ -14,6 +14,19 @@ tendril --window <id> capture --json --max-width 1280 --format png --compression
 - `--max-height <pixels>`
 - `--format <png|jpeg>`
 - `--compression <0-100>`
+- `-o, --output <path>` — write the decoded image directly to a file. This
+  flag is side-effecting: when combined with `--json` the JSON envelope is
+  still printed to stdout while the image bytes are written to `<path>`.
+
+## Save to file
+
+```bash
+# Save a PNG screenshot to disk (no JSON envelope on stdout)
+tendril --window <id> capture -o /tmp/screen.png
+
+# Save to disk and also emit the JSON envelope on stdout
+tendril --json --window <id> capture -o /tmp/screen.png
+```
 
 ## Response shape
 
