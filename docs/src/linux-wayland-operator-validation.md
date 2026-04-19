@@ -14,9 +14,9 @@ Tendril currently treats Wayland as a matrix of **discovery backends** plus a **
 
 | Session family | Discovery backend Tendril expects | Capture backend Tendril prefers | Compatibility fallback | Generic input support |
 | --- | --- | --- | --- | --- |
-| Hyprland | `hyprctl` | `xdg-desktop-portal` screenshot backend (for example `xdg-desktop-portal-hyprland`) | `grim` | Not supported |
-| sway | `swaymsg` | `xdg-desktop-portal` screenshot backend (commonly `xdg-desktop-portal-wlr`) | `grim` | Not supported |
-| wlroots-compatible compositor with output enumeration only | `wlr-randr` | `xdg-desktop-portal` screenshot backend (commonly `xdg-desktop-portal-wlr`) | `grim` | Not supported |
+| Hyprland | `hyprctl` | `xdg-desktop-portal` screenshot backend (for example `xdg-desktop-portal-hyprland`) | `grim` | `ydotool` (preferred) or `wtype` (keyboard-only) — `bd-408572` |
+| sway | `swaymsg` | `xdg-desktop-portal` screenshot backend (commonly `xdg-desktop-portal-wlr`) | `grim` | `ydotool` (preferred) or `wtype` (keyboard-only) — `bd-408572` |
+| wlroots-compatible compositor with output enumeration only | `wlr-randr` | `xdg-desktop-portal` screenshot backend (commonly `xdg-desktop-portal-wlr`) | `grim` | `ydotool` (preferred) or `wtype` (keyboard-only) — `bd-408572` |
 
 Important current limitation:
 
@@ -115,21 +115,40 @@ Expected structured backend error when neither a portal screenshot backend nor `
 }
 ```
 
-### 4. Verify that generic input remains explicitly unsupported
+### 4. Verify Wayland input injection (`bd-408572`)
 
-Wayland input injection is still compositor-specific in this repository.
+Wayland input now works on Hyprland and other wlroots compositors when either `ydotool` (preferred, full keyboard + pointer) or `wtype` (keyboard-only fallback) is on PATH.
 
-Run:
+First confirm what Tendril detected:
+
+```bash
+command -v ydotool
+command -v wtype
+systemctl --user --no-pager status ydotoold.service 2>/dev/null || pgrep -a ydotoold
+```
+
+Then run a keyboard-only sequence against a window target that already has focus:
 
 ```bash
 nix run .#tendril -- --window <window-id> run --json 'send("hello from Tendril")'
 ```
 
-Expected result:
+Expected success:
 
-- Tendril returns a structured `unsupported_capability` error.
-- The error guidance should point you at X11 or a future compositor-specific backend rather than pretending generic Wayland input is available.
+- Tendril returns `status: success` with `action_count: 1`.
+- The `notes` field names which helper backed the dispatch (`ydotool` or `wtype`) and reminds you that Wayland focus transfer is compositor-mediated.
 
+For pointer events, ensure `ydotool` is installed and `ydotoold` is running, then exercise a click against a display target:
+
+```bash
+nix run .#tendril -- --display <display-id> run --json 'lclick(100,100)'
+```
+
+Expected failure modes that signal a real configuration issue:
+
+- `ydotoold_unavailable` — install / start the `ydotoold` daemon and make sure the invoking user can reach `$YDOTOOL_SOCKET` (or the default `/tmp/.ydotool_socket`).
+- `unsupported_capability` mentioning both `ydotool` and `wtype` — install at least one of the helper tools to enable Wayland input.
+- `unsupported_capability` saying that the detected backend is `wtype` and the request contains pointer events — install `ydotool` (and run `ydotoold`) to add pointer support.
 ### 5. MCP stdio smoke check
 
 Use the same framing helper pattern as the macOS validation page:
@@ -178,6 +197,11 @@ Recommended order of investigation:
 3. rerun the capture command, and only then
 4. consider `grim` as a compatibility fallback for the current session.
 
-### `run` still fails on Wayland
+### `run` says no Wayland input backend is available
 
-That is expected for the generic Linux adapter today. This bead only improves discovery/capture packaging and diagnostics; it does not claim generic Wayland input injection support.
+That now indicates a missing helper tool rather than an architectural limitation. Install one of:
+
+- `ydotool` (preferred, full keyboard + pointer support; also requires the `ydotoold` daemon to be running and reachable via its socket), or
+- `wtype` (keyboard-only fallback for wlroots compositors such as Hyprland and sway).
+
+Then rerun the same command. See the `bd-408572` row of the runtime dependency audit for the supported helper-tool matrix.

@@ -16,6 +16,7 @@ use crate::discovery;
 use crate::error::TendrilError;
 use crate::input::{relative_point_to_absolute, reliability_delay};
 use crate::model::{Bounds, InputAction, ModifierKey, MouseButton, ScaleFactor};
+use crate::wayland_input;
 use crate::x11;
 
 const CAPTURE_FIXTURE_ENV: &str = "TENDRIL_CAPTURE_FIXTURE_JSON";
@@ -912,15 +913,31 @@ impl InputControlAdapter for LinuxAdapter {
                 .with_notes(vec![
                     "Input injection remains stateless and target-scoped on X11.".to_owned(),
                 ])),
-            DesktopSession::Wayland => Err(PlatformAdapterError::unsupported(
-                Capability::InputControl,
-                self.platform(),
-                CapabilityErrorReason::UnsupportedSession,
-                "Wayland input injection is compositor-specific and is not exposed by the generic Linux adapter spine.",
-                Some(
-                    "Use an X11 session or implement a compositor-specific backend with explicit permissions.",
-                ),
-            )),
+            DesktopSession::Wayland => {
+                let backends = wayland_input::detect_backend();
+                if !backends.any_supported() {
+                    return Err(wayland_input::missing_backend_error(self.platform()));
+                }
+                let mut notes = vec![
+                    "Wayland input dispatch routes through detected helper tools (`ydotool` for full keyboard + pointer support, `wtype` for keyboard-only fallback on wlroots compositors)."
+                        .to_owned(),
+                    "Focus transfer is compositor-mediated on Wayland; place focus on the intended surface before issuing keyboard sequences for reliable delivery."
+                        .to_owned(),
+                ];
+                if backends.ydotool {
+                    notes.push(
+                        "`ydotool` was detected on PATH; pointer events require the `ydotoold` daemon to be running and reachable via its socket (`YDOTOOL_SOCKET` or `/tmp/.ydotool_socket`)."
+                            .to_owned(),
+                    );
+                }
+                if backends.wtype && !backends.ydotool {
+                    notes.push(
+                        "Only `wtype` is installed; pointer events (lclick/rclick/mclick/drag) are not supported until `ydotool` is also available."
+                            .to_owned(),
+                    );
+                }
+                Ok(FeatureSupport::available(Capability::InputControl).with_notes(notes))
+            }
             _ => Err(PlatformAdapterError::unsupported(
                 Capability::InputControl,
                 self.platform(),
@@ -1465,19 +1482,17 @@ fn execute_linux_input(
     session: DesktopSession,
     request: &InputRequest,
 ) -> Result<InputOutcome, TendrilError> {
-    if session != DesktopSession::X11 {
-        return Err(TendrilError::from(PlatformAdapterError::unsupported(
+    match session {
+        DesktopSession::X11 => x11::execute_input(platform, request),
+        DesktopSession::Wayland => wayland_input::execute_input(platform, request),
+        _ => Err(TendrilError::from(PlatformAdapterError::unsupported(
             Capability::InputControl,
             platform,
-            CapabilityErrorReason::UnsupportedFeature,
-            "Wayland input injection remains compositor-specific and is not enabled by the generic Linux run surface.",
-            Some(
-                "Use X11 for input automation today; Wayland support in this bead covers native discovery plus capture backends.",
-            ),
-        )));
+            CapabilityErrorReason::UnsupportedSession,
+            "Input control requires a detected graphical desktop session.",
+            Some("Run Tendril inside X11 or a supported Wayland compositor session."),
+        ))),
     }
-
-    x11::execute_input(platform, request)
 }
 
 fn execute_macos_input(
@@ -2316,12 +2331,11 @@ mod tests {
         CaptureAdapter, CaptureTargetKind, DesktopSession, InputControlAdapter, InputRequest,
         LinuxAdapter, MacOsAdapter, ModifierKey, MouseButton, PermissionAdapter, PermissionKind,
         PermissionState, PlatformAdapter, PlatformAdapterError, PlatformKind, TargetDescriptor,
-        TargetInventory, WindowsAdapter, WindowsRuntimeBackend,
+        TargetInventory, WindowsAdapter, WindowsRuntimeBackend, capture_wayland_target_with_grim,
         crop_wayland_portal_capture_to_target, detect_linux_audio_backend, detect_linux_session,
         execute_windows_input_with_runtime, is_macos_input_permission_error,
         javascript_string_literal, macos_focus_pid_jxa_script, macos_text_jxa_script,
-        capture_wayland_target_with_grim, wayland_capture_program_on_path,
-        wayland_workspace_origin, windows_key_is_supported,
+        wayland_capture_program_on_path, wayland_workspace_origin, windows_key_is_supported,
     };
     use crate::{TendrilError, model::InputAction};
     use mcp_cli::ErrorCategory;
@@ -2420,30 +2434,38 @@ mod tests {
     }
 
     #[test]
-    fn linux_wayland_input_probe_is_actionable() {
+    fn linux_wayland_input_support_branches_match_helper_tool_availability() {
+        // The actionable diagnostic is asserted directly against
+        // `wayland_input::missing_backend_error` in that module's unit tests so
+        // we do not need to mutate process-global PATH state from this test.
         let adapter = LinuxAdapter::new(AdapterContext::linux(
             DesktopSession::Wayland,
             Some(AudioBackend::PipeWire),
         ));
-        let error = adapter
-            .input_support()
-            .expect_err("wayland input should not be generically supported yet");
-
-        match error {
-            PlatformAdapterError::UnsupportedCapability(capability) => {
+        match adapter.input_support() {
+            Ok(support) => {
+                assert_eq!(support.capability, super::Capability::InputControl);
+                assert!(
+                    support
+                        .notes
+                        .iter()
+                        .any(|note| note.contains("ydotool") || note.contains("wtype")),
+                    "supported branch should explain which Wayland helper backs input"
+                );
+            }
+            Err(PlatformAdapterError::UnsupportedCapability(capability)) => {
                 assert_eq!(capability.capability, super::Capability::InputControl);
                 assert_eq!(
                     capability.reason,
-                    super::CapabilityErrorReason::UnsupportedSession
+                    super::CapabilityErrorReason::UnsupportedFeature
                 );
                 assert!(
-                    capability
-                        .suggested_action
-                        .as_deref()
-                        .is_some_and(|message| message.contains("X11"))
+                    capability.message.contains("ydotool") && capability.message.contains("wtype"),
+                    "diagnostic should reference both Wayland helper tools: {}",
+                    capability.message
                 );
             }
-            other => panic!("unexpected error: {other:?}"),
+            Err(other) => panic!("unexpected error: {other:?}"),
         }
     }
 
@@ -2822,10 +2844,7 @@ mod tests {
         let target = display_target("empty", 0, 0, 0, 0);
         let error = capture_wayland_target_with_grim(&target)
             .expect_err("empty bounds should be rejected before invoking grim");
-        assert!(
-            error.contains("empty bounds"),
-            "unexpected error: {error}"
-        );
+        assert!(error.contains("empty bounds"), "unexpected error: {error}");
     }
 
     fn display_target(id: &str, x: i32, y: i32, width: u32, height: u32) -> TargetDescriptor {

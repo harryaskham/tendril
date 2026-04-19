@@ -612,8 +612,8 @@ mod tests {
     #[test]
     fn alias_validation_rejects_shell_reserved_words() {
         for reserved in [
-            "if", "then", "else", "elif", "fi", "for", "while", "until", "do", "done",
-            "case", "esac", "function", "select", "in", "time", "coproc",
+            "if", "then", "else", "elif", "fi", "for", "while", "until", "do", "done", "case",
+            "esac", "function", "select", "in", "time", "coproc",
         ] {
             let input = AliasInput {
                 target: TargetSelector::Window {
@@ -658,7 +658,10 @@ mod tests {
         assert_eq!((two_x.numerator, two_x.denominator), (2, 1));
 
         let one_point_five = ScaleFactor::new(1500, 1000);
-        assert_eq!((one_point_five.numerator, one_point_five.denominator), (3, 2));
+        assert_eq!(
+            (one_point_five.numerator, one_point_five.denominator),
+            (3, 2)
+        );
 
         let one_point_two_five = ScaleFactor::new(1250, 1000);
         assert_eq!(
@@ -683,10 +686,9 @@ mod tests {
         // Existing on-the-wire payloads from older adapters may still carry
         // the un-reduced 1000/1000 form. Deserialization must canonicalize so
         // consumers see a uniform shape regardless of producer version.
-        let value: ScaleFactor = serde_json::from_str(
-            r#"{"numerator": 1000, "denominator": 1000}"#,
-        )
-        .expect("legacy 1000/1000 payload should deserialize");
+        let value: ScaleFactor =
+            serde_json::from_str(r#"{"numerator": 1000, "denominator": 1000}"#)
+                .expect("legacy 1000/1000 payload should deserialize");
         assert_eq!(value, ScaleFactor::identity());
     }
 }

@@ -1,7 +1,8 @@
 # Runtime dependency audit
 
 This page inventories every current Tendril runtime subprocess/tool dependency in
-`crates/tendril/src/discovery.rs` and `crates/tendril/src/platform.rs`.
+`crates/tendril/src/discovery.rs`, `crates/tendril/src/platform.rs`, and
+`crates/tendril/src/wayland_input.rs`.
 
 The governing rule from the approved `SPEC.md` is that every command should be
 self-contained. This audit therefore distinguishes between:
@@ -31,7 +32,9 @@ programs in the Tendril runtime path.
 | `capture` | Windows 11 | _none_ | Native Win32/GDI capture inside the Tendril binary | Self-contained | Continue hardening the embedded capture backend and smoke coverage | `bd-a3357b` |
 | `run` | macOS | `osascript` | Focus transfer by PID/app name, text entry, key events, mouse clicks/drags via JXA/AppleScript | Documented platform prerequisite | Native accessibility/input bindings would still reduce subprocess overhead, but packaged usability no longer depends on the Swift toolchain | `bd-5c3937` |
 | `run` | Linux/X11 | _none_ | Native X11/XTest focus, keyboard, and mouse injection | Self-contained today | Continue real-session validation, especially around keyboard-map edge cases | `bd-a279ed` |
-| `run` | Linux/Wayland | _none_ | Generic Wayland input is intentionally unsupported | Not applicable | Keep explicit unsupported-capability reporting until a compositor-specific backend exists | `bd-e4edee` |
+| `run` | Linux/Wayland | `ydotool` | Preferred Wayland keyboard + pointer injection via uinput; requires the `ydotoold` daemon (`bd-408572`) | Documented platform prerequisite | Embed a uinput-based driver to remove the helper boundary once permissions and packaging are sorted | `bd-408572` |
+| `run` | Linux/Wayland | `wtype` | Keyboard-only fallback via the wlroots `virtual-keyboard-v1` protocol when `ydotool` is not installed (`bd-408572`) | Documented platform prerequisite | Embed a wlroots virtual-keyboard client to remove the helper boundary | `bd-408572` |
+| `run` | Linux/Wayland | _none_ | Generic Wayland input falls back to a structured `unsupported_capability` error when neither helper tool is installed | Not applicable | Keep the actionable diagnostic in sync with the helper-tool detection in `wayland_input::detect_backend` | `bd-408572` |
 | `run` | Windows 11 | _none_ | Native Win32 focus transfer plus keyboard/mouse injection inside the Tendril binary | Self-contained | Continue hardening the embedded input backend and smoke coverage | `bd-a3357b` |
 
 ## Classification summary
@@ -48,6 +51,9 @@ binary on a supported host:
   is explicitly operating against those compositor families
 - Linux/Wayland `grim` only as an explicitly documented compatibility fallback
   after the preferred xdg-desktop-portal screenshot path has been tried
+- Linux/Wayland `ydotool` (with the `ydotoold` daemon) as the preferred input
+  backend, plus `wtype` as the keyboard-only fallback for wlroots compositors
+  (`bd-408572`)
 
 Why they are only *conditionally* acceptable:
 

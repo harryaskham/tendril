@@ -67,16 +67,26 @@ fn discover_linux_targets(
 fn discover_wayland_targets(
     context: &AdapterContext,
 ) -> Result<TargetInventory, PlatformAdapterError> {
+    let input_supported = crate::wayland_input::detect_backend().any_supported();
+    let mark = |mut inventory: TargetInventory| {
+        if input_supported {
+            for target in &mut inventory.targets {
+                target.input_supported = true;
+            }
+        }
+        inventory
+    };
+
     if let Some(targets) = discover_hyprland_targets(context)? {
-        return Ok(sort_inventory(TargetInventory { targets }));
+        return Ok(mark(sort_inventory(TargetInventory { targets })));
     }
 
     if let Some(targets) = discover_sway_targets(context)? {
-        return Ok(sort_inventory(TargetInventory { targets }));
+        return Ok(mark(sort_inventory(TargetInventory { targets })));
     }
 
     if let Some(displays) = discover_wlr_randr_displays(context)? {
-        return Ok(sort_inventory(TargetInventory { targets: displays }));
+        return Ok(mark(sort_inventory(TargetInventory { targets: displays })));
     }
 
     Err(wayland_discovery_backend_error(context))

@@ -110,10 +110,48 @@ fn unsupported_platform_paths_surface_structured_capability_errors() {
             .any(|note| note.contains("grim") || note.contains("Wayland"))
     );
 
-    let input_error = linux_wayland
-        .input_support()
-        .expect_err("wayland input should remain unsupported by the generic adapter");
-    assert_unsupported_session(input_error, tendril::platform::Capability::InputControl);
+    // Wayland input support now succeeds when ydotool/wtype are present
+    // and otherwise returns an actionable UnsupportedFeature diagnostic that
+    // names both helper tools (bd-408572).
+    match linux_wayland.input_support() {
+        Ok(support) => {
+            assert_eq!(
+                support.capability,
+                tendril::platform::Capability::InputControl
+            );
+            assert!(
+                support
+                    .notes
+                    .iter()
+                    .any(|note| note.contains("ydotool") || note.contains("wtype")),
+                "supported branch should describe the helper tool that backs Wayland input"
+            );
+        }
+        Err(PlatformAdapterError::UnsupportedCapability(capability)) => {
+            assert_eq!(
+                capability.capability,
+                tendril::platform::Capability::InputControl
+            );
+            assert_eq!(capability.platform, PlatformKind::Linux);
+            assert_eq!(
+                capability.reason,
+                tendril::platform::CapabilityErrorReason::UnsupportedFeature
+            );
+            assert!(
+                capability.message.contains("ydotool") && capability.message.contains("wtype"),
+                "missing-backend diagnostic should name both Wayland helpers: {}",
+                capability.message
+            );
+            assert!(
+                capability
+                    .suggested_action
+                    .as_deref()
+                    .is_some_and(|message| message.contains("ydotoold")),
+                "missing-backend diagnostic should mention the ydotoold daemon"
+            );
+        }
+        Err(other) => panic!("unexpected error: {other:?}"),
+    }
 
     let macos = MacOsAdapter::new(AdapterContext::macos());
     let loopback_error = macos
@@ -136,6 +174,7 @@ fn unsupported_platform_paths_surface_structured_capability_errors() {
     }
 }
 
+#[allow(dead_code)]
 fn assert_unsupported_session(
     error: PlatformAdapterError,
     expected_capability: tendril::platform::Capability,

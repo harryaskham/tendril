@@ -13,6 +13,7 @@ fn runtime_dependency_audit_mentions_every_spawned_program() {
     for relative_path in [
         "crates/tendril/src/discovery.rs",
         "crates/tendril/src/platform.rs",
+        "crates/tendril/src/wayland_input.rs",
     ] {
         let source = fs::read_to_string(repo_root.join(relative_path))
             .unwrap_or_else(|error| panic!("failed to read {relative_path}: {error}"));
@@ -20,6 +21,11 @@ fn runtime_dependency_audit_mentions_every_spawned_program() {
         collect_string_literals_after(&source, "run_command(context, \"", &mut programs);
         collect_string_literals_after(&source, "run_optional_command(context, \"", &mut programs);
         collect_string_literals_after(&source, "run_process_for_input(\"", &mut programs);
+        // The Wayland input backend stores the helper-binary names in module
+        // constants and feeds them to `Command::new(program)`, so the literal
+        // marker scan above misses them. Pick the constants up directly here.
+        collect_string_literals_after(&source, "const YDOTOOL_BIN: &str = \"", &mut programs);
+        collect_string_literals_after(&source, "const WTYPE_BIN: &str = \"", &mut programs);
     }
 
     let expected_programs = [
@@ -29,6 +35,8 @@ fn runtime_dependency_audit_mentions_every_spawned_program() {
         "screencapture",
         "swaymsg",
         "wlr-randr",
+        "wtype",
+        "ydotool",
     ]
     .into_iter()
     .map(str::to_owned)

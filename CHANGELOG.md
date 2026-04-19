@@ -8,6 +8,7 @@ Tendril follows [Semantic Versioning](https://semver.org/). Release notes are cu
 ## [Unreleased]
 
 ### Added
+- Wayland input injection support for Hyprland and other wlroots compositors via runtime detection of `ydotool` (preferred, full keyboard + pointer) and `wtype` (keyboard-only fallback). Wayland targets now report `input_supported = true` when at least one helper tool is on PATH, and `tendril run` dispatches the existing DSL (send/lclick/rclick/mclick/hold/release/wait/drag) through the detected backend with target-relative→absolute coordinate translation. Missing-helper paths surface a structured `unsupported_capability` diagnostic that names both tools and the `ydotoold` daemon (bd-408572).
 - `ScaleFactor::new` constructor that reduces fractions to lowest terms (and clamps zero components) so display targets and window targets share the same canonical representation in `tendril list --json` (bd-e123b8).
 - `PROJECT_HEALTH.md` handoff summary that links the spec, docs, validation, and release surfaces and captures explicit follow-ups.
 - MIT `LICENSE` file and release-artifact packaging that now ships the license and project health summary alongside the changelog and README.
