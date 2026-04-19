@@ -44,10 +44,25 @@ pub struct Bounds {
     pub height: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ScaleFactor {
     pub numerator: u32,
     pub denominator: u32,
+}
+
+impl<'de> Deserialize<'de> for ScaleFactor {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Raw {
+            numerator: u32,
+            denominator: u32,
+        }
+        let raw = Raw::deserialize(deserializer)?;
+        Ok(Self::new(raw.numerator, raw.denominator))
+    }
 }
 
 impl ScaleFactor {
@@ -58,6 +73,31 @@ impl ScaleFactor {
             denominator: 1,
         }
     }
+
+    /// Construct a `ScaleFactor` reduced to its simplest form via GCD.
+    ///
+    /// Both fields are clamped to a minimum of 1 to avoid zero values
+    /// (a denominator of 0 would be meaningless and a numerator of 0
+    /// would represent a 0x scale, which is also invalid).
+    #[must_use]
+    pub fn new(numerator: u32, denominator: u32) -> Self {
+        let numerator = numerator.max(1);
+        let denominator = denominator.max(1);
+        let divisor = gcd(numerator, denominator);
+        Self {
+            numerator: numerator / divisor,
+            denominator: denominator / divisor,
+        }
+    }
+}
+
+const fn gcd(mut a: u32, mut b: u32) -> u32 {
+    while b != 0 {
+        let t = b;
+        b = a % b;
+        a = t;
+    }
+    a
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -500,7 +540,7 @@ fn validate_identifier(id: &str, kind: TargetKind) -> Result<(), TendrilError> {
 mod tests {
     use super::{
         AliasInput, AudioFormat, AudioSourceKind, AudioSourceSelector, CaptureInput, ImageFormat,
-        ListInput, ListenInput, RunInput, RunInputPayload, ShellKind, TargetSelector,
+        ListInput, ListenInput, RunInput, RunInputPayload, ScaleFactor, ShellKind, TargetSelector,
     };
 
     #[test]
@@ -605,5 +645,50 @@ mod tests {
             .expect_err("list input should require at least one target class");
 
         assert_eq!(error.code(), "invalid_list_input");
+    }
+
+    #[test]
+    fn scale_factor_new_reduces_to_simplest_form_so_displays_match_windows() {
+        // Both 1000/1000 (display origin) and 1/1 (window origin) must collapse
+        // to the same canonical 1/1 representation, removing the agent-facing
+        // inconsistency that motivated bd-e123b8.
+        assert_eq!(ScaleFactor::new(1000, 1000), ScaleFactor::identity());
+        assert_eq!(ScaleFactor::new(1, 1), ScaleFactor::identity());
+
+        // Common HiDPI scales reduce predictably.
+        let two_x = ScaleFactor::new(2000, 1000);
+        assert_eq!((two_x.numerator, two_x.denominator), (2, 1));
+
+        let one_point_five = ScaleFactor::new(1500, 1000);
+        assert_eq!((one_point_five.numerator, one_point_five.denominator), (3, 2));
+
+        let one_point_two_five = ScaleFactor::new(1250, 1000);
+        assert_eq!(
+            (one_point_two_five.numerator, one_point_two_five.denominator),
+            (5, 4)
+        );
+    }
+
+    #[test]
+    fn scale_factor_new_clamps_zero_components_to_one() {
+        // Zero numerator or denominator would represent an invalid scale and
+        // could trigger divide-by-zero in downstream coordinate math.
+        let zero_num = ScaleFactor::new(0, 1000);
+        assert!(zero_num.numerator >= 1 && zero_num.denominator >= 1);
+
+        let zero_den = ScaleFactor::new(1000, 0);
+        assert!(zero_den.numerator >= 1 && zero_den.denominator >= 1);
+    }
+
+    #[test]
+    fn scale_factor_deserialization_normalizes_legacy_payloads() {
+        // Existing on-the-wire payloads from older adapters may still carry
+        // the un-reduced 1000/1000 form. Deserialization must canonicalize so
+        // consumers see a uniform shape regardless of producer version.
+        let value: ScaleFactor = serde_json::from_str(
+            r#"{"numerator": 1000, "denominator": 1000}"#,
+        )
+        .expect("legacy 1000/1000 payload should deserialize");
+        assert_eq!(value, ScaleFactor::identity());
     }
 }

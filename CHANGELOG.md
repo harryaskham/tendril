@@ -8,6 +8,7 @@ Tendril follows [Semantic Versioning](https://semver.org/). Release notes are cu
 ## [Unreleased]
 
 ### Added
+- `ScaleFactor::new` constructor that reduces fractions to lowest terms (and clamps zero components) so display targets and window targets share the same canonical representation in `tendril list --json` (bd-e123b8).
 - `PROJECT_HEALTH.md` handoff summary that links the spec, docs, validation, and release surfaces and captures explicit follow-ups.
 - MIT `LICENSE` file and release-artifact packaging that now ships the license and project health summary alongside the changelog and README.
 - A dedicated macOS operator-validation guide with copy-pasteable `nix run` examples for `list`, `capture`, `run`, and MCP stdio, plus permission-prompt expectations and self-containment troubleshooting.

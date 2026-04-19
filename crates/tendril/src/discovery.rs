@@ -900,10 +900,7 @@ fn scale_factor_from_float(scale: f64) -> ScaleFactor {
         .parse::<u32>()
         .unwrap_or(u32::MAX)
         .max(1);
-    ScaleFactor {
-        numerator,
-        denominator: 1000,
-    }
+    ScaleFactor::new(numerator, 1000)
 }
 
 fn parse_wlr_randr_mode(line: &str) -> Option<Bounds> {
