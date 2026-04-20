@@ -2481,13 +2481,69 @@ app.activate();
 }
 
 fn macos_text_jxa_script(text: &str) -> String {
-    let text = javascript_string_literal(text);
+    // We dispatch text via AppleScript (not JXA) so we can wrap the
+    // System Events keystroke in a `with timeout of N seconds` block.
+    //
+    // Background: keystroke is the only step in our input pipeline that
+    // crosses the AppleEvent boundary (modifier hold/release and mouse
+    // events go through CoreGraphics directly). Without an explicit
+    // timeout block the AppleEvent inherits osascript's default ~60s
+    // budget and aborts with -1712 whenever the macOS TCC consent prompt
+    // for Accessibility/Automation is sitting on screen waiting for the
+    // operator to click "OK". A longer timeout lets the consent dialog
+    // be confirmed without a spurious failure; if there is no consent
+    // dialog and System Events is genuinely wedged, the timeout still
+    // fires and we surface a distinct `input_command_timeout` error so
+    // callers can distinguish it from a denied permission.
+    let timeout = macos_input_applescript_timeout_secs();
+    let text = applescript_string_literal(text);
     format!(
-        r"var systemEvents = Application('System Events');
-systemEvents.includeStandardAdditions = true;
-systemEvents.keystroke({text});
-"
+        r#"with timeout of {timeout} seconds
+    tell application "System Events" to keystroke {text}
+end timeout
+"#
     )
+}
+
+/// `AppleEvent` timeout (in seconds) applied to System Events keystroke
+/// dispatch. Long enough to absorb a pending TCC consent prompt without
+/// being unbounded.
+fn macos_input_applescript_timeout_secs() -> u32 {
+    300
+}
+
+/// Escape `text` as an `AppleScript` string literal.
+fn applescript_string_literal(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() + 2);
+    out.push('"');
+    for ch in text.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            _ => out.push(ch),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// Language flag passed to `osascript -l`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OsaLanguage {
+    JavaScript,
+    AppleScript,
+}
+
+impl OsaLanguage {
+    fn as_flag(self) -> &'static str {
+        match self {
+            OsaLanguage::JavaScript => "JavaScript",
+            OsaLanguage::AppleScript => "AppleScript",
+        }
+    }
 }
 
 fn macos_modifier_jxa_script(modifier: ModifierKey, down: bool) -> Result<String, TendrilError> {
@@ -2610,8 +2666,27 @@ fn run_macos_osascript_jxa_for_input(
     action_index: Option<usize>,
     action: Option<&str>,
 ) -> Result<(), TendrilError> {
+    // The vast majority of input scripts are JXA (CoreGraphics calls
+    // through ObjC bridges); the text-dispatch script is AppleScript
+    // because it needs `with timeout of`. We sniff a leading marker
+    // rather than thread an enum through every call site.
+    let language = if script.trim_start().starts_with("with timeout of") {
+        OsaLanguage::AppleScript
+    } else {
+        OsaLanguage::JavaScript
+    };
+    run_macos_osascript_for_input(language, script, stage, action_index, action)
+}
+
+fn run_macos_osascript_for_input(
+    language: OsaLanguage,
+    script: &str,
+    stage: &'static str,
+    action_index: Option<usize>,
+    action: Option<&str>,
+) -> Result<(), TendrilError> {
     let output = std::process::Command::new("osascript")
-        .args(["-l", "JavaScript", "-e", script])
+        .args(["-l", language.as_flag(), "-e", script])
         .output()
         .map_err(|error| {
             input_execution_error(
@@ -2657,6 +2732,34 @@ fn run_macos_osascript_jxa_for_input(
         return Err(error);
     }
 
+    if is_macos_input_apple_event_timeout(&message) {
+        // -1712 is `errAETimeout`. It is distinct from the permission
+        // errors above: System Events accepted the AppleEvent but did
+        // not reply within the script's timeout. The most common cause
+        // we see in practice is a pending TCC consent dialog (the user
+        // never clicked "OK"); a wedged System Events process is the
+        // other possibility. Surface this as its own error code so the
+        // caller can distinguish it from a flat-out denial.
+        let detail_message = if message.is_empty() {
+            "AppleEvent timed out (-1712) while dispatching input through System Events.".to_owned()
+        } else {
+            format!("AppleEvent timed out while dispatching input: {message}")
+        };
+        return Err(input_execution_error(
+            "input_command_timeout",
+            detail_message,
+            stage,
+            action_index,
+            action,
+        )
+        .with_detail_entry(
+            "hint",
+            json!(
+                "Confirm any pending macOS consent prompt for Accessibility/Automation, or grant access in System Settings > Privacy & Security. If no prompt is visible, restarting the System Events process or targeting a window with --window can avoid the AppleEvent path."
+            ),
+        ));
+    }
+
     Err(input_execution_error(
         "input_command_failed",
         if message.is_empty() {
@@ -2672,14 +2775,27 @@ fn run_macos_osascript_jxa_for_input(
 
 fn is_macos_input_permission_error(message: &str) -> bool {
     let lower = message.to_ascii_lowercase();
+    // Note: the generic phrase "system events got an error" appears in the
+    // AppleEvent timeout message as well ("System Events got an error:
+    // AppleEvent timed out."), so we must check the timeout case first at
+    // the call site. Here we still treat it as a permission hint because
+    // historically every other System Events failure we have seen on this
+    // path was an Accessibility denial.
     lower.contains("accessibility")
         || lower.contains("assistive access")
-        || lower.contains("system events got an error")
         || lower.contains("apple events")
         || lower.contains("not authorized")
         || lower.contains("not permitted")
         || lower.contains("-1719")
         || lower.contains("-1743")
+        || (lower.contains("system events got an error")
+            && !is_macos_input_apple_event_timeout(message))
+}
+
+/// Detects `errAETimeout` (-1712), distinct from Accessibility denials.
+fn is_macos_input_apple_event_timeout(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("-1712") || lower.contains("appleevent timed out")
 }
 
 fn macos_key_code(key: &str) -> Result<u16, TendrilError> {
@@ -3262,6 +3378,24 @@ mod tests {
     }
 
     #[test]
+    fn macos_input_permission_classifier_does_not_swallow_apple_event_timeout() {
+        // -1712 must not be classified as a permission failure: it is a
+        // distinct condition (pending consent dialog or wedged System
+        // Events) and surfaces with its own `input_command_timeout`
+        // error code.
+        let timeout_message =
+            "System Events got an error: AppleEvent timed out. (-1712)";
+        assert!(!is_macos_input_permission_error(timeout_message));
+        assert!(super::is_macos_input_apple_event_timeout(timeout_message));
+        assert!(super::is_macos_input_apple_event_timeout(
+            "execution error: AppleEvent timed out. (-1712)"
+        ));
+        assert!(!super::is_macos_input_apple_event_timeout(
+            "System Events got an error: osascript is not allowed assistive access. (-1719)"
+        ));
+    }
+
+    #[test]
     fn macos_osascript_scripts_are_self_contained() {
         let focus_script = macos_focus_pid_jxa_script(42);
         let text_script = macos_text_jxa_script("hello");
@@ -3270,6 +3404,36 @@ mod tests {
         assert!(text_script.contains("System Events"));
         assert!(!focus_script.contains("swift"));
         assert!(!text_script.contains("swift"));
+    }
+
+    #[test]
+    fn macos_text_script_wraps_keystroke_in_an_apple_event_timeout() {
+        // The text-dispatch script is the only step in the macOS input
+        // pipeline that crosses the AppleEvent boundary. It must wrap
+        // the System Events keystroke in a `with timeout of` block so
+        // that a pending TCC consent prompt does not cause a -1712
+        // (errAETimeout) failure within osascript's default budget.
+        let script = macos_text_jxa_script("hello");
+        assert!(
+            script.starts_with("with timeout of"),
+            "text script must opt into AppleScript timeout handling, got: {script}"
+        );
+        assert!(script.contains("end timeout"));
+        assert!(script.contains("keystroke \"hello\""));
+        // The runner sniffs the leading marker to choose AppleScript
+        // over JXA; document that contract here.
+        assert_eq!(
+            super::OsaLanguage::AppleScript.as_flag(),
+            "AppleScript"
+        );
+    }
+
+    #[test]
+    fn applescript_string_literal_escapes_special_characters() {
+        assert_eq!(
+            super::applescript_string_literal("line \"one\"\nline two\\end"),
+            "\"line \\\"one\\\"\\nline two\\\\end\""
+        );
     }
 
     #[test]
