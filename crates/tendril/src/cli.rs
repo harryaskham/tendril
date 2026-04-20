@@ -103,6 +103,13 @@ pub struct CaptureCommand {
     #[arg(short = 'o', long)]
     #[serde(skip)]
     pub output: Option<PathBuf>,
+
+    /// Maximum time (milliseconds) to wait for the underlying capture backend
+    /// before giving up. On Wayland this bounds both the xdg-desktop-portal
+    /// screenshot D-Bus call and the `grim` fallback subprocess so a hung
+    /// portal or compositor cannot freeze an agent session.
+    #[arg(long = "timeout-ms")]
+    pub timeout_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Args, Serialize, Deserialize, JsonSchema)]

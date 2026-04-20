@@ -22,6 +22,8 @@ pub enum ErrorCategory {
     ExecutionFailure,
     ConfigError,
     SerializationError,
+    /// Operation exceeded a configured deadline (e.g. capture portal/grim hang).
+    Timeout,
 }
 
 /// Stable metadata attached to every machine-readable response envelope.

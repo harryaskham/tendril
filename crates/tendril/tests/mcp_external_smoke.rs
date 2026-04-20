@@ -94,6 +94,7 @@ fn external_client_smoke_script_verifies_stdio_contract_against_built_binary() {
             "format",
             "max_height",
             "max_width",
+            "timeout_ms",
             "window",
         ]
     );

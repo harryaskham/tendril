@@ -31,6 +31,7 @@ pub(crate) fn execute_capture(
     let artifact = adapter.capture(&PlatformCaptureRequest {
         target: target.kind,
         target_id: target.id.clone(),
+        timeout_ms: input.timeout_ms,
     })?;
 
     build_capture_output(input, &target, artifact, &adapter.info())
@@ -368,6 +369,7 @@ mod tests {
             max_height: None,
             format: ImageFormat::Png,
             compression: 85,
+            timeout_ms: None,
         };
 
         let output = build_capture_output(
@@ -422,6 +424,7 @@ mod tests {
             max_height: None,
             format: ImageFormat::Jpeg,
             compression: 80,
+            timeout_ms: None,
         };
 
         let output = build_capture_output(

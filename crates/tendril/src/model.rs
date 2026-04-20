@@ -170,6 +170,10 @@ pub struct CaptureInput {
     pub max_height: Option<u32>,
     pub format: ImageFormat,
     pub compression: u8,
+    /// Per-call deadline in milliseconds for backend capture work (portal/grim/etc).
+    /// `None` means use the platform-default deadline.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
 }
 
 impl CaptureInput {
@@ -203,7 +207,19 @@ impl CaptureInput {
         }
 
         validate_identifier(self.target.id(), self.target.kind())
-            .map_err(|error| error.with_code("invalid_capture_input"))
+            .map_err(|error| error.with_code("invalid_capture_input"))?;
+
+        if let Some(timeout_ms) = self.timeout_ms
+            && timeout_ms == 0
+        {
+            return Err(
+                TendrilError::validation("timeout_ms must be greater than zero")
+                    .with_code("invalid_capture_input")
+                    .with_field("timeout_ms"),
+            );
+        }
+
+        Ok(())
     }
 }
 
@@ -553,6 +569,7 @@ mod tests {
             max_height: None,
             format: ImageFormat::Png,
             compression: 255,
+            timeout_ms: None,
         };
 
         let error = input

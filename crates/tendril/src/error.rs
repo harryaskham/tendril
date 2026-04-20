@@ -63,6 +63,13 @@ pub enum TendrilError {
         message: String,
         details: Option<ErrorDetails>,
     },
+
+    #[error("timeout: {message}")]
+    Timeout {
+        code: &'static str,
+        message: String,
+        details: Option<ErrorDetails>,
+    },
 }
 
 #[derive(Debug, Error, Clone, PartialEq)]
@@ -116,6 +123,19 @@ impl TendrilError {
             code: "serialization_error",
             message: message.into(),
             details: None,
+        }
+    }
+
+    #[must_use]
+    pub fn timeout(
+        code: &'static str,
+        message: impl Into<String>,
+        details: Option<Value>,
+    ) -> Self {
+        Self::Timeout {
+            code,
+            message: message.into(),
+            details: details.map(ErrorDetails),
         }
     }
 
@@ -234,6 +254,15 @@ impl TendrilError {
                 message,
                 details: Some(merge_details(details, key, value)),
             },
+            Self::Timeout {
+                code,
+                message,
+                details,
+            } => Self::Timeout {
+                code,
+                message,
+                details: Some(merge_details(details, key, value)),
+            },
         }
     }
 
@@ -296,6 +325,13 @@ impl TendrilError {
                 message,
                 details,
             },
+            Self::Timeout {
+                message, details, ..
+            } => Self::Timeout {
+                code,
+                message,
+                details,
+            },
         }
     }
 
@@ -310,6 +346,7 @@ impl TendrilError {
             Self::ExecutionFailure { .. } => ErrorCategory::ExecutionFailure,
             Self::Config { .. } => ErrorCategory::ConfigError,
             Self::Serialization { .. } => ErrorCategory::SerializationError,
+            Self::Timeout { .. } => ErrorCategory::Timeout,
         }
     }
 
@@ -323,7 +360,8 @@ impl TendrilError {
             | Self::PlatformAdapterFailure { code, .. }
             | Self::ExecutionFailure { code, .. }
             | Self::Config { code, .. }
-            | Self::Serialization { code, .. } => code,
+            | Self::Serialization { code, .. }
+            | Self::Timeout { code, .. } => code,
         }
     }
 
@@ -337,7 +375,8 @@ impl TendrilError {
             | Self::PlatformAdapterFailure { details, .. }
             | Self::ExecutionFailure { details, .. }
             | Self::Config { details, .. }
-            | Self::Serialization { details, .. } => details.as_ref().map(|details| &details.0),
+            | Self::Serialization { details, .. }
+            | Self::Timeout { details, .. } => details.as_ref().map(|details| &details.0),
         }
     }
 
@@ -388,6 +427,20 @@ impl From<PlatformAdapterError> for TendrilError {
                 details: Some(ErrorDetails(json!({
                     "operation": operation,
                     "platform": platform,
+                }))),
+            },
+            PlatformAdapterError::Timeout {
+                operation,
+                platform,
+                timeout_ms,
+                message,
+            } => Self::Timeout {
+                code: "platform_adapter_timeout",
+                message,
+                details: Some(ErrorDetails(json!({
+                    "operation": operation,
+                    "platform": platform,
+                    "timeout_ms": timeout_ms,
                 }))),
             },
         }

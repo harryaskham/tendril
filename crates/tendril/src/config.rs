@@ -55,6 +55,9 @@ pub struct CaptureDefaults {
     pub compression: u8,
     pub max_width: Option<u32>,
     pub max_height: Option<u32>,
+    /// Default per-call backend timeout in milliseconds. `None` lets the
+    /// platform adapter choose its own default (currently 10 000 ms).
+    pub timeout_ms: Option<u64>,
 }
 
 impl CaptureDefaults {
@@ -86,6 +89,15 @@ impl CaptureDefaults {
             .with_field("capture.max_height"));
         }
 
+        if self.timeout_ms == Some(0) {
+            return Err(TendrilError::config_path(
+                path,
+                "capture.timeout_ms must be greater than zero",
+            )
+            .with_code("invalid_config")
+            .with_field("capture.timeout_ms"));
+        }
+
         Ok(())
     }
 }
@@ -97,6 +109,7 @@ impl Default for CaptureDefaults {
             compression: 85,
             max_width: None,
             max_height: None,
+            timeout_ms: None,
         }
     }
 }

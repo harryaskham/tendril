@@ -1,5 +1,7 @@
 use std::env;
-use std::time::Duration;
+use std::sync::mpsc;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use ashpd::desktop::screenshot::Screenshot as PortalScreenshot;
 use base64::Engine as _;
@@ -300,6 +302,14 @@ pub enum PlatformAdapterError {
         platform: PlatformKind,
         message: String,
     },
+
+    #[error("Platform adapter timeout during {operation:?} on {platform:?} after {timeout_ms}ms: {message}")]
+    Timeout {
+        operation: AdapterOperation,
+        platform: PlatformKind,
+        timeout_ms: u64,
+        message: String,
+    },
 }
 
 impl PlatformAdapterError {
@@ -351,11 +361,27 @@ impl PlatformAdapterError {
     }
 
     #[must_use]
+    pub fn timeout(
+        operation: AdapterOperation,
+        platform: PlatformKind,
+        timeout_ms: u64,
+        message: impl Into<String>,
+    ) -> Self {
+        Self::Timeout {
+            operation,
+            platform,
+            timeout_ms,
+            message: message.into(),
+        }
+    }
+
+    #[must_use]
     pub const fn category(&self) -> ErrorCategory {
         match self {
             Self::UnsupportedCapability(_) => ErrorCategory::UnsupportedCapability,
             Self::MissingPermission { .. } => ErrorCategory::MissingPermission,
             Self::AdapterFailure { .. } => ErrorCategory::PlatformAdapterFailure,
+            Self::Timeout { .. } => ErrorCategory::Timeout,
         }
     }
 }
@@ -386,7 +412,16 @@ pub struct TargetInventory {
 pub struct CaptureRequest {
     pub target: CaptureTargetKind,
     pub target_id: String,
+    /// Per-call deadline applied to backend capture work (e.g. portal/grim).
+    /// `None` lets the adapter choose its own default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
 }
+
+/// Hard upper bound used by adapters that need a deadline but were given
+/// `timeout_ms = None`. Chosen so a hung Wayland portal or compositor cannot
+/// freeze a CLI/MCP session for longer than ten seconds.
+pub const DEFAULT_CAPTURE_TIMEOUT_MS: u64 = 10_000;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CaptureArtifact {
@@ -1197,6 +1232,20 @@ struct WaylandCaptureBackendFailure {
     missing_backend: bool,
 }
 
+/// Distinguishes a clean backend failure from an exceeded deadline so the
+/// caller can return a structured `Timeout` error to agents.
+#[derive(Debug, Clone)]
+enum WaylandCaptureBackendError {
+    Failed(WaylandCaptureBackendFailure),
+    Timeout(String),
+}
+
+impl From<WaylandCaptureBackendFailure> for WaylandCaptureBackendError {
+    fn from(value: WaylandCaptureBackendFailure) -> Self {
+        Self::Failed(value)
+    }
+}
+
 fn capture_wayland_target(
     context: &AdapterContext,
     request: &CaptureRequest,
@@ -1218,9 +1267,20 @@ fn capture_wayland_target(
             )
         })?;
 
-    let portal_error = match capture_wayland_target_via_portal(&target, &inventory) {
+    let timeout = Duration::from_millis(request.timeout_ms.unwrap_or(DEFAULT_CAPTURE_TIMEOUT_MS));
+    let deadline = Instant::now() + timeout;
+
+    let portal_error = match capture_wayland_target_via_portal(&target, &inventory, timeout) {
         Ok(image_bytes) => return Ok(image_bytes),
-        Err(error) => error,
+        Err(WaylandCaptureBackendError::Timeout(message)) => {
+            return Err(PlatformAdapterError::timeout(
+                AdapterOperation::Capture,
+                context.platform,
+                u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
+                format!("xdg-desktop-portal screenshot timed out: {message}"),
+            ));
+        }
+        Err(WaylandCaptureBackendError::Failed(error)) => error,
     };
 
     if !wayland_capture_program_on_path("grim") {
@@ -1249,31 +1309,95 @@ fn capture_wayland_target(
         };
     }
 
-    capture_wayland_target_with_grim(&target).map_err(|grim_error| {
-        PlatformAdapterError::adapter_failure(
+    // Reserve whatever budget remains after the portal attempt for grim.
+    let grim_timeout = deadline
+        .checked_duration_since(Instant::now())
+        .unwrap_or_else(|| Duration::from_millis(0));
+    if grim_timeout.is_zero() {
+        return Err(PlatformAdapterError::timeout(
+            AdapterOperation::Capture,
+            context.platform,
+            u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
+            format!(
+                "Wayland capture exhausted its {} ms budget on the xdg-desktop-portal screenshot path before grim could be tried (`{}`).",
+                timeout.as_millis(),
+                portal_error.message
+            ),
+        ));
+    }
+
+    capture_wayland_target_with_grim(&target, grim_timeout).map_err(|grim_error| match grim_error {
+        WaylandCaptureBackendError::Timeout(message) => PlatformAdapterError::timeout(
+            AdapterOperation::Capture,
+            context.platform,
+            u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
+            format!(
+                "Wayland capture timed out — xdg-desktop-portal screenshot (`{}`) and grim fallback both unresponsive: {message}",
+                portal_error.message
+            ),
+        ),
+        WaylandCaptureBackendError::Failed(failure) => PlatformAdapterError::adapter_failure(
             AdapterOperation::Capture,
             context.platform,
             format!(
-                "Wayland capture failed via xdg-desktop-portal screenshot (`{}`) and grim fallback (`{grim_error}`).",
-                portal_error.message
+                "Wayland capture failed via xdg-desktop-portal screenshot (`{}`) and grim fallback (`{}`).",
+                portal_error.message, failure.message
             ),
-        )
+        ),
     })
 }
 
 fn capture_wayland_target_via_portal(
     target: &TargetDescriptor,
     inventory: &TargetInventory,
-) -> Result<Vec<u8>, WaylandCaptureBackendFailure> {
-    let screenshot = block_on(async {
-        PortalScreenshot::request()
-            .interactive(false)
-            .modal(true)
-            .send()
-            .await?
-            .response()
-    })
-    .map_err(|error| classify_wayland_portal_capture_error(&error))?;
+    timeout: Duration,
+) -> Result<Vec<u8>, WaylandCaptureBackendError> {
+    let (sender, receiver) = mpsc::channel();
+    // The portal call is run on a detached helper thread. If the deadline
+    // elapses we abandon the thread (the portal call has no cancel API), but
+    // we never wait on it again so the caller is unblocked. A late reply will
+    // simply be dropped together with the channel.
+    thread::Builder::new()
+        .name("tendril-wayland-portal-capture".to_string())
+        .spawn(move || {
+            let result = block_on(async {
+                PortalScreenshot::request()
+                    .interactive(false)
+                    .modal(true)
+                    .send()
+                    .await?
+                    .response()
+            });
+            let _ = sender.send(result);
+        })
+        .map_err(|error| {
+            WaylandCaptureBackendError::Failed(WaylandCaptureBackendFailure {
+                message: format!(
+                    "failed to spawn xdg-desktop-portal screenshot worker thread: {error}"
+                ),
+                missing_backend: false,
+            })
+        })?;
+
+    let screenshot = match receiver.recv_timeout(timeout) {
+        Ok(Ok(screenshot)) => screenshot,
+        Ok(Err(error)) => return Err(classify_wayland_portal_capture_error(&error).into()),
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            return Err(WaylandCaptureBackendError::Timeout(format!(
+                "xdg-desktop-portal screenshot did not respond within {} ms",
+                timeout.as_millis()
+            )));
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            return Err(WaylandCaptureBackendError::Failed(
+                WaylandCaptureBackendFailure {
+                    message: "xdg-desktop-portal screenshot worker thread terminated unexpectedly"
+                        .to_owned(),
+                    missing_backend: false,
+                },
+            ));
+        }
+    };
 
     let path = screenshot
         .uri()
@@ -1294,7 +1418,7 @@ fn capture_wayland_target_via_portal(
     })?;
     let _ = std::fs::remove_file(&path);
 
-    crop_wayland_portal_capture_to_target(&image_bytes, target, inventory)
+    crop_wayland_portal_capture_to_target(&image_bytes, target, inventory).map_err(Into::into)
 }
 
 fn classify_wayland_portal_capture_error(error: &ashpd::Error) -> WaylandCaptureBackendFailure {
@@ -1410,18 +1534,64 @@ fn wayland_workspace_origin(inventory: &TargetInventory) -> (i32, i32) {
     (min_x, min_y)
 }
 
-fn capture_wayland_target_with_grim(target: &TargetDescriptor) -> Result<Vec<u8>, String> {
+/// Outcome of waiting for a capture-helper child process with a deadline.
+#[derive(Debug)]
+enum CaptureChildOutcome {
+    Exited(std::process::ExitStatus),
+    TimedOut,
+    WaitFailed(std::io::Error),
+}
+
+/// Poll a child process until it exits or `timeout` elapses. The caller is
+/// responsible for killing+reaping the child on `TimedOut`.
+fn wait_for_capture_child_with_timeout(
+    child: &mut std::process::Child,
+    timeout: Duration,
+) -> CaptureChildOutcome {
+    let deadline = Instant::now() + timeout;
+    let poll_interval = Duration::from_millis(50);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return CaptureChildOutcome::Exited(status),
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    return CaptureChildOutcome::TimedOut;
+                }
+                let remaining = deadline
+                    .checked_duration_since(Instant::now())
+                    .unwrap_or_default();
+                thread::sleep(poll_interval.min(remaining));
+            }
+            Err(error) => return CaptureChildOutcome::WaitFailed(error),
+        }
+    }
+}
+
+fn capture_wayland_target_with_grim(
+    target: &TargetDescriptor,
+    timeout: Duration,
+) -> Result<Vec<u8>, WaylandCaptureBackendError> {
     let path = unique_temp_path("png");
     if target.bounds.width == 0 || target.bounds.height == 0 {
-        return Err(format!(
-            "target `{}` has empty bounds ({}x{}); refusing to invoke grim",
-            target.id, target.bounds.width, target.bounds.height
+        return Err(WaylandCaptureBackendError::Failed(
+            WaylandCaptureBackendFailure {
+                message: format!(
+                    "target `{}` has empty bounds ({}x{}); refusing to invoke grim",
+                    target.id, target.bounds.width, target.bounds.height
+                ),
+                missing_backend: false,
+            },
         ));
     }
     if target.bounds.x < 0 || target.bounds.y < 0 {
-        return Err(format!(
-            "target `{}` has negative origin ({},{}); grim cannot capture off-screen regions",
-            target.id, target.bounds.x, target.bounds.y
+        return Err(WaylandCaptureBackendError::Failed(
+            WaylandCaptureBackendFailure {
+                message: format!(
+                    "target `{}` has negative origin ({},{}); grim cannot capture off-screen regions",
+                    target.id, target.bounds.x, target.bounds.y
+                ),
+                missing_backend: false,
+            },
         ));
     }
     // grim expects slurp-compatible geometry: "X,Y WxH" (e.g. "0,0 1920x1080").
@@ -1434,22 +1604,65 @@ fn capture_wayland_target_with_grim(target: &TargetDescriptor) -> Result<Vec<u8>
         .arg("-t")
         .arg("png")
         .arg("-g")
-        .arg(geometry)
-        .arg(&path);
-    let output = command
-        .output()
-        .map_err(|error| format!("failed to spawn grim: {error}"))?;
+        .arg(&geometry)
+        .arg(&path)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = command
+        .spawn()
+        .map_err(|error| WaylandCaptureBackendFailure {
+            message: format!("failed to spawn grim: {error}"),
+            missing_backend: false,
+        })?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(if stderr.trim().is_empty() {
-            format!("grim exited with status {}", output.status)
-        } else {
-            format!("grim failed: {}", stderr.trim())
-        });
+    let status = match wait_for_capture_child_with_timeout(&mut child, timeout) {
+        CaptureChildOutcome::Exited(status) => status,
+        CaptureChildOutcome::TimedOut => {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = std::fs::remove_file(&path);
+            return Err(WaylandCaptureBackendError::Timeout(format!(
+                "grim did not produce a screenshot for `{}` within {} ms",
+                target.id,
+                timeout.as_millis()
+            )));
+        }
+        CaptureChildOutcome::WaitFailed(error) => {
+            let _ = std::fs::remove_file(&path);
+            return Err(WaylandCaptureBackendError::Failed(
+                WaylandCaptureBackendFailure {
+                    message: format!("failed to wait on grim: {error}"),
+                    missing_backend: false,
+                },
+            ));
+        }
+    };
+
+    if !status.success() {
+        let mut stderr = String::new();
+        if let Some(mut handle) = child.stderr.take() {
+            use std::io::Read as _;
+            let _ = handle.read_to_string(&mut stderr);
+        }
+        let _ = std::fs::remove_file(&path);
+        return Err(WaylandCaptureBackendError::Failed(
+            WaylandCaptureBackendFailure {
+                message: if stderr.trim().is_empty() {
+                    format!("grim exited with status {status}")
+                } else {
+                    format!("grim failed: {}", stderr.trim())
+                },
+                missing_backend: false,
+            },
+        ));
     }
 
-    read_and_remove_temp_capture(&path).map_err(|error| error.to_string())
+    read_and_remove_temp_capture(&path).map_err(|error| {
+        WaylandCaptureBackendError::Failed(WaylandCaptureBackendFailure {
+            message: error.to_string(),
+            missing_backend: false,
+        })
+    })
 }
 
 fn wayland_capture_capability(target: CaptureTargetKind) -> Capability {
@@ -2331,7 +2544,8 @@ mod tests {
         CaptureAdapter, CaptureTargetKind, DesktopSession, InputControlAdapter, InputRequest,
         LinuxAdapter, MacOsAdapter, ModifierKey, MouseButton, PermissionAdapter, PermissionKind,
         PermissionState, PlatformAdapter, PlatformAdapterError, PlatformKind, TargetDescriptor,
-        TargetInventory, WindowsAdapter, WindowsRuntimeBackend, capture_wayland_target_with_grim,
+        TargetInventory, WaylandCaptureBackendError, WindowsAdapter, WindowsRuntimeBackend,
+        capture_wayland_target_with_grim,
         crop_wayland_portal_capture_to_target, detect_linux_audio_backend, detect_linux_session,
         execute_windows_input_with_runtime, is_macos_input_permission_error,
         javascript_string_literal, macos_focus_pid_jxa_script, macos_text_jxa_script,
@@ -2831,8 +3045,14 @@ mod tests {
     #[test]
     fn grim_rejects_negative_origin_targets() {
         let target = display_target("off-screen", -1585, 0, 1920, 1080);
-        let error = capture_wayland_target_with_grim(&target)
-            .expect_err("negative origin should be rejected before invoking grim");
+        let error = match capture_wayland_target_with_grim(&target, std::time::Duration::from_secs(1))
+            .expect_err("negative origin should be rejected before invoking grim")
+        {
+            WaylandCaptureBackendError::Failed(failure) => failure.message,
+            WaylandCaptureBackendError::Timeout(message) => {
+                panic!("unexpected timeout for negative-origin guard: {message}")
+            }
+        };
         assert!(
             error.contains("negative origin"),
             "unexpected error: {error}"
@@ -2842,9 +3062,58 @@ mod tests {
     #[test]
     fn grim_rejects_empty_bounds() {
         let target = display_target("empty", 0, 0, 0, 0);
-        let error = capture_wayland_target_with_grim(&target)
-            .expect_err("empty bounds should be rejected before invoking grim");
+        let error = match capture_wayland_target_with_grim(&target, std::time::Duration::from_secs(1))
+            .expect_err("empty bounds should be rejected before invoking grim")
+        {
+            WaylandCaptureBackendError::Failed(failure) => failure.message,
+            WaylandCaptureBackendError::Timeout(message) => {
+                panic!("unexpected timeout for empty-bounds guard: {message}")
+            }
+        };
         assert!(error.contains("empty bounds"), "unexpected error: {error}");
+    }
+
+    #[test]
+    fn grim_subprocess_times_out_when_helper_hangs() {
+        // Drive the same wait-with-timeout helper used by the grim path against
+        // a long `sleep` subprocess so we can verify the deadline kills the
+        // child instead of blocking forever.
+        let sleep_program: std::ffi::OsString = std::ffi::OsString::from("sleep");
+        let mut child = std::process::Command::new(&sleep_program)
+            .arg("30")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+        let Ok(child) = child.as_mut() else {
+            // No `sleep` binary in this sandbox — skip the test rather than
+            // fail; the timeout logic is also covered indirectly by the
+            // portal-thread channel path.
+            return;
+        };
+
+        let started = std::time::Instant::now();
+        let outcome = super::wait_for_capture_child_with_timeout(
+            child,
+            std::time::Duration::from_millis(150),
+        );
+        let elapsed = started.elapsed();
+        // Make sure the child is reaped no matter what happened above.
+        let _ = child.kill();
+        let _ = child.wait();
+
+        match outcome {
+            super::CaptureChildOutcome::TimedOut => {}
+            super::CaptureChildOutcome::Exited(status) => {
+                panic!("sleep helper unexpectedly exited with status {status}")
+            }
+            super::CaptureChildOutcome::WaitFailed(error) => {
+                panic!("wait helper failed: {error}")
+            }
+        }
+        assert!(
+            elapsed < std::time::Duration::from_secs(5),
+            "wait helper did not honor timeout: {elapsed:?}"
+        );
     }
 
     fn display_target(id: &str, x: i32, y: i32, width: u32, height: u32) -> TargetDescriptor {

@@ -541,6 +541,7 @@ fn build_capture_input(
             .transpose()?
             .unwrap_or(config.capture.format),
         compression: command.compression.unwrap_or(config.capture.compression),
+        timeout_ms: command.timeout_ms.or(config.capture.timeout_ms),
     };
     input.validate()?;
     Ok(input)
@@ -1331,6 +1332,7 @@ mod tests {
                 format: None,
                 compression: None,
                 output: None,
+                timeout_ms: None,
             },
             &TendrilConfig::default(),
         )
@@ -1472,6 +1474,7 @@ mod tests {
                 format: Some("png".to_string()),
                 compression: Some(90),
                 output: None,
+                timeout_ms: None,
             },
         };
 
@@ -1567,6 +1570,7 @@ mod tests {
                 max_height: None,
                 format: ImageFormat::Png,
                 compression: 90,
+                timeout_ms: None,
             },
             adapter.as_ref(),
         )
