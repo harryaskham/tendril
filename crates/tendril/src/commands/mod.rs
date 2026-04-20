@@ -1683,6 +1683,167 @@ mod tests {
         assert_eq!(mcp_structured_content(&response), cli_json);
     }
 
+    /// Regression for bd-da01d3: when the adapter cannot satisfy input control
+    /// (for example a Wayland session with neither `ydotool` nor `wtype` on
+    /// PATH), `execute_run` must surface the actionable adapter-level
+    /// missing-backend diagnostic instead of the generic per-target
+    /// `input_not_supported_for_target` capability error. The actionable
+    /// diagnostic names both helper tools and points at an install path.
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn run_surfaces_wayland_missing_backend_error_before_generic_target_check() {
+        #[derive(Debug)]
+        struct WaylandMissingBackendsAdapter;
+
+        impl TargetDiscoveryAdapter for WaylandMissingBackendsAdapter {
+            fn target_discovery_support(
+                &self,
+            ) -> Result<FeatureSupport, PlatformAdapterError> {
+                Ok(FeatureSupport::available(
+                    crate::platform::Capability::TargetDiscovery,
+                ))
+            }
+
+            fn discover_targets(
+                &self,
+                _request: &TargetDiscoveryRequest,
+            ) -> Result<TargetInventory, PlatformAdapterError> {
+                // Discovery on Wayland marks targets as `input_supported = false`
+                // when no helper tool is detected. Without the bd-da01d3 fix
+                // this would route execute_run into the generic
+                // `input_not_supported_for_target` branch and hide the
+                // actionable remediation guidance.
+                Ok(TargetInventory {
+                    targets: vec![PlatformTargetDescriptor {
+                        id: "display-1".to_owned(),
+                        title: Some("HDMI-A-1".to_owned()),
+                        kind: CaptureTargetKind::Display,
+                        name: "HDMI-A-1".to_owned(),
+                        bounds: Bounds {
+                            x: 0,
+                            y: 0,
+                            width: 1920,
+                            height: 1080,
+                        },
+                        scale_factor: crate::model::ScaleFactor::identity(),
+                        capture_supported: true,
+                        input_supported: false,
+                        app_name: None,
+                        process_id: None,
+                    }],
+                })
+            }
+        }
+
+        impl CaptureAdapter for WaylandMissingBackendsAdapter {
+            fn capture_support(
+                &self,
+                target: CaptureTargetKind,
+            ) -> Result<FeatureSupport, PlatformAdapterError> {
+                Ok(FeatureSupport::available(match target {
+                    CaptureTargetKind::Window => crate::platform::Capability::WindowCapture,
+                    CaptureTargetKind::Display => crate::platform::Capability::DisplayCapture,
+                }))
+            }
+
+            fn capture(
+                &self,
+                _request: &PlatformCaptureRequest,
+            ) -> Result<CaptureArtifact, PlatformAdapterError> {
+                unreachable!("capture should not be invoked for this regression test")
+            }
+        }
+
+        impl InputControlAdapter for WaylandMissingBackendsAdapter {
+            fn input_support(&self) -> Result<FeatureSupport, PlatformAdapterError> {
+                Err(crate::wayland_input::missing_backend_error(
+                    PlatformKind::Linux,
+                ))
+            }
+
+            fn execute_input(
+                &self,
+                _request: &crate::platform::InputRequest,
+            ) -> Result<InputOutcome, crate::error::TendrilError> {
+                unreachable!("execute_input should never be reached when the adapter has no Wayland input backend")
+            }
+        }
+
+        impl PermissionAdapter for WaylandMissingBackendsAdapter {
+            fn permissions(&self) -> Vec<crate::platform::PermissionStatus> {
+                Vec::new()
+            }
+        }
+
+        impl AudioCapabilityProbe for WaylandMissingBackendsAdapter {
+            fn probe_audio_capture(
+                &self,
+                request: &AudioProbeRequest,
+            ) -> Result<AudioCapabilityReport, PlatformAdapterError> {
+                Ok(AudioCapabilityReport {
+                    source: request.source,
+                    backend: AudioBackend::PipeWire,
+                    supported_sample_rates_hz: vec![48_000],
+                    supported_channel_counts: vec![2],
+                    permissions: Vec::new(),
+                    notes: Vec::new(),
+                })
+            }
+        }
+
+        impl PlatformAdapter for WaylandMissingBackendsAdapter {
+            fn info(&self) -> AdapterInfo {
+                AdapterInfo {
+                    platform: PlatformKind::Linux,
+                    session: DesktopSession::Wayland,
+                    audio_backend: Some(AudioBackend::PipeWire),
+                    stateless: true,
+                }
+            }
+        }
+
+        let adapter = WaylandMissingBackendsAdapter;
+        let error = execute_run(
+            &RunInput {
+                target: TargetSelector::Display {
+                    id: "display-1".to_owned(),
+                },
+                payload: crate::model::RunInputPayload::Text {
+                    text: "hello".to_owned(),
+                },
+            },
+            &adapter,
+        )
+        .expect_err("run should fail when the Wayland adapter has no helper backend");
+
+        assert_eq!(
+            error.code(),
+            "unsupported_capability",
+            "missing-backend should surface the adapter-level capability error, not the generic per-target one"
+        );
+        assert_ne!(
+            error.code(),
+            "input_not_supported_for_target",
+            "per-target capability check must not mask the actionable Wayland missing-backend diagnostic"
+        );
+        let message = error.to_string();
+        assert!(
+            message.contains("ydotool") && message.contains("wtype"),
+            "diagnostic must name both Wayland helpers, got: {message}"
+        );
+        let details = error
+            .details()
+            .expect("unsupported_capability error should carry structured details");
+        let suggestion = details
+            .get("suggested_action")
+            .and_then(serde_json::Value::as_str)
+            .expect("missing-backend diagnostic should suggest an install path");
+        assert!(
+            suggestion.contains("ydotool") || suggestion.contains("wtype"),
+            "suggested_action should mention the helper tools to install, got: {suggestion}"
+        );
+    }
+
     #[test]
     fn cli_listen_json_error_is_structured_for_unimplemented_device_selection() {
         let output = dispatch_listen_command(

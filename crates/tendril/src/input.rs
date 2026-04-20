@@ -74,8 +74,13 @@ pub(crate) fn execute_run(
     adapter: &dyn PlatformAdapter,
 ) -> Result<RunOutput, TendrilError> {
     let target = resolve_target(input, adapter)?;
-    ensure_input_supported(&target)?;
+    // Probe adapter-level input support first so platform-specific diagnostics
+    // (for example the Wayland missing-backend error that names `ydotool` and
+    // `wtype`) surface before the generic per-target capability check, which
+    // would otherwise mask the actionable remediation guidance with
+    // `input_not_supported_for_target` (bd-da01d3).
     adapter.input_support().map_err(TendrilError::from)?;
+    ensure_input_supported(&target)?;
 
     let (text, actions) = normalize_payload(&input.payload);
     validate_actions_for_target(&target, &actions)?;
