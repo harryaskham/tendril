@@ -8,6 +8,7 @@ Tendril follows [Semantic Versioning](https://semver.org/). Release notes are cu
 ## [Unreleased]
 
 ### Changed
+- macOS Screen Recording remediation guidance is now actionable end-to-end. The `missing_permission: screen_capture` diagnostic surfaced by `tendril capture` and `tendril list` (target discovery) now embeds the absolute path of the running tendril binary, the parent process name+pid (so operators invoking via SSH or `caco @ms-mac exec` know which launcher also needs TCC consent), the deep-link `x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture` URL for the exact System Settings pane, and the numbered grant/relaunch/`tccutil reset ScreenCapture` recovery steps. `tendril list --json` additionally probes Screen Recording consent proactively (1×1 `screencapture -x -R 0,0,1,1` round-trip) and reports `state = granted | denied | unknown` on the `screen_capture` permission row instead of always returning `unknown`, so agents can detect a missing grant without first attempting a full capture (bd-a24d8d).
 - `tendril run` DSL parsing now detects a top-level `;` (outside parentheses and string literals) and surfaces a structured `invalid_run_input` diagnostic with `stage = parse` and the message `unexpected `;`; the DSL separator is `,`` (plus the byte `offset` of the offending separator) instead of routing the input through downstream parsers that produced misleading errors like `y must be an integer in ...`. `;` inside `send("...")` strings or balanced parens is unaffected (bd-aa54ef).
 
 ### Added

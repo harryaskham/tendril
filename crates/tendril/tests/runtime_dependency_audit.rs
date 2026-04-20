@@ -40,6 +40,7 @@ fn runtime_dependency_audit_mentions_every_spawned_program() {
         "kill",
         "osascript",
         "parecord",
+        "ps",
         "pw-record",
         "screencapture",
         "swaymsg",

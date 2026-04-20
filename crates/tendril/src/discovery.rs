@@ -595,7 +595,7 @@ fn discover_macos_targets(
                 PermissionKind::ScreenCapture,
                 context.platform,
                 "macOS target discovery needs Screen Recording consent to enumerate visible windows.",
-                "Grant Screen Recording to the invoking terminal or tendril binary, then rerun tendril list.",
+                crate::platform::screen_recording_remediation_message(),
             ))
         }
         Err(error) => Err(PlatformAdapterError::adapter_failure(

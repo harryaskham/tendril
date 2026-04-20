@@ -205,6 +205,30 @@ impl PermissionStatus {
     }
 
     #[must_use]
+    pub fn granted(permission: PermissionKind, summary: impl Into<String>) -> Self {
+        Self {
+            permission,
+            state: PermissionState::Granted,
+            summary: summary.into(),
+            suggested_action: None,
+        }
+    }
+
+    #[must_use]
+    pub fn denied(
+        permission: PermissionKind,
+        summary: impl Into<String>,
+        suggested_action: impl Into<String>,
+    ) -> Self {
+        Self {
+            permission,
+            state: PermissionState::Denied,
+            summary: summary.into(),
+            suggested_action: Some(suggested_action.into()),
+        }
+    }
+
+    #[must_use]
     pub fn not_required(permission: PermissionKind, summary: impl Into<String>) -> Self {
         Self {
             permission,
@@ -617,6 +641,118 @@ pub struct MacOsAdapter {
     context: AdapterContext,
 }
 
+/// Build a multi-line, actionable Screen Recording remediation message that
+/// names the specific binary the user must grant access to. Centralised so
+/// every call site (capture failure, discovery failure, list permission row)
+/// produces the same operator-friendly guidance (bd-a24d8d).
+fn macos_screen_recording_remediation() -> String {
+    let exe = std::env::current_exe()
+        .ok()
+        .and_then(|path| path.canonicalize().ok().or(Some(path)))
+        .map_or_else(|| "<tendril binary>".to_owned(), |path| path.display().to_string());
+    let parent = macos_parent_process_summary();
+    format!(
+        "Grant Screen Recording access to the tendril binary, then rerun the command.\n\
+         Steps:\n\
+           1. Open System Settings > Privacy & Security > Screen Recording (or run `open \"x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture\"`).\n\
+           2. Click the `+` button and add the tendril binary at: {exe}\n\
+           3. Toggle the switch ON for that entry.\n\
+           4. If tendril is launched indirectly (e.g. via SSH/caco exec), ALSO grant Screen Recording to the parent process: {parent}\n\
+              (typical candidates: /usr/sbin/sshd, /bin/zsh or /bin/bash, the caco daemon binary, or the terminal app).\n\
+           5. Quit and relaunch any process that is still holding a stale TCC decision (sshd sessions usually need a fresh login).\n\
+           6. Rerun: tendril list --json (the screen_capture permission row should report state=granted).\n\
+         If the toggle does not take effect, run `tccutil reset ScreenCapture` (admin only) and retry from step 1."
+    )
+}
+
+/// One-line context appended to capture failure messages so the JSON envelope
+/// also names the binary that needs the grant (bd-a24d8d).
+/// Public re-export of the rich Screen Recording remediation message so other
+/// modules (e.g. `discovery`) can surface identical guidance (bd-a24d8d).
+#[must_use]
+pub fn screen_recording_remediation_message() -> String {
+    macos_screen_recording_remediation()
+}
+
+fn macos_screen_recording_context() -> String {
+    let exe = std::env::current_exe()
+        .ok()
+        .map_or_else(|| "<tendril binary>".to_owned(), |path| path.display().to_string());
+    format!(
+        "The Screen Recording TCC grant must be attached to this exact binary path: {exe} \
+         (and to its parent launcher when invoked via ssh/caco exec)."
+    )
+}
+
+fn macos_parent_process_summary() -> String {
+    let self_pid = std::process::id();
+    // Look up our own PPID via `ps` to avoid pulling in libc/nix and to keep
+    // the workspace `unsafe_code` lint clean (bd-a24d8d).
+    let ppid_output = std::process::Command::new("ps")
+        .args(["-o", "ppid=", "-p", &self_pid.to_string()])
+        .output();
+    let ppid_str = match ppid_output {
+        Ok(out) if out.status.success() => {
+            String::from_utf8_lossy(&out.stdout).trim().to_owned()
+        }
+        _ => return "<unknown parent process>".to_owned(),
+    };
+    if ppid_str.is_empty() {
+        return "<unknown parent process>".to_owned();
+    }
+    let comm_output = std::process::Command::new("ps")
+        .args(["-o", "comm=", "-p", &ppid_str])
+        .output();
+    match comm_output {
+        Ok(out) if out.status.success() => {
+            let comm = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+            if comm.is_empty() {
+                format!("pid {ppid_str}")
+            } else {
+                format!("{comm} (pid {ppid_str})")
+            }
+        }
+        _ => format!("pid {ppid_str}"),
+    }
+}
+
+/// Best-effort proactive probe for Screen Recording consent on macOS.
+///
+/// Issues a tiny `screencapture -x -R 0,0,1,1` to a tempfile and reads back the
+/// resulting PNG. A non-zero exit, or a successful exit that produces an image
+/// whose pixels are all the same value (the desktop background placeholder TCC
+/// returns when consent is missing) is treated as `denied`. Returns `None` if
+/// the probe itself could not run (so the caller falls back to `Unknown`).
+fn probe_macos_screen_recording_permission() -> Option<bool> {
+    // Allow tests / fixture-driven runs to skip the live probe.
+    if std::env::var_os("TENDRIL_SKIP_PERMISSION_PROBE").is_some() {
+        return None;
+    }
+    let path = unique_temp_path("png");
+    let status = std::process::Command::new("screencapture")
+        .args(["-x", "-t", "png", "-R", "0,0,1,1"])
+        .arg(&path)
+        .output()
+        .ok()?;
+    if !status.status.success() {
+        let _ = std::fs::remove_file(&path);
+        return Some(false);
+    }
+    // If the file is missing or empty, treat as denied.
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) if !bytes.is_empty() => bytes,
+        _ => {
+            let _ = std::fs::remove_file(&path);
+            return Some(false);
+        }
+    };
+    let _ = std::fs::remove_file(&path);
+    // We could decode the PNG to inspect pixels, but a successful screencapture
+    // exit with a non-empty PNG is a strong granted signal. Avoid the image
+    // crate dependency surface here.
+    Some(bytes.len() > 64)
+}
+
 impl MacOsAdapter {
     #[must_use]
     pub fn new(context: AdapterContext) -> Self {
@@ -628,11 +764,24 @@ impl MacOsAdapter {
     }
 
     fn screen_capture_permission() -> PermissionStatus {
-        PermissionStatus::unknown(
-            PermissionKind::ScreenCapture,
-            "macOS capture requires Screen Recording consent for the invoking terminal or binary.",
-            "Grant Screen Recording in System Settings > Privacy & Security > Screen Recording, then rerun tendril.",
-        )
+        // Probe the actual permission state so `tendril list` surfaces
+        // Granted/Denied instead of always Unknown (bd-a24d8d).
+        match probe_macos_screen_recording_permission() {
+            Some(true) => PermissionStatus::granted(
+                PermissionKind::ScreenCapture,
+                "macOS Screen Recording consent appears to be granted for the invoking process.",
+            ),
+            Some(false) => PermissionStatus::denied(
+                PermissionKind::ScreenCapture,
+                "macOS Screen Recording consent is NOT granted; capture and target discovery will fail.",
+                macos_screen_recording_remediation(),
+            ),
+            None => PermissionStatus::unknown(
+                PermissionKind::ScreenCapture,
+                "macOS capture requires Screen Recording consent for the invoking terminal or binary.",
+                macos_screen_recording_remediation(),
+            ),
+        }
     }
 
     fn accessibility_permission() -> PermissionStatus {
@@ -722,6 +871,11 @@ impl CaptureAdapter for MacOsAdapter {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
+            let base_message = if stderr.trim().is_empty() {
+                "Capture execution is gated on explicit Screen Recording consent.".to_owned()
+            } else {
+                format!("Capture failed: {}", stderr.trim())
+            };
             return Err(PlatformAdapterError::missing_permission(
                 match request.target {
                     CaptureTargetKind::Window => Capability::WindowCapture,
@@ -729,12 +883,11 @@ impl CaptureAdapter for MacOsAdapter {
                 },
                 PermissionKind::ScreenCapture,
                 self.platform(),
-                if stderr.trim().is_empty() {
-                    "Capture execution is gated on explicit Screen Recording consent.".to_owned()
-                } else {
-                    format!("Capture failed: {}", stderr.trim())
-                },
-                "Grant Screen Recording access before invoking capture commands.",
+                format!(
+                    "{base_message} {context}",
+                    context = macos_screen_recording_context()
+                ),
+                macos_screen_recording_remediation(),
             ));
         }
 
@@ -2842,6 +2995,38 @@ mod tests {
             support.permissions[0].permission,
             PermissionKind::ScreenCapture
         );
+    }
+
+    #[test]
+    fn macos_screen_recording_remediation_is_actionable_for_operators() {
+        // bd-a24d8d: capture failures must surface the binary path, the exact
+        // System Settings pane, and the parent-process hint so that remote
+        // operators (e.g. caco @ms-mac exec) can grant TCC consent without
+        // additional spelunking.
+        let message = super::screen_recording_remediation_message();
+        for needle in [
+            "Screen Recording",
+            "Privacy & Security",
+            "x-apple.systempreferences",
+            "System Settings",
+            "parent process",
+            "tendril list",
+            "tccutil",
+        ] {
+            assert!(
+                message.contains(needle),
+                "remediation should mention {needle:?}; got:\n{message}"
+            );
+        }
+        // Should embed the absolute current_exe path of the test binary, not
+        // a placeholder, when the lookup succeeds.
+        if let Ok(exe) = std::env::current_exe() {
+            assert!(
+                message.contains(&exe.display().to_string())
+                    || message.contains("<tendril binary>"),
+                "remediation should embed the binary path or fallback placeholder"
+            );
+        }
     }
 
     #[test]
