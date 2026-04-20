@@ -107,8 +107,12 @@ impl Default for CaptureDefaults {
         Self {
             format: ImageFormat::default(),
             compression: 85,
-            max_width: None,
-            max_height: None,
+            // Default to 512x512 bounding box (aspect-preserving) so agent
+            // contexts are not blown up by full-resolution base64 PNGs. Agents
+            // wanting more detail can either override --max-width/--max-height
+            // or capture specific window/quadrant targets. See bd-702f90.
+            max_width: Some(512),
+            max_height: Some(512),
             timeout_ms: None,
         }
     }

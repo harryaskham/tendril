@@ -689,7 +689,12 @@ ObjC.import('CoreGraphics');
     }
 
     var options = $.kCGWindowListOptionOnScreenOnly | $.kCGWindowListExcludeDesktopElements;
-    var windowInfo = ObjC.deepUnwrap($.CGWindowListCopyWindowInfo(options, $.kCGNullWindowID)) || [];
+    // CGWindowListCopyWindowInfo returns a CFArrayRef; JXA needs castRefToObject
+    // before deepUnwrap can iterate it, otherwise we silently observe zero windows.
+    var windowListRef = $.CGWindowListCopyWindowInfo(options, $.kCGNullWindowID);
+    var windowInfo = windowListRef === null || windowListRef === undefined
+        ? []
+        : (ObjC.deepUnwrap(ObjC.castRefToObject(windowListRef)) || []);
     var environment = $.NSProcessInfo.processInfo.environment;
     var targetIsYabai = environment.objectForKey($('YABAI_SOCKET')) !== null
         || fileExists('/opt/homebrew/bin/yabai')
