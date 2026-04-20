@@ -127,11 +127,7 @@ impl TendrilError {
     }
 
     #[must_use]
-    pub fn timeout(
-        code: &'static str,
-        message: impl Into<String>,
-        details: Option<Value>,
-    ) -> Self {
+    pub fn timeout(code: &'static str, message: impl Into<String>, details: Option<Value>) -> Self {
         Self::Timeout {
             code,
             message: message.into(),

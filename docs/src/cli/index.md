@@ -9,7 +9,7 @@ Tendril keeps its CLI intentionally small and agent-oriented.
 | `tendril list` | Discover windows and displays | Yes | Yes |
 | `tendril capture` | Capture a screenshot for a selected display or window | Yes | Yes |
 | `tendril run` | Execute text or input sequences against a selected target | Yes | Yes |
-| `tendril listen` | Probe audio capture capability and permission state | Yes | Not yet |
+| `tendril listen` | Capture WAV audio (PipeWire/PulseAudio on Linux, CoreAudio on macOS) and report capability/permission state | Yes | Yes |
 | `tendril alias` | Emit shell wrappers for repeated targeting | Yes | Not yet |
 | `tendril mcp stdio` | Serve the initial MCP tool surface over stdio | N/A | N/A |
 

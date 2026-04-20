@@ -28,7 +28,7 @@ The repository currently exposes these user-facing entry points:
 | `tendril list` | Implemented in CLI and MCP |
 | `tendril capture` | Implemented in CLI and MCP |
 | `tendril run` | Implemented in CLI and MCP |
-| `tendril listen` | Implemented as a probe-first CLI command |
+| `tendril listen` | Captures WAV on supported backends; probe-only fallback elsewhere |
 | `tendril alias` | Implemented as a shell-helper CLI command |
 | `tendril mcp stdio` | Implements the initial list/capture/run MCP tool set |
 

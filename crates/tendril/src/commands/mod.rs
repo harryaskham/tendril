@@ -16,6 +16,9 @@ use crate::cli::{
 use crate::config::TendrilConfig;
 use crate::error::TendrilError;
 use crate::input::{execute_run, parse_input_definition, render_run_human};
+use crate::listen::{
+    ListenArtifact, ListenCaptureResult, ListenSkipReason, execute_listen_capture,
+};
 use crate::model::{
     AliasInput, AliasOutput, AudioFormat, AudioSourceKind, AudioSourceSelector, CapabilitySet,
     CaptureInput, ListInput, ListOutput, ListenInput, RunInput, RunInputPayload, ShellKind,
@@ -112,6 +115,8 @@ pub struct ListenResponse {
 pub struct ListenExecutionStatus {
     pub status: String,
     pub artifact_available: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub artifact: Option<ListenArtifact>,
     pub notes: Vec<String>,
 }
 
@@ -679,30 +684,93 @@ fn dispatch_listen_command(
         format = ?input.format,
         "validated listen request"
     );
-    let response = build_listen_response(&input, adapter_context)?;
+    let response = build_listen_response(&input, command.output.as_deref(), adapter_context)?;
     Ok(render_listen_output(&response, json_mode))
 }
 
 fn build_listen_response(
     input: &ListenInput,
+    output: Option<&Path>,
     adapter_context: &AdapterContext,
 ) -> Result<ListenResponse, TendrilError> {
     let adapter = adapter_for_context(adapter_context.clone());
     let adapter_info = adapter.info();
     let capability = probe_listen_capability(input, adapter.as_ref())?;
 
+    // Attempt a real recording. Recorder-level failures or unsupported
+    // platforms degrade to the legacy probe-only response so callers always
+    // get the diagnostic envelope they relied on in v0.0.1.
+    let capture_result = execute_listen_capture(
+        input,
+        output,
+        adapter_info.platform,
+        adapter_info.audio_backend,
+    )?;
+
+    let execution = match capture_result {
+        ListenCaptureResult::Captured {
+            artifact,
+            mut notes,
+        } => {
+            notes.push(
+                "listen captured a real audio artifact; the JSON envelope reports its on-disk path."
+                    .to_owned(),
+            );
+            ListenExecutionStatus {
+                status: "captured".to_owned(),
+                artifact_available: true,
+                artifact: Some(artifact),
+                notes,
+            }
+        }
+        ListenCaptureResult::Skipped { reason, mut notes } => {
+            let prefix = match reason {
+                ListenSkipReason::UnsupportedPlatform => {
+                    "listen capture is not yet wired for this platform; returning probe-only diagnostics."
+                }
+                ListenSkipReason::UnsupportedFormat => {
+                    "listen capture currently emits only WAV; falling back to probe-only diagnostics."
+                }
+                ListenSkipReason::UnsupportedSource => {
+                    "listen capture does not yet drive this source kind; returning probe-only diagnostics."
+                }
+                ListenSkipReason::RecorderUnavailable => {
+                    "no usable audio recorder was found on PATH; returning probe-only diagnostics."
+                }
+            };
+            notes.insert(0, prefix.to_owned());
+            ListenExecutionStatus {
+                status: "probe_only".to_owned(),
+                artifact_available: false,
+                artifact: None,
+                notes,
+            }
+        }
+        ListenCaptureResult::Failed {
+            recorder,
+            message,
+            mut notes,
+        } => {
+            notes.insert(
+                0,
+                format!(
+                    "listen recorder `{recorder}` failed: {message}; returning probe-only diagnostics."
+                ),
+            );
+            ListenExecutionStatus {
+                status: "probe_only".to_owned(),
+                artifact_available: false,
+                artifact: None,
+                notes,
+            }
+        }
+    };
+
     Ok(ListenResponse {
         request: input.clone(),
         adapter: adapter_info,
         capability,
-        execution: ListenExecutionStatus {
-            status: "probe_only".to_owned(),
-            artifact_available: false,
-            notes: vec![
-                "The v0.0.1 listen surface reports command-scoped capability and permission diagnostics but does not yet emit an audio artifact.".to_owned(),
-                "Use the returned backend, permissions, and channel metadata to decide whether a follow-up capture path is viable on this platform/session.".to_owned(),
-            ],
-        },
+        execution,
     })
 }
 
@@ -765,8 +833,19 @@ fn render_listen_output(response: &ListenResponse, json_mode: bool) -> CommandOu
             .collect::<Vec<_>>()
             .join("\n");
         let notes = response.execution.notes.join(" ");
+        let artifact_line = match &response.execution.artifact {
+            Some(artifact) => format!(
+                "artifact: {} ({} bytes, {} Hz, {} ch, recorder={})\n",
+                artifact.path.display(),
+                artifact.byte_size,
+                artifact.sample_rate_hz,
+                artifact.channels,
+                artifact.recorder,
+            ),
+            None => String::new(),
+        };
         CommandOutput::Human(format!(
-            "listen source: {:?}\nformat: {:?}\nduration_ms: {}\nplatform: {:?}\nsession: {:?}\naudio_backend: {:?}\nsupported_sample_rates_hz: {:?}\nsupported_channel_counts: {:?}\npermissions:\n{}\nstatus: {}\nnotes: {}\n",
+            "listen source: {:?}\nformat: {:?}\nduration_ms: {}\nplatform: {:?}\nsession: {:?}\naudio_backend: {:?}\nsupported_sample_rates_hz: {:?}\nsupported_channel_counts: {:?}\npermissions:\n{}\nstatus: {}\n{}notes: {}\n",
             response.request.source,
             response.request.format,
             response.request.duration_ms,
@@ -777,6 +856,7 @@ fn render_listen_output(response: &ListenResponse, json_mode: bool) -> CommandOu
             response.capability.supported_channel_counts,
             permission_lines,
             response.execution.status,
+            artifact_line,
             notes,
         ))
     }
@@ -1025,9 +1105,8 @@ mod tests {
         AliasCommand, CaptureCommand, Command, ListCommand, ListenCommand, McpCommand,
         McpSubcommand, RunCommand, TendrilCli, WORKFLOW_HINT,
     };
-    use crate::error::TendrilError;
-    use mcp_cli::ErrorCategory;
     use crate::config::{ImageFormat, TendrilConfig};
+    use crate::error::TendrilError;
     use crate::input::{execute_run, render_run_human};
     use crate::model::{
         AudioFormat, AudioSourceKind, Bounds, CaptureInput, RunInput, ShellKind, TargetSelector,
@@ -1040,6 +1119,7 @@ mod tests {
         PlatformAdapterError, PlatformKind, TargetDescriptor as PlatformTargetDescriptor,
         TargetDiscoveryAdapter, TargetDiscoveryRequest, TargetInventory,
     };
+    use mcp_cli::ErrorCategory;
 
     #[derive(Debug)]
     struct FakeAdapter {
@@ -1423,6 +1503,7 @@ mod tests {
             source: Some("loopback".to_string()),
             duration_ms: Some(1_500),
             format: Some("flac".to_string()),
+            output: None,
         })
         .expect("listen input should build");
 
@@ -1443,22 +1524,35 @@ mod tests {
     }
 
     #[test]
-    fn listen_probe_reports_probe_only_gap_in_success_payload() {
+    fn listen_probe_reports_probe_only_gap_on_unwired_platform() {
         let response = build_listen_response(
             &build_listen_input(&ListenCommand {
                 source: Some("system".to_string()),
                 duration_ms: Some(2_000),
                 format: Some("wav".to_string()),
+                output: None,
             })
             .expect("listen input should build"),
+            None,
             &AdapterContext::windows11(),
         )
         .expect("windows loopback probe should succeed");
 
         assert_eq!(response.capability.backend, AudioBackend::Wasapi);
+        // Windows is not yet wired for real capture, so it must continue to
+        // report the probe-only gap so callers do not assume an artifact.
         assert_eq!(response.execution.status, "probe_only");
         assert!(!response.execution.artifact_available);
-        assert!(response.execution.notes[0].contains("does not yet emit an audio artifact"));
+        assert!(response.execution.artifact.is_none());
+        assert!(
+            response
+                .execution
+                .notes
+                .iter()
+                .any(|note| note.contains("not yet wired")),
+            "expected an unsupported-platform note, got {:?}",
+            response.execution.notes
+        );
     }
 
     #[test]
@@ -1700,9 +1794,7 @@ mod tests {
         struct WaylandMissingBackendsAdapter;
 
         impl TargetDiscoveryAdapter for WaylandMissingBackendsAdapter {
-            fn target_discovery_support(
-                &self,
-            ) -> Result<FeatureSupport, PlatformAdapterError> {
+            fn target_discovery_support(&self) -> Result<FeatureSupport, PlatformAdapterError> {
                 Ok(FeatureSupport::available(
                     crate::platform::Capability::TargetDiscovery,
                 ))
@@ -1769,7 +1861,9 @@ mod tests {
                 &self,
                 _request: &crate::platform::InputRequest,
             ) -> Result<InputOutcome, crate::error::TendrilError> {
-                unreachable!("execute_input should never be reached when the adapter has no Wayland input backend")
+                unreachable!(
+                    "execute_input should never be reached when the adapter has no Wayland input backend"
+                )
             }
         }
 
@@ -1855,6 +1949,7 @@ mod tests {
                 source: Some("device:mic-2".to_string()),
                 duration_ms: Some(1_000),
                 format: Some("wav".to_string()),
+                output: None,
             },
             true,
             &AdapterContext::windows11(),

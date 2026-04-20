@@ -131,6 +131,13 @@ pub struct ListenCommand {
     /// Requested audio format: `wav`, `flac`, or `opus`.
     #[arg(long)]
     pub format: Option<String>,
+
+    /// Write the captured audio to a file at this path. When omitted, listen
+    /// allocates a temporary file on platforms that support real capture and
+    /// returns its path in the JSON envelope.
+    #[arg(short = 'o', long)]
+    #[serde(skip)]
+    pub output: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Args, Serialize, Deserialize, JsonSchema)]
@@ -143,14 +150,12 @@ pub struct AliasCommand {
 }
 
 #[derive(Debug, Clone, Args)]
-#[command(
-    long_about = "Expose the Tendril CLI surface over MCP.\n\n\
+#[command(long_about = "Expose the Tendril CLI surface over MCP.\n\n\
 Note: the global --window, --display, and --json flags are inherited from the\n\
 top-level CLI but DO NOT apply to the MCP server. MCP tool calls carry their\n\
 own `target` and option arguments in each request payload. Passing those\n\
 flags to `tendril mcp ...` will be rejected with an error to avoid silently\n\
-ignored configuration."
-)]
+ignored configuration.")]
 pub struct McpCommand {
     #[command(subcommand)]
     pub command: McpSubcommand,

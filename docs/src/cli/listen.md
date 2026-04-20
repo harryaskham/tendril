@@ -1,30 +1,57 @@
 # `tendril listen`
 
-Use `tendril listen` to probe the current platform's audio-capture capability.
+Use `tendril listen` to capture audio from the current platform.
 
 ## Example
 
 ```bash
+# Default: write a temp WAV path and print the path in the JSON envelope.
 tendril listen --json --source system --duration-ms 5000 --format wav
+
+# Or save directly to a file (mirrors `capture -o`).
+tendril listen --source microphone --duration-ms 3000 -o /tmp/mic.wav
 ```
 
-## Current v0.0.1 scope
+## Current implementation
 
-`listen` is intentionally probe-first in the current implementation:
+`listen` now performs a real recording on supported backends and falls back
+to probe-only diagnostics elsewhere:
 
-- it accepts explicit source, duration, and format inputs,
-- it reports backend capability and permission state, and
-- it returns a structured note that audio artifact emission is not implemented yet.
+- **Linux + PipeWire**: prefers `pw-record` (with `parecord` as a fallback).
+  PipeWire's `--target` plus `-n <samples>` is used so the recorder exits on
+  its own and the WAV header is always finalized.
+- **Linux + PulseAudio**: uses `parecord` against `@DEFAULT_MONITOR@` /
+  `@DEFAULT_SOURCE@`.
+- **macOS**: uses `afrecord` (Apple's CoreAudio-backed recorder shipped with
+  the OS) with `-d <seconds>` so it stops at the requested duration.
+- **Windows / unknown backends**: capture is not yet wired; the JSON envelope
+  reports `status = "probe_only"` with a structured note explaining the gap.
+
+When a recording succeeds, the response includes an `execution.artifact`
+object with the on-disk path, byte size, sample rate, channel count, and the
+recorder program that produced the file. If the artifact contains only the
+44-byte WAV header (no PCM samples), `notes` includes a warning so callers
+can detect silent sessions (suspended monitor, muted mic, no audio playing).
+
+## Output paths
+
+- `--output <path>` / `-o <path>`: write the WAV to an explicit path. The
+  parent directory must already exist; this is validated before any recorder
+  is spawned.
+- Omitted: `listen` allocates a temp file under the system temp directory
+  (e.g. `/tmp/tendril-listen-<pid>-<nanos>.wav`) and reports its path in the
+  JSON envelope.
 
 ## Supported source selectors
 
-- `system`
-- `loopback`
-- `microphone`
-- `device:<id>`
+- `system` / `loopback` — default monitor of the active sink.
+- `microphone` / `mic` — default input source.
+- `device:<id>` — modeled in the surface but currently returns a structured
+  `audio_device_selection_not_implemented` result. Real per-device binding
+  remains a follow-up.
 
-The explicit `device:<id>` form is modeled in the surface but currently returns a structured unsupported-capability result rather than binding to a real device.
+## Format support
 
-## Why it is documented here
-
-Even though the artifact path is not complete, the CLI surface and its current behavior are part of the repository's documented contract and should be visible in the published docs site.
+- `wav` — implemented.
+- `flac`, `opus` — accepted by the CLI but currently degrade to probe-only;
+  WAV is the only emitted artifact format today.

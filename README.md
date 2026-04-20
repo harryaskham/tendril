@@ -289,20 +289,30 @@ its self-containment classification, see
 
 ## Audio capture status
 
-For v0.0.1, `tendril listen` ships a probe-first slice:
+`tendril listen` now performs a real WAV recording on supported backends and
+falls back to probe-only diagnostics elsewhere:
 
-- it accepts explicit `--source`, `--duration-ms`, and `--format` settings,
-- it returns machine-readable capability and permission diagnostics for
-  loopback/system and microphone paths where the current adapter can probe
-  them,
-- it distinguishes unsupported capability/permission failures from transient
-  platform adapter failures, and
-- it explicitly reports that audio artifact emission is not implemented yet.
+- **Linux + PipeWire** uses `pw-record` (with `parecord` as a fallback).
+- **Linux + PulseAudio** uses `parecord` against `@DEFAULT_MONITOR@` /
+  `@DEFAULT_SOURCE@`.
+- **macOS** uses `afrecord` (Apple's CoreAudio-backed recorder shipped with
+  the OS).
+- **Windows / unknown backends** continue to return a structured
+  `status = "probe_only"` envelope with a note explaining the gap.
 
-Documented gap for v0.0.1: explicit `device:<id>` binding is accepted by the
-command surface so callers can express intent, but it returns a structured
-unsupported-capability result until adapter-specific device enumeration/binding
-lands.
+The captured WAV is written either to an explicit `--output <path>` (mirrors
+`capture -o`) or to a temp file allocated by `listen`; the path is included
+in the JSON envelope under `execution.artifact`. The probe-first capability
+and permission diagnostics from the previous slice are still emitted alongside
+the artifact so callers retain backend, channel, and consent metadata.
+
+Documented gaps:
+
+- `--format flac` and `--format opus` are accepted by the surface but
+  currently degrade to probe-only; only WAV is emitted today.
+- Explicit `device:<id>` binding is accepted by the command surface but
+  returns a structured unsupported-capability result until adapter-specific
+  device enumeration/binding lands.
 
 ## Release automation
 

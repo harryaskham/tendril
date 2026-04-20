@@ -12,6 +12,7 @@ fn runtime_dependency_audit_mentions_every_spawned_program() {
     let mut programs = BTreeSet::new();
     for relative_path in [
         "crates/tendril/src/discovery.rs",
+        "crates/tendril/src/listen.rs",
         "crates/tendril/src/platform.rs",
         "crates/tendril/src/wayland_input.rs",
     ] {
@@ -26,12 +27,20 @@ fn runtime_dependency_audit_mentions_every_spawned_program() {
         // marker scan above misses them. Pick the constants up directly here.
         collect_string_literals_after(&source, "const YDOTOOL_BIN: &str = \"", &mut programs);
         collect_string_literals_after(&source, "const WTYPE_BIN: &str = \"", &mut programs);
+        // The listen module stores recorder binary names in `RecorderPlan`
+        // fields and feeds them to `Command::new(plan.program)` rather than a
+        // direct literal, so capture them via the struct-literal marker.
+        collect_string_literals_after(&source, "program: \"", &mut programs);
     }
 
     let expected_programs = [
+        "afrecord",
         "grim",
         "hyprctl",
+        "kill",
         "osascript",
+        "parecord",
+        "pw-record",
         "screencapture",
         "swaymsg",
         "wlr-randr",

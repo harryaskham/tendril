@@ -10,13 +10,13 @@ Tendril is designed around a platform adapter boundary so the CLI and MCP surfac
 | Screenshot capture | `capture` | Implemented |
 | Input execution | `run` | Implemented |
 | MCP stdio | `mcp stdio` | Implemented for list/capture/run |
-| Audio probing | `listen` | Probe-first implementation |
+| Audio capture | `listen` | WAV capture via `pw-record`/`parecord` (Linux) and `afrecord` (macOS); probe-only fallback elsewhere |
 | Shell helper generation | `alias` | Implemented |
 
 ## Notes
 
 - Discovery currently focuses on windows and displays.
-- Audio source modeling exists, but end-to-end audio artifact capture is not yet shipped.
+- `listen` writes WAV bytes to a temp file (or `--output <path>`) on Linux and macOS; the JSON envelope reports the on-disk path under `execution.artifact`. Windows and unrecognized backends still return `status = "probe_only"`.
 - Linux/Wayland is a documented backend matrix rather than one generic path: Hyprland discovery uses `hyprctl`, sway uses `swaymsg`, wlroots display fallback uses `wlr-randr`, and capture prefers xdg-desktop-portal with `grim` retained only as a compatibility fallback.
 - The dedicated [Linux Wayland operator validation](../linux-wayland-operator-validation.md) guide covers those supported matrices explicitly.
 - The docs site intentionally documents both fully implemented features and probe-first surfaces so the published contract matches the repository state.

@@ -13,8 +13,11 @@ self-contained. This audit therefore distinguishes between:
 - **self-containment/usability bug**: an external runtime dependency that makes a
   packaged Tendril binary materially less usable for operators.
 
-`listen`, `alias`, and `mcp stdio` do not currently spawn extra platform helper
-programs in the Tendril runtime path.
+`alias` and `mcp stdio` do not currently spawn extra platform helper
+programs in the Tendril runtime path. `listen` shells out to a recorder
+binary on platforms where actual capture is wired (see the `listen` rows
+below); when no recorder is available it degrades to probe-only diagnostics
+without spawning anything.
 
 ## Command and platform matrix
 
@@ -36,6 +39,11 @@ programs in the Tendril runtime path.
 | `run` | Linux/Wayland | `wtype` | Keyboard-only fallback via the wlroots `virtual-keyboard-v1` protocol when `ydotool` is not installed (`bd-408572`) | Documented platform prerequisite | Embed a wlroots virtual-keyboard client to remove the helper boundary | `bd-408572` |
 | `run` | Linux/Wayland | _none_ | Generic Wayland input falls back to a structured `unsupported_capability` error when neither helper tool is installed | Not applicable | Keep the actionable diagnostic in sync with the helper-tool detection in `wayland_input::detect_backend` | `bd-408572` |
 | `run` | Windows 11 | _none_ | Native Win32 focus transfer plus keyboard/mouse injection inside the Tendril binary | Self-contained | Continue hardening the embedded input backend and smoke coverage | `bd-a3357b` |
+| `listen` | macOS | `afrecord` | CoreAudio-backed WAV capture; ships with the OS | Documented platform prerequisite | Replace with a native CoreAudio binding once the cross-platform listen surface stabilizes | `bd-d7c2f0` |
+| `listen` | Linux/PipeWire | `pw-record` | WAV capture against `@DEFAULT_MONITOR@` / `@DEFAULT_SOURCE@` with a sample-count limit so the recorder exits on its own | Documented backend prerequisite | Embed a PipeWire client to remove the subprocess boundary | `bd-d7c2f0` |
+| `listen` | Linux/PulseAudio | `parecord` | WAV capture against `@DEFAULT_MONITOR@` / `@DEFAULT_SOURCE@`; also used as a fallback when `pw-record` is missing on PipeWire hosts | Documented backend prerequisite | Embed a PulseAudio/PipeWire client to remove the subprocess boundary | `bd-d7c2f0` |
+| `listen` | * (recorder cleanup) | `kill` | Sent as `kill -TERM` to long-running recorders so they finalize the WAV header before exit (used only by the `parecord` path; `pw-record` exits on its own) | Documented platform prerequisite | Switch to in-process signal delivery once the workspace permits scoped `unsafe_code` for libc::kill | `bd-d7c2f0` |
+| `listen` | Windows / unknown | _none_ | No real capture is wired; the JSON envelope reports `status = "probe_only"` with diagnostics | Not applicable | Wire WASAPI loopback/capture once a self-contained Rust path is selected | `bd-d7c2f0` |
 
 ## Classification summary
 
