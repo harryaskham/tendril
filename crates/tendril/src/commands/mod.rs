@@ -75,6 +75,42 @@ pub struct AliasRequest {
     pub options: AliasCommand,
 }
 
+/// MCP request wrapper for the `listen` tool.
+///
+/// Mirrors the CLI surface (`tendril listen --source ... --duration-ms ...
+/// --format ... -o <output>`) so MCP clients can capture audio without
+/// shelling out. Unlike the CLI's `ListenCommand`, this struct serializes
+/// `output` because MCP callers must be able to specify a write path
+/// explicitly — there is no shared filesystem context the way there is for
+/// a CLI invocation, so omitting it would silently fall back to a
+/// platform-temp path the caller cannot predict.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ListenRequest {
+    /// Audio source selector: `system`, `loopback`, `microphone`, or `device:<id>`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    /// Requested capture duration in milliseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u64>,
+    /// Requested audio format: `wav`, `flac`, or `opus`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+    /// Optional path to write the captured audio artifact to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<std::path::PathBuf>,
+}
+
+impl ListenRequest {
+    fn to_listen_command(&self) -> ListenCommand {
+        ListenCommand {
+            source: self.source.clone(),
+            duration_ms: self.duration_ms,
+            format: self.format.clone(),
+            output: self.output.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct HelpWorkflowStep {
     pub command: String,
@@ -324,6 +360,21 @@ fn build_tool_router() -> ToolRouter<CommandContext> {
             let input = build_run_input(&command.target, &command.options)?;
             let adapter = context.adapter();
             serde_json::to_value(execute_run(&input, adapter.as_ref())?)
+                .map_err(|error| TendrilError::serialization(error.to_string()))
+        },
+    );
+    router.add_typed_tool(
+        "listen",
+        "Capture audio from the system loopback or microphone (probe-only on unwired platforms).",
+        |context: &CommandContext, command: ListenRequest| {
+            let cli_command = command.to_listen_command();
+            let input = build_listen_input(&cli_command)?;
+            let response = build_listen_response(
+                &input,
+                cli_command.output.as_deref(),
+                &context.adapter_context,
+            )?;
+            serde_json::to_value(response)
                 .map_err(|error| TendrilError::serialization(error.to_string()))
         },
     );
@@ -1095,7 +1146,7 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::{
-        AliasRequest, CaptureRequest, RunRequest, TargetScope, build_alias_input,
+        AliasRequest, CaptureRequest, ListenRequest, RunRequest, TargetScope, build_alias_input,
         build_capture_input, build_listen_input, build_listen_response, build_mcp_server, dispatch,
         dispatch_listen_command, execute_alias, execute_list_with_adapter, render_command_output,
         render_list_human,
@@ -1461,7 +1512,7 @@ mod tests {
             .into_iter()
             .map(|tool| tool.name)
             .collect();
-        assert_eq!(names, vec!["list", "capture", "run"]);
+        assert_eq!(names, vec!["list", "capture", "run", "listen"]);
     }
 
     #[test]
@@ -1479,6 +1530,10 @@ mod tests {
             .iter()
             .find(|tool| tool.name == "run")
             .expect("run tool should be registered");
+        let listen = tools
+            .iter()
+            .find(|tool| tool.name == "listen")
+            .expect("listen tool should be registered");
 
         assert_eq!(
             list.input_schema,
@@ -1494,6 +1549,11 @@ mod tests {
             run.input_schema,
             serde_json::to_value(schemars::schema_for!(RunRequest))
                 .expect("run schema should serialize")
+        );
+        assert_eq!(
+            listen.input_schema,
+            serde_json::to_value(schemars::schema_for!(ListenRequest))
+                .expect("listen schema should serialize")
         );
     }
 

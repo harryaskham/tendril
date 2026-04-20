@@ -7,6 +7,7 @@ use common::{CliHarness, frame_request, parse_framed_responses};
 use serde_json::{Value, json};
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn external_client_smoke_script_verifies_stdio_contract_against_built_binary() {
     let harness = CliHarness::new();
     let requests = [
@@ -80,10 +81,11 @@ fn external_client_smoke_script_verifies_stdio_contract_against_built_binary() {
         .iter()
         .map(|tool| tool["name"].as_str().expect("tool name"))
         .collect::<Vec<_>>();
-    assert_eq!(tool_names, vec!["list", "capture", "run"]);
+    assert_eq!(tool_names, vec!["list", "capture", "run", "listen"]);
 
     let capture_tool = tool(tools, "capture");
     let run_tool = tool(tools, "run");
+    let listen_tool = tool(tools, "listen");
 
     let capture_properties = property_names(&capture_tool["inputSchema"]);
     assert_eq!(
@@ -103,6 +105,12 @@ fn external_client_smoke_script_verifies_stdio_contract_against_built_binary() {
     assert_eq!(
         run_properties,
         vec!["display", "input_definition", "window"]
+    );
+
+    let listen_properties = property_names(&listen_tool["inputSchema"]);
+    assert_eq!(
+        listen_properties,
+        vec!["duration_ms", "format", "output", "source"]
     );
 
     let structured = &responses[2]["result"]["structuredContent"];
