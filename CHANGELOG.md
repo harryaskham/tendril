@@ -7,6 +7,9 @@ Tendril follows [Semantic Versioning](https://semver.org/). Release notes are cu
 
 ## [Unreleased]
 
+### Changed
+- `tendril run` DSL parsing now detects a top-level `;` (outside parentheses and string literals) and surfaces a structured `invalid_run_input` diagnostic with `stage = parse` and the message `unexpected `;`; the DSL separator is `,`` (plus the byte `offset` of the offending separator) instead of routing the input through downstream parsers that produced misleading errors like `y must be an integer in ...`. `;` inside `send("...")` strings or balanced parens is unaffected (bd-aa54ef).
+
 ### Added
 - Configurable per-call deadline for Wayland capture: `tendril capture --timeout-ms <ms>` (and the equivalent `capture.timeout_ms` config / MCP `timeout_ms` argument) bound the xdg-desktop-portal screenshot D-Bus call and the `grim` fallback subprocess. The portal request runs on a worker thread and is abandoned on deadline; the grim child is killed and reaped. A new `Timeout` error category surfaces a structured `platform_adapter_timeout` failure (with `operation`, `platform`, and `timeout_ms` details) so agents can recover instead of hanging forever. Default deadline is 10 000 ms (bd-aefc14).
 - Wayland input injection support for Hyprland and other wlroots compositors via runtime detection of `ydotool` (preferred, full keyboard + pointer) and `wtype` (keyboard-only fallback). Wayland targets now report `input_supported = true` when at least one helper tool is on PATH, and `tendril run` dispatches the existing DSL (send/lclick/rclick/mclick/hold/release/wait/drag) through the detected backend with target-relative→absolute coordinate translation. Missing-helper paths surface a structured `unsupported_capability` diagnostic that names both tools and the `ydotoold` daemon (bd-408572).

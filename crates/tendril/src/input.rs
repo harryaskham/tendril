@@ -15,6 +15,16 @@ use crate::platform::{
 const RELIABILITY_DELAY_MS: u64 = 20;
 
 pub(crate) fn parse_input_definition(input: &str) -> Result<RunInputPayload, TendrilError> {
+    if let Some(offset) = top_level_semicolon_offset(input) {
+        return Err(dsl_error(
+            "unexpected `;`; the DSL separator is `,`",
+            None,
+            None,
+            Some("parse"),
+        )
+        .with_detail_entry("offset", json!(offset)));
+    }
+
     if input.contains('(') {
         return Ok(RunInputPayload::Actions {
             actions: parse_dsl_sequence(input)?,
@@ -236,6 +246,37 @@ fn validate_relative_point(
     Ok(())
 }
 
+fn top_level_semicolon_offset(input: &str) -> Option<usize> {
+    let mut in_string = false;
+    let mut escape = false;
+    let mut depth = 0_u32;
+
+    for (index, character) in input.char_indices() {
+        if in_string {
+            if escape {
+                escape = false;
+                continue;
+            }
+            match character {
+                '\\' => escape = true,
+                '"' => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
+
+        match character {
+            '"' => in_string = true,
+            '(' => depth = depth.saturating_add(1),
+            ')' => depth = depth.saturating_sub(1),
+            ';' if depth == 0 => return Some(index),
+            _ => {}
+        }
+    }
+
+    None
+}
+
 fn contains_top_level_comma(input: &str) -> bool {
     let mut in_string = false;
     let mut escape = false;
@@ -341,6 +382,15 @@ fn split_top_level(input: &str) -> Result<Vec<&str>, TendrilError> {
                     .with_detail_entry("offset", json!(index)));
                 }
                 depth -= 1;
+            }
+            ';' if depth == 0 => {
+                return Err(dsl_error(
+                    "unexpected `;`; the DSL separator is `,`",
+                    Some(parts.len()),
+                    None,
+                    Some("parse"),
+                )
+                .with_detail_entry("offset", json!(index)));
             }
             ',' if depth == 0 => {
                 let part = input[start..index].trim();
@@ -943,6 +993,29 @@ mod tests {
         let error = parse_input_definition("send(hello)").expect_err("invalid dsl should fail");
         assert_eq!(error.code(), "invalid_run_input");
         assert_eq!(error.details().expect("details")["stage"], "parse");
+    }
+
+    #[test]
+    fn top_level_semicolon_emits_clear_diagnostic() {
+        let error = parse_input_definition("hold(ctrl); tab")
+            .expect_err("top-level `;` should be rejected");
+        assert_eq!(error.code(), "invalid_run_input");
+        let details = error.details().expect("details");
+        assert_eq!(details["stage"], "parse");
+        assert_eq!(details["offset"], 10);
+        let msg = mcp_cli::StructuredError::message(&error);
+        assert!(
+            msg.contains("the DSL separator is `,`"),
+            "unexpected message: {msg}"
+        );
+    }
+
+    #[test]
+    fn semicolon_inside_string_or_parens_is_not_diagnosed() {
+        // Inside a quoted string the `;` is part of text content.
+        let payload = parse_input_definition(r#"send("a; b")"#)
+            .expect("quoted `;` should parse as DSL text payload");
+        assert!(matches!(payload, RunInputPayload::Actions { .. }));
     }
 
     #[test]
