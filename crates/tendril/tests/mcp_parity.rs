@@ -17,7 +17,7 @@ fn cli_and_mcp_stdio_return_equivalent_structured_payloads() {
         "run",
         r#"send("hello parity")"#,
     ]);
-    let cli_listen = harness.cli_json(&[
+    let cli_listen = harness.cli_json_lenient(&[
         "--json",
         "listen",
         "--source",
@@ -113,19 +113,49 @@ fn cli_and_mcp_stdio_return_equivalent_structured_payloads() {
     assert_eq!(responses[4]["result"]["isError"], false);
     assert_eq!(responses[4]["result"]["structuredContent"], cli_run);
 
-    // The listen MCP tool returns the listen response payload directly,
-    // mirroring the CLI's JSON envelope `data` field. Artifact paths and
-    // recorder transient details may differ between the two invocations
-    // (each call allocates its own temp file and may pick a different
-    // recorder), so compare only the request echo and adapter shape that
-    // must be deterministic across the two surfaces.
-    let cli_listen_data = &cli_listen["data"];
-    let mcp_listen_data = &responses[5]["result"]["structuredContent"]["data"];
-    assert_eq!(responses[5]["result"]["isError"], false);
+    // The listen surface depends on a real audio backend, which may or may
+    // not be available depending on the environment:
+    //
+    //   * In an interactive session with PipeWire/PulseAudio, both CLI and
+    //     MCP succeed and emit a `data` payload with `request` + `adapter`.
+    //     Artifact paths and recorder transient details may differ between
+    //     the two invocations (each call allocates its own temp file and
+    //     may pick a different recorder), so we compare only the request
+    //     echo and adapter shape that must be deterministic.
+    //
+    //   * In a sandboxed Nix build with no audio backend, both CLI and MCP
+    //     fail with the same `unsupported_capability` error envelope. The
+    //     parity guarantee still holds: identical JSON for identical inputs.
+    let cli_listen_status = cli_listen["status"].as_str().unwrap_or("");
+    let mcp_listen = &responses[5]["result"]["structuredContent"];
+    let mcp_listen_status = mcp_listen["status"].as_str().unwrap_or("");
     assert_eq!(
-        responses[5]["result"]["structuredContent"]["meta"]["command"],
-        "listen"
+        cli_listen_status, mcp_listen_status,
+        "listen parity broken: CLI status={cli_listen_status} MCP status={mcp_listen_status}\nCLI: {cli_listen}\nMCP: {mcp_listen}"
     );
-    assert_eq!(mcp_listen_data["request"], cli_listen_data["request"]);
-    assert_eq!(mcp_listen_data["adapter"], cli_listen_data["adapter"]);
+    assert_eq!(
+        mcp_listen["meta"]["command"], "listen",
+        "MCP listen envelope must carry command=listen"
+    );
+    match cli_listen_status {
+        "success" => {
+            assert_eq!(responses[5]["result"]["isError"], false);
+            let cli_listen_data = &cli_listen["data"];
+            let mcp_listen_data = &mcp_listen["data"];
+            assert_eq!(mcp_listen_data["request"], cli_listen_data["request"]);
+            assert_eq!(mcp_listen_data["adapter"], cli_listen_data["adapter"]);
+        }
+        "error" => {
+            // No audio backend (e.g. Nix sandbox). Both surfaces must
+            // surface the same structured error so callers can branch
+            // identically regardless of transport.
+            assert_eq!(responses[5]["result"]["isError"], true);
+            assert_eq!(cli_listen["error"]["code"], mcp_listen["error"]["code"]);
+            assert_eq!(
+                cli_listen["error"]["category"],
+                mcp_listen["error"]["category"]
+            );
+        }
+        other => panic!("unexpected listen envelope status: {other}\n{cli_listen}"),
+    }
 }

@@ -54,6 +54,23 @@ logging:
         serde_json::from_slice(&output.stdout).expect("cli should emit valid json")
     }
 
+    /// Run the CLI in JSON mode and return the parsed envelope regardless of
+    /// whether it succeeded or failed. Used for parity tests where errors
+    /// are still meaningful (e.g. `listen` failing in a sandbox without an
+    /// audio backend) — the MCP surface must produce the same envelope.
+    #[allow(dead_code)]
+    pub fn cli_json_lenient(&self, args: &[&str]) -> Value {
+        let output = self.command().args(args).output().expect("cli should run");
+        serde_json::from_slice(&output.stdout).unwrap_or_else(|_| {
+            panic!(
+                "cli should emit valid json (exit {})\nstdout:\n{}\nstderr:\n{}",
+                output.status,
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            )
+        })
+    }
+
     #[allow(dead_code)]
     pub fn mcp_round_trip(&self, requests: &[Value]) -> Vec<Value> {
         let mut child = self
