@@ -148,6 +148,14 @@ pub enum LogLevel {
     Trace,
 }
 
+impl LogLevel {
+    /// Returns true when this level emits more than warnings (i.e. INFO/DEBUG/TRACE).
+    #[must_use]
+    pub fn is_more_verbose_than_warn(self) -> bool {
+        matches!(self, Self::Info | Self::Debug | Self::Trace)
+    }
+}
+
 /// Derived config locations resolved from the current environment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigPaths {
@@ -182,6 +190,15 @@ fn detect_paths(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn log_level_verbosity_classification() {
+        use super::LogLevel;
+        assert!(!LogLevel::Error.is_more_verbose_than_warn());
+        assert!(!LogLevel::Warn.is_more_verbose_than_warn());
+        assert!(LogLevel::Info.is_more_verbose_than_warn());
+        assert!(LogLevel::Debug.is_more_verbose_than_warn());
+        assert!(LogLevel::Trace.is_more_verbose_than_warn());
+    }
     use super::{ConfigPaths, ImageFormat, LogLevel, TendrilConfig, detect_paths};
 
     #[test]

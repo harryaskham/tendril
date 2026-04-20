@@ -57,7 +57,13 @@ where
         _ => LoggingMode::Cli,
     };
 
-    if let Err(error) = logging::init_logging(config.logging.level, logging_mode) {
+    let effective_log_level = if cli.json && config.logging.level.is_more_verbose_than_warn() {
+        crate::config::LogLevel::Warn
+    } else {
+        config.logging.level
+    };
+
+    if let Err(error) = logging::init_logging(effective_log_level, logging_mode) {
         return emit_error(&cli, None, &error);
     }
 
