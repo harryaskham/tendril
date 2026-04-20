@@ -139,9 +139,32 @@ impl CommandOutput {
 pub fn dispatch(cli: &TendrilCli, config: &TendrilConfig) -> Result<CommandOutput, TendrilError> {
     match &cli.command {
         None => Ok(render_help(cli.json)),
-        Some(Command::Mcp(command)) => dispatch_mcp(command, config),
+        Some(Command::Mcp(command)) => {
+            reject_inherited_target_flags_for_mcp(cli)?;
+            dispatch_mcp(command, config)
+        }
         Some(command) => dispatch_cli_command(cli, command, config),
     }
+}
+
+fn reject_inherited_target_flags_for_mcp(cli: &TendrilCli) -> Result<(), TendrilError> {
+    let mut offending: Vec<&'static str> = Vec::new();
+    if cli.window.is_some() {
+        offending.push("--window");
+    }
+    if cli.display.is_some() {
+        offending.push("--display");
+    }
+    if cli.json {
+        offending.push("--json");
+    }
+    if offending.is_empty() {
+        return Ok(());
+    }
+    Err(TendrilError::validation(format!(
+        "the MCP server does not honor top-level CLI flag(s) {}; pass target scope and output formatting in each MCP tool request payload instead",
+        offending.join(", ")
+    )))
 }
 
 fn render_help(json_mode: bool) -> CommandOutput {
@@ -998,9 +1021,11 @@ mod tests {
     };
     use crate::capture::{execute_capture, render_capture_human};
     use crate::cli::{
-        AliasCommand, CaptureCommand, Command, ListCommand, ListenCommand, RunCommand, TendrilCli,
-        WORKFLOW_HINT,
+        AliasCommand, CaptureCommand, Command, ListCommand, ListenCommand, McpCommand,
+        McpSubcommand, RunCommand, TendrilCli, WORKFLOW_HINT,
     };
+    use crate::error::TendrilError;
+    use mcp_cli::ErrorCategory;
     use crate::config::{ImageFormat, TendrilConfig};
     use crate::input::{execute_run, render_run_human};
     use crate::model::{
@@ -1190,6 +1215,62 @@ mod tests {
             super::CommandOutput::Human(_) | super::CommandOutput::Empty => {
                 panic!("expected json output")
             }
+        }
+    }
+
+    fn mcp_cli(window: Option<&str>, display: Option<&str>, json: bool) -> TendrilCli {
+        TendrilCli {
+            json,
+            window: window.map(str::to_owned),
+            display: display.map(str::to_owned),
+            command: Some(Command::Mcp(McpCommand {
+                command: McpSubcommand::Stdio,
+            })),
+        }
+    }
+
+    fn assert_mcp_rejects(cli: &TendrilCli, expected_flag: &str) {
+        let error = dispatch(cli, &TendrilConfig::default())
+            .expect_err("MCP dispatch with inherited target flags should be rejected");
+        assert!(matches!(error, TendrilError::Validation { .. }));
+        assert_eq!(error.category(), ErrorCategory::Validation);
+        let message = format!("{error}");
+        assert!(
+            message.contains(expected_flag),
+            "expected error to mention {expected_flag}: {message}"
+        );
+        assert!(
+            message.contains("MCP server does not honor"),
+            "expected error to explain ignored flag: {message}"
+        );
+    }
+
+    #[test]
+    fn mcp_dispatch_rejects_inherited_window_flag() {
+        assert_mcp_rejects(&mcp_cli(Some("hypr:0xabc"), None, false), "--window");
+    }
+
+    #[test]
+    fn mcp_dispatch_rejects_inherited_display_flag() {
+        assert_mcp_rejects(&mcp_cli(None, Some("DP-1"), false), "--display");
+    }
+
+    #[test]
+    fn mcp_dispatch_rejects_inherited_json_flag() {
+        assert_mcp_rejects(&mcp_cli(None, None, true), "--json");
+    }
+
+    #[test]
+    fn mcp_dispatch_rejects_multiple_inherited_flags_in_one_message() {
+        let cli = mcp_cli(Some("win"), Some("DP-1"), true);
+        let error = dispatch(&cli, &TendrilConfig::default())
+            .expect_err("MCP dispatch should reject combined inherited flags");
+        let message = format!("{error}");
+        for flag in ["--window", "--display", "--json"] {
+            assert!(
+                message.contains(flag),
+                "expected error to mention {flag}: {message}"
+            );
         }
     }
 

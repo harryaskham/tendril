@@ -58,6 +58,12 @@ pub enum Command {
     /// Emit shell helpers for repeated targeting.
     Alias(AliasCommand),
     /// Expose the CLI surface over MCP stdio.
+    ///
+    /// Note: the global --window, --display, and --json flags are inherited
+    /// from the top-level CLI but DO NOT apply to the MCP server. MCP tool
+    /// calls carry their own `target` and option arguments in each request
+    /// payload. Passing those flags to `tendril mcp ...` is rejected with a
+    /// validation error to avoid silently ignored configuration.
     Mcp(McpCommand),
 }
 
@@ -130,6 +136,14 @@ pub struct AliasCommand {
 }
 
 #[derive(Debug, Clone, Args)]
+#[command(
+    long_about = "Expose the Tendril CLI surface over MCP.\n\n\
+Note: the global --window, --display, and --json flags are inherited from the\n\
+top-level CLI but DO NOT apply to the MCP server. MCP tool calls carry their\n\
+own `target` and option arguments in each request payload. Passing those\n\
+flags to `tendril mcp ...` will be rejected with an error to avoid silently\n\
+ignored configuration."
+)]
 pub struct McpCommand {
     #[command(subcommand)]
     pub command: McpSubcommand,
@@ -138,6 +152,12 @@ pub struct McpCommand {
 #[derive(Debug, Clone, Subcommand)]
 pub enum McpSubcommand {
     /// Serve MCP tools over stdio.
+    ///
+    /// The server reads JSON-RPC requests from stdin and writes responses to
+    /// stdout. Target scoping (window/display) and JSON envelope formatting
+    /// are controlled per-call via the MCP tool arguments, not via top-level
+    /// CLI flags. Passing --window, --display, or --json alongside this
+    /// subcommand is rejected.
     Stdio,
 }
 
