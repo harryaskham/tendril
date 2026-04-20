@@ -1227,6 +1227,36 @@ mod tests {
         assert!(!script.contains("import AppKit\nimport ApplicationServices"));
     }
 
+    /// Regression test for bd-845b47.
+    ///
+    /// `CGWindowListCopyWindowInfo` returns a `CFArrayRef`. JXA's `ObjC.deepUnwrap`
+    /// silently treats the raw ref as an empty array unless we first call
+    /// `ObjC.castRefToObject` to bridge it to an `NSArray`. Without the cast the
+    /// macOS `tendril list` output included only displays — no windows — making
+    /// `tendril --window <id>` unreachable from remote agents. Lock the cast in
+    /// place so future edits don't silently drop window enumeration again.
+    #[test]
+    fn macos_discovery_script_casts_cfarrayref_before_deep_unwrap() {
+        let script = macos_discovery_script();
+
+        assert!(
+            script.contains("ObjC.castRefToObject("),
+            "macOS discovery script must castRefToObject the CFArrayRef returned by \
+             CGWindowListCopyWindowInfo before deepUnwrap, otherwise window \
+             enumeration silently returns zero entries (bd-845b47)."
+        );
+        assert!(
+            script.contains("ObjC.deepUnwrap(ObjC.castRefToObject("),
+            "deepUnwrap must wrap castRefToObject(windowListRef) so the bridged \
+             NSArray is iterated (bd-845b47)."
+        );
+        // Also assert that we still emit window-kind targets in the script body.
+        assert!(
+            script.contains("kind: 'window'"),
+            "macOS discovery script must emit kind: 'window' targets (bd-845b47)."
+        );
+    }
+
     #[test]
     fn wayland_backend_diagnostic_only_reports_supported_matrix_tools() {
         let detected = wayland_discovery_backend_tools_on_path();
