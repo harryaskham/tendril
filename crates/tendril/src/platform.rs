@@ -303,7 +303,9 @@ pub enum PlatformAdapterError {
         message: String,
     },
 
-    #[error("Platform adapter timeout during {operation:?} on {platform:?} after {timeout_ms}ms: {message}")]
+    #[error(
+        "Platform adapter timeout during {operation:?} on {platform:?} after {timeout_ms}ms: {message}"
+    )]
     Timeout {
         operation: AdapterOperation,
         platform: PlatformKind,
@@ -1719,11 +1721,12 @@ fn execute_macos_input(
 
     if matches!(request.target, CaptureTargetKind::Window) {
         if let Some(process_id) = request.process_id {
-            let script = macos_focus_pid_jxa_script(process_id);
+            let window_id = request.target_id.parse::<u64>().ok();
+            let script = macos_focus_window_jxa_script(process_id, window_id, &request.bounds);
             run_macos_osascript_jxa_for_input(&script, "focus", None, None)?;
             focus_transferred = true;
             notes.push(
-                "Activated the target macOS application via NSRunningApplication before dispatching input."
+                "Raised the target macOS window via the Accessibility API (AXRaise) and activated its application before dispatching input."
                     .to_owned(),
             );
             std::thread::sleep(reliability_delay());
@@ -2172,6 +2175,7 @@ fn javascript_string_literal(value: &str) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| String::from("\"\""))
 }
 
+#[cfg(test)]
 fn macos_focus_pid_jxa_script(process_id: u32) -> String {
     format!(
         r"ObjC.import('AppKit');
@@ -2180,6 +2184,132 @@ fn macos_focus_pid_jxa_script(process_id: u32) -> String {
     if (!app) {{
         throw new Error('target process could not be activated');
     }}
+    if (!app.activateWithOptions($.NSApplicationActivateIgnoringOtherApps)) {{
+        throw new Error('target process could not be activated');
+    }}
+}}());
+"
+    )
+}
+
+/// Build a JXA script that raises the specific macOS window matching
+/// `cg_window_id` (with `bounds` as a fallback discriminator) before activating
+/// the owning application. This ensures `tendril --window <id>` dispatches input
+/// into the requested window even when another window of the same app is
+/// frontmost.
+fn macos_focus_window_jxa_script(
+    process_id: u32,
+    cg_window_id: Option<u64>,
+    bounds: &Bounds,
+) -> String {
+    // When the discovery id can't be parsed as a CGWindowID, pass -1 so the
+    // private _AXUIElementGetWindow lookup is skipped and we fall back to
+    // bounds-based matching only.
+    let window_id_literal: i64 = cg_window_id
+        .and_then(|id| i64::try_from(id).ok())
+        .unwrap_or(-1);
+    let target_x = bounds.x;
+    let target_y = bounds.y;
+    let target_width = bounds.width;
+    let target_height = bounds.height;
+    format!(
+        r"ObjC.import('AppKit');
+ObjC.import('ApplicationServices');
+(function () {{
+    var pid = {process_id};
+    var targetWindowId = {window_id_literal};
+    var targetX = {target_x};
+    var targetY = {target_y};
+    var targetWidth = {target_width};
+    var targetHeight = {target_height};
+
+    var app = $.NSRunningApplication.runningApplicationWithProcessIdentifier(pid);
+    if (!app) {{
+        throw new Error('target process could not be activated');
+    }}
+
+    // Best-effort: walk the application's AX windows and raise the one whose
+    // CGWindowID matches (preferred) or whose position+size best match the
+    // discovery bounds. AXRaise puts the chosen window above the app's other
+    // windows so that NSRunningApplication.activate brings the right one to
+    // the front. Failures here are non-fatal — we still activate the app and
+    // let input dispatch proceed against whatever window is frontmost.
+    try {{
+        var getWindowFn = null;
+        try {{
+            // _AXUIElementGetWindow is a private but widely-relied-upon helper
+            // that maps an AXUIElement to its CGWindowID. JXA cannot resolve it
+            // through `$.` lookup, so bind it explicitly.
+            getWindowFn = ObjC.bindFunction('_AXUIElementGetWindow', ['int', ['id', 'pointer']]);
+        }} catch (bindError) {{
+            getWindowFn = null;
+        }}
+
+        var axApp = $.AXUIElementCreateApplication(pid);
+        if (axApp) {{
+            var windowsRef = Ref();
+            var copyErr = $.AXUIElementCopyAttributeValue(axApp, $('AXWindows'), windowsRef);
+            if (copyErr === 0 && windowsRef[0]) {{
+                var nsWindows = ObjC.castRefToObject(windowsRef[0]);
+                var count = nsWindows.count;
+                var matched = null;
+                var bestScore = Infinity;
+                for (var i = 0; i < count; i += 1) {{
+                    var win = nsWindows.objectAtIndex(i);
+
+                    if (matched === null && getWindowFn !== null && targetWindowId >= 0) {{
+                        try {{
+                            var widRef = Ref('uint32', 0);
+                            var widErr = getWindowFn(win, widRef);
+                            if (widErr === 0 && widRef[0] === targetWindowId) {{
+                                matched = win;
+                                continue;
+                            }}
+                        }} catch (widLookupError) {{
+                            // ignore and fall back to bounds matching
+                        }}
+                    }}
+
+                    try {{
+                        var posRef = Ref();
+                        var sizeRef = Ref();
+                        if ($.AXUIElementCopyAttributeValue(win, $('AXPosition'), posRef) !== 0) {{
+                            continue;
+                        }}
+                        if ($.AXUIElementCopyAttributeValue(win, $('AXSize'), sizeRef) !== 0) {{
+                            continue;
+                        }}
+                        var posOut = $.CGPointMake(0, 0);
+                        var sizeOut = $.CGSizeMake(0, 0);
+                        // kAXValueCGPointType = 1, kAXValueCGSizeType = 2
+                        if (!$.AXValueGetValue(posRef[0], 1, Ref(posOut))) continue;
+                        if (!$.AXValueGetValue(sizeRef[0], 2, Ref(sizeOut))) continue;
+                        var dx = posOut.x - targetX;
+                        var dy = posOut.y - targetY;
+                        var dw = sizeOut.width - targetWidth;
+                        var dh = sizeOut.height - targetHeight;
+                        var score = dx * dx + dy * dy + dw * dw + dh * dh;
+                        if (score < bestScore) {{
+                            bestScore = score;
+                            if (matched === null) {{
+                                matched = win;
+                            }}
+                        }}
+                    }} catch (matchError) {{
+                        // continue scanning
+                    }}
+                }}
+                if (matched !== null) {{
+                    $.AXUIElementPerformAction(matched, $('AXRaise'));
+                }}
+            }}
+        }}
+    }} catch (axError) {{
+        // Accessibility lookup failed (likely missing permission). Continue to
+        // app activation; the existing input-dispatch path will surface the
+        // permission error if Accessibility consent is required.
+    }}
+
     if (!app.activateWithOptions($.NSApplicationActivateIgnoringOtherApps)) {{
         throw new Error('target process could not be activated');
     }}
@@ -2545,11 +2675,11 @@ mod tests {
         LinuxAdapter, MacOsAdapter, ModifierKey, MouseButton, PermissionAdapter, PermissionKind,
         PermissionState, PlatformAdapter, PlatformAdapterError, PlatformKind, TargetDescriptor,
         TargetInventory, WaylandCaptureBackendError, WindowsAdapter, WindowsRuntimeBackend,
-        capture_wayland_target_with_grim,
-        crop_wayland_portal_capture_to_target, detect_linux_audio_backend, detect_linux_session,
-        execute_windows_input_with_runtime, is_macos_input_permission_error,
-        javascript_string_literal, macos_focus_pid_jxa_script, macos_text_jxa_script,
-        wayland_capture_program_on_path, wayland_workspace_origin, windows_key_is_supported,
+        capture_wayland_target_with_grim, crop_wayland_portal_capture_to_target,
+        detect_linux_audio_backend, detect_linux_session, execute_windows_input_with_runtime,
+        is_macos_input_permission_error, javascript_string_literal, macos_focus_pid_jxa_script,
+        macos_focus_window_jxa_script, macos_text_jxa_script, wayland_capture_program_on_path,
+        wayland_workspace_origin, windows_key_is_supported,
     };
     use crate::{TendrilError, model::InputAction};
     use mcp_cli::ErrorCategory;
@@ -2958,6 +3088,57 @@ mod tests {
     }
 
     #[test]
+    fn macos_focus_window_script_raises_specific_window_via_accessibility() {
+        let bounds = Bounds {
+            x: 100,
+            y: 200,
+            width: 800,
+            height: 600,
+        };
+        let script = macos_focus_window_jxa_script(4242, Some(987_654), &bounds);
+
+        // Activates the app via NSRunningApplication so input lands in the
+        // right process.
+        assert!(script.contains("NSRunningApplication"));
+        assert!(script.contains("activateWithOptions"));
+        // Uses the Accessibility API to find and raise the specific window.
+        assert!(script.contains("AXUIElementCreateApplication"));
+        assert!(script.contains("AXWindows"));
+        assert!(script.contains("AXRaise"));
+        assert!(script.contains("AXUIElementPerformAction"));
+        // Looks up the CGWindowID via the private helper so we can target the
+        // exact window from `tendril list`.
+        assert!(script.contains("_AXUIElementGetWindow"));
+        // Falls back to bounds-based matching when the CGWindowID lookup fails
+        // (e.g. on systems where the private symbol cannot be bound).
+        assert!(script.contains("AXPosition"));
+        assert!(script.contains("AXSize"));
+        assert!(script.contains("4242"));
+        assert!(script.contains("987654"));
+        assert!(script.contains("100"));
+        assert!(script.contains("200"));
+        assert!(script.contains("800"));
+        assert!(script.contains("600"));
+    }
+
+    #[test]
+    fn macos_focus_window_script_handles_missing_window_id_with_bounds_fallback() {
+        let bounds = Bounds {
+            x: 0,
+            y: 0,
+            width: 1024,
+            height: 768,
+        };
+        let script = macos_focus_window_jxa_script(7, None, &bounds);
+
+        // Without a parseable CGWindowID we still emit the script, but signal
+        // (via -1) that the private lookup should be skipped in favour of
+        // bounds matching.
+        assert!(script.contains("targetWindowId = -1"));
+        assert!(script.contains("AXRaise"));
+    }
+
+    #[test]
     fn wayland_capture_support_notes_describe_portal_first_strategy() {
         let adapter = LinuxAdapter::new(AdapterContext::linux(
             DesktopSession::Wayland,
@@ -3045,14 +3226,15 @@ mod tests {
     #[test]
     fn grim_rejects_negative_origin_targets() {
         let target = display_target("off-screen", -1585, 0, 1920, 1080);
-        let error = match capture_wayland_target_with_grim(&target, std::time::Duration::from_secs(1))
-            .expect_err("negative origin should be rejected before invoking grim")
-        {
-            WaylandCaptureBackendError::Failed(failure) => failure.message,
-            WaylandCaptureBackendError::Timeout(message) => {
-                panic!("unexpected timeout for negative-origin guard: {message}")
-            }
-        };
+        let error =
+            match capture_wayland_target_with_grim(&target, std::time::Duration::from_secs(1))
+                .expect_err("negative origin should be rejected before invoking grim")
+            {
+                WaylandCaptureBackendError::Failed(failure) => failure.message,
+                WaylandCaptureBackendError::Timeout(message) => {
+                    panic!("unexpected timeout for negative-origin guard: {message}")
+                }
+            };
         assert!(
             error.contains("negative origin"),
             "unexpected error: {error}"
@@ -3062,14 +3244,15 @@ mod tests {
     #[test]
     fn grim_rejects_empty_bounds() {
         let target = display_target("empty", 0, 0, 0, 0);
-        let error = match capture_wayland_target_with_grim(&target, std::time::Duration::from_secs(1))
-            .expect_err("empty bounds should be rejected before invoking grim")
-        {
-            WaylandCaptureBackendError::Failed(failure) => failure.message,
-            WaylandCaptureBackendError::Timeout(message) => {
-                panic!("unexpected timeout for empty-bounds guard: {message}")
-            }
-        };
+        let error =
+            match capture_wayland_target_with_grim(&target, std::time::Duration::from_secs(1))
+                .expect_err("empty bounds should be rejected before invoking grim")
+            {
+                WaylandCaptureBackendError::Failed(failure) => failure.message,
+                WaylandCaptureBackendError::Timeout(message) => {
+                    panic!("unexpected timeout for empty-bounds guard: {message}")
+                }
+            };
         assert!(error.contains("empty bounds"), "unexpected error: {error}");
     }
 
