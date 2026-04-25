@@ -16,6 +16,12 @@ envelope. The current example is `capture`'s `-o/--output`:
 Agents that consume JSON should treat `-o/--output` as a request for an
 additional filesystem side effect, not as a replacement for the envelope.
 
+## Execution-lock metadata on `run`
+
+Successful `tendril run --json` responses include `data.execution_lock` so agents can tell whether the host-local queue was enabled, whether the command waited, the queue depth when it joined, and whether stale locks/tickets were reaped.
+
+If `run` acquires the lock and then fails, the error details include `execution_lock` with the wait/acquire metadata. If queue waiting exceeds `--lock-timeout-ms` (or the configured default), the error payload has category `timeout`, code `execution_lock_timeout`, and details containing `execution_lock`, `holder`, `queue_position`, and `queue_depth`.
+
 ## Success shape
 
 ```json
@@ -61,6 +67,7 @@ The shared `mcp-cli` layer currently uses these error categories:
 - `execution_failure`
 - `config_error`
 - `serialization_error`
+- `timeout`
 
 ## Why this matters for publishing
 

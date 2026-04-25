@@ -16,6 +16,7 @@
 - [Reference](reference/index.md)
   - [Configuration](reference/configuration.md)
   - [JSON envelopes](reference/json-envelopes.md)
+  - [Execution lock and queue](reference/execution-lock.md)
   - [Pi and Cacophony MCP integration contract](reference/pi-cacophony-mcp-contract.md)
   - [Platform support and rollout status](reference/platform-support.md)
   - [Runtime dependency audit](reference/runtime-dependencies.md)

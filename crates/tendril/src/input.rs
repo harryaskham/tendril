@@ -119,6 +119,7 @@ pub(crate) fn execute_run(
         pointer_restored: outcome.pointer_restored,
         restore_error: outcome.restore_error,
         notes: outcome.notes,
+        execution_lock: None,
     })
 }
 
@@ -130,7 +131,7 @@ pub(crate) fn render_run_human(output: &RunOutput) -> String {
     };
 
     format!(
-        "run target: {:?} {}\nplatform: {:?} / {:?}\naction_count: {}\nfocus_required: {}\nfocus_transferred: {}\nfocused_target: {}\nprevious_focus: {}\nfocus_restored: {}\npointer_restored: {}\nrestore_error: {}\nnotes: {}\n",
+        "run target: {:?} {}\nplatform: {:?} / {:?}\naction_count: {}\nfocus_required: {}\nfocus_transferred: {}\nfocused_target: {}\nprevious_focus: {}\nfocus_restored: {}\npointer_restored: {}\nrestore_error: {}\nexecution_lock: {}\nnotes: {}\n",
         output.target.kind(),
         output.target.id(),
         output.adapter.platform,
@@ -146,12 +147,33 @@ pub(crate) fn render_run_human(output: &RunOutput) -> String {
         output.focus_restored,
         output.pointer_restored,
         output.restore_error.as_deref().unwrap_or("<none>"),
+        render_execution_lock_summary(output.execution_lock.as_ref()),
         notes,
     )
 }
 
 pub(crate) fn reliability_delay() -> Duration {
     Duration::from_millis(RELIABILITY_DELAY_MS)
+}
+
+fn render_execution_lock_summary(
+    report: Option<&crate::execution_lock::ExecutionLockReport>,
+) -> String {
+    report.map_or_else(
+        || "<not reported>".to_owned(),
+        |report| {
+            format!(
+                "enabled={} acquired={} wait_ms={} queue_position_at_join={} queue_depth_at_join={} stale_locks_reaped={} stale_tickets_reaped={}",
+                report.enabled,
+                report.acquired,
+                report.wait_ms,
+                report.queue_position_at_join,
+                report.queue_depth_at_join,
+                report.stale_locks_reaped,
+                report.stale_tickets_reaped,
+            )
+        },
+    )
 }
 
 fn normalize_payload(payload: &RunInputPayload) -> (Option<String>, Vec<InputAction>) {

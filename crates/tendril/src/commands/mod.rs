@@ -1,5 +1,6 @@
+use std::env;
 use std::fmt::Write as _;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use mcp_cli::{JsonEnvelope, McpServer, StdioServerConfig, ToolRouter};
@@ -15,6 +16,9 @@ use crate::cli::{
 };
 use crate::config::TendrilConfig;
 use crate::error::TendrilError;
+use crate::execution_lock::{
+    ExecutionLockRequest, acquire_execution_lock, default_execution_lock_path,
+};
 use crate::input::{execute_run, parse_input_definition, render_run_human};
 use crate::listen::{
     ListenArtifact, ListenCaptureResult, ListenSkipReason, execute_listen_capture,
@@ -289,8 +293,13 @@ fn dispatch_cli_command(
                 payload_kind = %payload_kind(&input.payload),
                 "validated run request with redacted payload"
             );
+            let lock_request = build_execution_lock_request(command, &input, config)?;
+            let lock_permit = acquire_execution_lock(&lock_request)?;
+            let lock_report = lock_permit.report().clone();
             let adapter = adapter_for_context(AdapterContext::detect());
-            let output = execute_run(&input, adapter.as_ref())?;
+            let mut output = execute_run(&input, adapter.as_ref())
+                .map_err(|error| error.with_detail_entry("execution_lock", json!(lock_report)))?;
+            output.execution_lock = Some(lock_permit.report().clone());
             Ok(render_command_output(
                 "run",
                 cli.json,
@@ -358,8 +367,15 @@ fn build_tool_router() -> ToolRouter<CommandContext> {
         "Execute input against a specific target.",
         |context: &CommandContext, command: RunRequest| {
             let input = build_run_input(&command.target, &command.options)?;
+            let lock_request =
+                build_execution_lock_request(&command.options, &input, &context.config)?;
+            let lock_permit = acquire_execution_lock(&lock_request)?;
+            let lock_report = lock_permit.report().clone();
             let adapter = context.adapter();
-            serde_json::to_value(execute_run(&input, adapter.as_ref())?)
+            let mut output = execute_run(&input, adapter.as_ref())
+                .map_err(|error| error.with_detail_entry("execution_lock", json!(lock_report)))?;
+            output.execution_lock = Some(lock_permit.report().clone());
+            serde_json::to_value(output)
                 .map_err(|error| TendrilError::serialization(error.to_string()))
         },
     );
@@ -670,6 +686,78 @@ fn build_run_input(target: &TargetScope, command: &RunCommand) -> Result<RunInpu
     };
     input.validate()?;
     Ok(input)
+}
+
+fn build_execution_lock_request(
+    command: &RunCommand,
+    input: &RunInput,
+    config: &TendrilConfig,
+) -> Result<ExecutionLockRequest, TendrilError> {
+    let env_no_lock = parse_bool_env("TENDRIL_NO_LOCK")?;
+    let disabled_by_cli = command.no_lock;
+    let disabled_by_env = env_no_lock.unwrap_or(false);
+    let enabled = config.execution_lock.enabled && !disabled_by_cli && !disabled_by_env;
+    let reason = if disabled_by_cli {
+        Some("--no-lock".to_owned())
+    } else if disabled_by_env {
+        Some("TENDRIL_NO_LOCK".to_owned())
+    } else if !config.execution_lock.enabled {
+        Some("config.execution_lock.enabled=false".to_owned())
+    } else {
+        None
+    };
+
+    Ok(ExecutionLockRequest {
+        enabled,
+        lock_path: command
+            .lock_path
+            .clone()
+            .or_else(|| env::var_os("TENDRIL_LOCK_PATH").map(PathBuf::from))
+            .or_else(|| config.execution_lock.path.clone())
+            .unwrap_or_else(default_execution_lock_path),
+        timeout_ms: command
+            .lock_timeout_ms
+            .or(parse_u64_env("TENDRIL_LOCK_TIMEOUT_MS")?)
+            .unwrap_or(config.execution_lock.timeout_ms),
+        stale_ms: command
+            .lock_stale_ms
+            .or(parse_u64_env("TENDRIL_LOCK_STALE_MS")?)
+            .unwrap_or(config.execution_lock.stale_ms),
+        command: "run".to_owned(),
+        target_kind: Some(format!("{:?}", input.target.kind()).to_lowercase()),
+        target_id: Some(input.target.id().to_owned()),
+        reason,
+    })
+}
+
+fn parse_u64_env(name: &'static str) -> Result<Option<u64>, TendrilError> {
+    env::var(name)
+        .ok()
+        .map(|value| {
+            value.parse::<u64>().map_err(|error| {
+                TendrilError::validation(format!(
+                    "environment variable {name} must be an unsigned integer: {error}"
+                ))
+                .with_code("invalid_run_input")
+                .with_field(name)
+            })
+        })
+        .transpose()
+}
+
+fn parse_bool_env(name: &'static str) -> Result<Option<bool>, TendrilError> {
+    env::var(name)
+        .ok()
+        .map(|value| match value.to_ascii_lowercase().as_str() {
+            "1" | "true" | "yes" | "on" => Ok(true),
+            "0" | "false" | "no" | "off" => Ok(false),
+            _ => Err(TendrilError::validation(format!(
+                "environment variable {name} must be a boolean (true/false or 1/0)"
+            ))
+            .with_code("invalid_run_input")
+            .with_field(name)),
+        })
+        .transpose()
 }
 
 fn build_listen_input(command: &ListenCommand) -> Result<ListenInput, TendrilError> {
@@ -1796,12 +1884,14 @@ mod tests {
     fn mcp_run_success_payload_matches_cli_json() {
         let adapter = fake_adapter();
         let context = mcp_context(adapter.clone());
+        let tempdir = tempfile::tempdir().expect("temp lock path");
         let response = tool_call_response(
             &context,
             "run",
             &json!({
                 "window": "window-1",
-                "input_definition": "send(\"hello\")"
+                "input_definition": "send(\"hello\")",
+                "lock_path": tempdir.path().join("run-lock"),
             }),
         );
 
@@ -1820,15 +1910,19 @@ mod tests {
             adapter.as_ref(),
         )
         .expect("run output should build");
-        let cli_json = expect_json_output(render_command_output(
+        let mut cli_json = expect_json_output(render_command_output(
             "run",
             true,
             cli_output,
             render_run_human,
         ));
+        let structured = mcp_structured_content(&response);
+        cli_json["data"]["execution_lock"] = structured["data"]["execution_lock"].clone();
 
         assert_eq!(response["result"]["isError"], false);
-        assert_eq!(mcp_structured_content(&response), cli_json);
+        assert_eq!(structured["data"]["execution_lock"]["enabled"], true);
+        assert_eq!(structured["data"]["execution_lock"]["acquired"], true);
+        assert_eq!(structured, cli_json);
         assert_eq!(
             response["result"]["structuredContent"]["data"]["previous_focus"]["id"],
             "previous-window"
@@ -1841,6 +1935,25 @@ mod tests {
             response["result"]["structuredContent"]["data"]["pointer_restored"],
             false
         );
+    }
+
+    #[test]
+    fn mcp_run_no_lock_reports_disabled_execution_lock_metadata() {
+        let response = tool_call_response(
+            &mcp_context(fake_adapter()),
+            "run",
+            &json!({
+                "window": "window-1",
+                "input_definition": "send(\"hello\")",
+                "no_lock": true
+            }),
+        );
+        let structured = mcp_structured_content(&response);
+
+        assert_eq!(response["result"]["isError"], false);
+        assert_eq!(structured["data"]["execution_lock"]["enabled"], false);
+        assert_eq!(structured["data"]["execution_lock"]["acquired"], false);
+        assert_eq!(structured["data"]["execution_lock"]["reason"], "--no-lock");
     }
 
     #[test]

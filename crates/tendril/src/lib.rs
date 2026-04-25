@@ -4,6 +4,7 @@ pub mod commands;
 pub mod config;
 pub mod discovery;
 pub mod error;
+pub mod execution_lock;
 pub mod input;
 pub mod listen;
 pub mod logging;
@@ -21,7 +22,8 @@ use serde_json::Value;
 
 pub use cli::TendrilCli;
 pub use config::{
-    CaptureDefaults, ConfigPaths, ImageFormat, LogLevel, LoggingDefaults, TendrilConfig,
+    CaptureDefaults, ConfigPaths, ExecutionLockDefaults, ImageFormat, LogLevel, LoggingDefaults,
+    TendrilConfig,
 };
 pub use error::TendrilError;
 pub use logging::{LogDestination, LoggingMode, LoggingPolicy};

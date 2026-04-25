@@ -14,6 +14,7 @@ pub const CONFIG_DIR_ENV: &str = "TENDRIL_CONFIG_DIR";
 pub struct TendrilConfig {
     pub capture: CaptureDefaults,
     pub logging: LoggingDefaults,
+    pub execution_lock: ExecutionLockDefaults,
 }
 
 impl TendrilConfig {
@@ -43,6 +44,7 @@ impl TendrilConfig {
 
     fn validate_with_path(&self, path: &Path) -> Result<(), TendrilError> {
         self.capture.validate(path)?;
+        self.execution_lock.validate(path)?;
         Ok(())
     }
 }
@@ -133,6 +135,56 @@ pub struct LoggingDefaults {
     pub level: LogLevel,
 }
 
+/// Host-local execution lock defaults used by side-effecting desktop-control commands.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ExecutionLockDefaults {
+    /// Enable the default host-local Tendril execution lock/queue for `run`.
+    pub enabled: bool,
+    /// Maximum time to wait in the local queue before returning a structured timeout.
+    pub timeout_ms: u64,
+    /// Age of a lock/ticket heartbeat before it is considered stale and reaped.
+    pub stale_ms: u64,
+    /// Optional override for the lock root. Defaults to a host-local temp path
+    /// namespaced by user and desktop session.
+    pub path: Option<PathBuf>,
+}
+
+impl Default for ExecutionLockDefaults {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            timeout_ms: crate::execution_lock::DEFAULT_LOCK_TIMEOUT_MS,
+            stale_ms: crate::execution_lock::DEFAULT_LOCK_STALE_MS,
+            path: None,
+        }
+    }
+}
+
+impl ExecutionLockDefaults {
+    fn validate(&self, path: &Path) -> Result<(), TendrilError> {
+        if self.timeout_ms == 0 {
+            return Err(TendrilError::config_path(
+                path,
+                "execution_lock.timeout_ms must be greater than zero",
+            )
+            .with_code("invalid_config")
+            .with_field("execution_lock.timeout_ms"));
+        }
+
+        if self.stale_ms == 0 {
+            return Err(TendrilError::config_path(
+                path,
+                "execution_lock.stale_ms must be greater than zero",
+            )
+            .with_code("invalid_config")
+            .with_field("execution_lock.stale_ms"));
+        }
+
+        Ok(())
+    }
+}
+
 impl Default for LoggingDefaults {
     fn default() -> Self {
         Self {
@@ -203,7 +255,9 @@ mod tests {
         assert!(LogLevel::Debug.is_more_verbose_than_warn());
         assert!(LogLevel::Trace.is_more_verbose_than_warn());
     }
-    use super::{ConfigPaths, ImageFormat, LogLevel, TendrilConfig, detect_paths};
+    use super::{
+        ConfigPaths, ExecutionLockDefaults, ImageFormat, LogLevel, TendrilConfig, detect_paths,
+    };
 
     #[test]
     fn defaults_cover_initial_capture_preferences() {
@@ -212,6 +266,7 @@ mod tests {
         assert_eq!(config.capture.format, ImageFormat::Png);
         assert_eq!(config.capture.compression, 85);
         assert_eq!(config.logging.level, LogLevel::Info);
+        assert_eq!(config.execution_lock, ExecutionLockDefaults::default());
     }
 
     #[test]
@@ -270,6 +325,52 @@ logging:
         assert_eq!(config.capture.format, ImageFormat::Jpeg);
         assert_eq!(config.capture.compression, 85);
         assert_eq!(config.logging.level, LogLevel::Debug);
+        assert!(config.execution_lock.enabled);
+    }
+
+    #[test]
+    fn execution_lock_config_can_override_defaults() {
+        let tempdir = tempfile::tempdir().expect("tempdir should be created");
+        let path = write_temp_config(
+            tempdir.path(),
+            r"
+execution_lock:
+  enabled: false
+  timeout_ms: 1234
+  stale_ms: 5678
+  path: /tmp/custom-tendril-lock
+",
+        );
+
+        let config = TendrilConfig::load_from_file(&path).expect("yaml config should load");
+
+        assert!(!config.execution_lock.enabled);
+        assert_eq!(config.execution_lock.timeout_ms, 1234);
+        assert_eq!(config.execution_lock.stale_ms, 5678);
+        assert_eq!(
+            config.execution_lock.path,
+            Some(std::path::PathBuf::from("/tmp/custom-tendril-lock"))
+        );
+    }
+
+    #[test]
+    fn invalid_execution_lock_values_are_rejected() {
+        let tempdir = tempfile::tempdir().expect("tempdir should be created");
+        let path = write_temp_config(
+            tempdir.path(),
+            r"
+execution_lock:
+  timeout_ms: 0
+",
+        );
+
+        let error = TendrilConfig::load_from_file(&path).expect_err("invalid config should fail");
+
+        assert_eq!(error.code(), "invalid_config");
+        assert_eq!(
+            error.details().unwrap()["field"],
+            "execution_lock.timeout_ms"
+        );
     }
 
     #[test]

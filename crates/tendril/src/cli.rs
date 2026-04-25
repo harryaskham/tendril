@@ -114,6 +114,23 @@ pub struct CaptureCommand {
 
 #[derive(Debug, Clone, PartialEq, Eq, Args, Serialize, Deserialize, JsonSchema)]
 pub struct RunCommand {
+    /// Disable the default host-local execution lock/queue for this run.
+    #[arg(long = "no-lock")]
+    #[serde(default)]
+    pub no_lock: bool,
+
+    /// Maximum time in milliseconds to wait for the host-local execution lock.
+    #[arg(long = "lock-timeout-ms")]
+    pub lock_timeout_ms: Option<u64>,
+
+    /// Age in milliseconds after which an unrefreshed lock/ticket is considered stale.
+    #[arg(long = "lock-stale-ms")]
+    pub lock_stale_ms: Option<u64>,
+
+    /// Override the host-local execution lock root path for advanced workflows.
+    #[arg(long = "lock-path")]
+    pub lock_path: Option<PathBuf>,
+
     /// Placeholder input definition argument for future DSL and string support.
     pub input_definition: Option<String>,
 
@@ -134,6 +151,10 @@ pub struct RunCommand {
 impl Default for RunCommand {
     fn default() -> Self {
         Self {
+            no_lock: false,
+            lock_timeout_ms: None,
+            lock_stale_ms: None,
+            lock_path: None,
             input_definition: None,
             restore_focus: true,
             no_restore_focus: false,

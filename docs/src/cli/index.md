@@ -23,6 +23,17 @@ The root CLI currently shares these global flags across command execution:
 
 Commands that act on a target require exactly one of `--window` or `--display`.
 
+## `run` execution-lock flags
+
+`tendril run` is serialized by a host-local lock/queue by default. The most common controls are:
+
+- `--no-lock` to opt out for advanced workflows,
+- `--lock-timeout-ms <ms>` to bound queue waiting,
+- `--lock-stale-ms <ms>` to tune stale heartbeat reaping, and
+- `--lock-path <path>` to use a custom lock root.
+
+The same controls are available on the MCP `run` tool. See [Execution lock and queue](../reference/execution-lock.md).
+
 ## Recommended flow
 
 ```bash

@@ -8,13 +8,14 @@ tendril mcp stdio
 
 ## Initial tool set
 
-The current MCP server publishes three tools:
+The current MCP server publishes these tools:
 
 - `list`
 - `capture`
 - `run`
+- `listen`
 
-Those tools are backed by the same typed command models used by the CLI, which keeps validation and result envelopes aligned across both surfaces.
+Those tools are backed by the same typed command models used by the CLI, which keeps validation and result envelopes aligned across both surfaces. MCP `run` calls use the same default host-local execution lock/queue as CLI `tendril run`; pass `no_lock`, `lock_timeout_ms`, `lock_stale_ms`, or `lock_path` in the tool arguments when an advanced workflow needs to opt out or tune the queue.
 
 For the Pi/Cacophony-facing launch contract, environment assumptions, and stable tool argument summary, see the dedicated [Pi and Cacophony MCP integration contract](reference/pi-cacophony-mcp-contract.md).
 

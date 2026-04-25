@@ -68,7 +68,7 @@ The only machine-local runtime state is the config file:
 - otherwise `$XDG_CONFIG_HOME/tendril/config.yaml`
 - otherwise `~/.config/tendril/config.yaml`
 
-Current config fields are capture and logging defaults:
+Current config fields are capture, logging, and execution-lock defaults:
 
 ```yaml
 capture:
@@ -76,8 +76,14 @@ capture:
   compression: 85    # 0-100
   max_width: 1440    # optional
   max_height: 900    # optional
+  timeout_ms: null   # optional backend deadline
 logging:
   level: info        # error, warn, info, debug, trace
+execution_lock:
+  enabled: true      # serialize tendril run by default
+  timeout_ms: 60000  # queue wait timeout
+  stale_ms: 30000    # stale heartbeat threshold
+  path: null         # optional lock root override
 ```
 
 If the file is missing, Tendril uses built-in defaults. Alias helpers are also
@@ -130,10 +136,13 @@ tendril --json --display <display-id> capture \
 tendril --window <window-id> capture -o /tmp/screen.png
 tendril --json --window <window-id> capture -o /tmp/screen.png
 
-# Type text or run the input DSL against a target
+# Type text or run the input DSL against a target.
+# `run` waits on the host-local execution lock/queue by default.
 
 tendril --json --window <window-id> run 'send("hello")'
 tendril --json --window <window-id> run 'hold(ctrl),c,release(ctrl),wait(1s),send("done")'
+tendril --json --window <window-id> run --lock-timeout-ms 5000 'send("bounded wait")'
+tendril --json --window <window-id> run --no-lock 'send("advanced opt-out")'
 
 # Emit a reusable shell wrapper for a target (shell state, not Tendril state)
 

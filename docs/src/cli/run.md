@@ -42,6 +42,28 @@ The current model covers:
 
 Agents should still follow the capture-act-verify loop and avoid racing the operator. If a run reports restoration failure, pause and recapture before sending more input.
 
+## Host-local execution lock
+
+`tendril run` uses a host-local execution lock/queue by default so concurrent agents do not interleave keystrokes, clicks, focus changes, or waits on the same desktop session.
+
+Useful controls:
+
+```bash
+# default: wait in the local queue
+tendril --window <id> run 'send("hello")'
+
+# opt out only if another layer already serializes desktop control
+tendril --window <id> run --no-lock 'send("hello")'
+
+# bound queue waiting
+tendril --window <id> run --lock-timeout-ms 5000 'send("hello")'
+
+# isolate a test/sandbox lock root
+tendril --window <id> run --lock-path /tmp/my-tendril-lock 'send("hello")'
+```
+
+See [Execution lock and queue](../reference/execution-lock.md) for JSON metadata, stale-lock behavior, config, and environment controls.
+
 ## Result details
 
 Structured output reports:
@@ -53,7 +75,8 @@ Structured output reports:
 - `previous_focus` when a pre-run focus snapshot was captured,
 - whether focus was restored,
 - whether the pointer was restored,
-- `restore_error` when restoration was requested but unavailable or failed, and
+- `restore_error` when restoration was requested but unavailable or failed,
+- execution-lock/queue metadata, and
 - any adapter notes.
 
-When execution fails, the error payload can include the failing action index.
+When execution fails, the error payload can include the failing action index. If waiting for the execution lock times out, the error payload includes `execution_lock`, `holder`, and queue-depth details.

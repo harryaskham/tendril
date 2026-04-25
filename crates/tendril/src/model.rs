@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::ImageFormat;
 use crate::error::TendrilError;
+use crate::execution_lock::ExecutionLockReport;
 use crate::platform::{AdapterInfo, PermissionStatus, TargetCapabilityDiagnostic};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -396,6 +397,9 @@ pub struct RunOutput {
     pub restore_error: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
+    /// Host-local execution lock/queue metadata for this run invocation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_lock: Option<ExecutionLockReport>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
