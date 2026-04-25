@@ -93,6 +93,19 @@ The intended workflow is:
 3. capture current state with `capture`
 4. execute text or an input DSL sequence with `run`
 
+For browser/OS automation that must not touch the operator's real desktop, use
+the isolated 1920x1080 Xvfb micro-environment documented in
+[docs/src/headless-micro-environment.md](docs/src/headless-micro-environment.md):
+
+```bash
+cargo build -p tendril
+scripts/tendril-headless.sh --name smoke --tendril-bin ./target/debug/tendril smoke
+```
+
+Smoke captures are written under `summaries/$CACOPHONY_AGENT/` by default so
+Cacophony summaries and `/tmp/watch-captures.sh` can surface them. The Nix
+package also exposes the helper as `nix run .#tendril-headless -- smoke`.
+
 Examples:
 
 ```bash
@@ -238,6 +251,7 @@ For the full operator-facing guides, including packaged-binary smoke checks and 
 
 - [docs/src/macos-operator-validation.md](docs/src/macos-operator-validation.md)
 - [docs/src/linux-x11-operator-validation.md](docs/src/linux-x11-operator-validation.md)
+- [docs/src/headless-micro-environment.md](docs/src/headless-micro-environment.md)
 
 ## Platform and permission expectations
 

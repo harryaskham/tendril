@@ -1,0 +1,26 @@
+{
+  "data": {
+    "action_count": 5,
+    "adapter": {
+      "audio_backend": "pipe_wire",
+      "platform": "linux",
+      "session": "x11",
+      "stateless": true
+    },
+    "focus_required": true,
+    "focus_transferred": true,
+    "focused_target": "0x20000e",
+    "notes": [
+      "Activated the target window before keyboard delivery for X11 reliability."
+    ],
+    "target": {
+      "id": "0x20000e",
+      "kind": "window"
+    }
+  },
+  "meta": {
+    "command": "run",
+    "schema_version": 1
+  },
+  "status": "success"
+}

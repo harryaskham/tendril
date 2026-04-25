@@ -1,0 +1,6 @@
+Tendril headless smoke passed.
+name=bd-aa86ab-smoke
+display=:90
+resolution=1920x1080x24
+runtime_dir=/run/user/1000/tendril-headless/bd-aa86ab-smoke
+artifacts=/home/harry/.cacophony/agents/tendril/vkqzidnyr22kmm1h/checkout/summaries/vkqzidnyr22kmm1h

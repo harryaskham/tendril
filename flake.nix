@@ -7,12 +7,13 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   };
 
-  outputs = {
-    self,
-    crane,
-    flake-utils,
-    nixpkgs,
-  }:
+  outputs =
+    { self
+    , crane
+    , flake-utils
+    , nixpkgs
+    ,
+    }:
     flake-utils.lib.eachDefaultSystem (
       system:
       let
@@ -83,6 +84,18 @@
           wtype
         ]);
 
+        linuxHeadlessDeps = lib.optionals pkgs.stdenv.isLinux (with pkgs; [
+          bash
+          chromium
+          coreutils
+          openbox
+          python3
+          xdpyinfo
+          xsetroot
+          xterm
+          xvfb
+        ]);
+
         tendril = craneLib.buildPackage (
           commonArgs
           // {
@@ -91,9 +104,15 @@
             version = workspaceVersion;
             cargoExtraArgs = "-p tendril";
             nativeBuildInputs = [ pkgs.makeWrapper ];
+            postInstall = ''
+              install -Dm755 ${./scripts/tendril-headless.sh} $out/bin/tendril-headless
+            '';
             postFixup = lib.optionalString pkgs.stdenv.isLinux ''
               wrapProgram $out/bin/tendril \
                 --suffix PATH : ${lib.makeBinPath linuxRuntimeDeps}
+              wrapProgram $out/bin/tendril-headless \
+                --suffix PATH : ${lib.makeBinPath (linuxRuntimeDeps ++ linuxHeadlessDeps)} \
+                --set-default TENDRIL_HEADLESS_TENDRIL_BIN "$out/bin/tendril"
             '';
             meta = {
               description = "Stateless Rust CLI for agent-driven desktop inspection and control";
@@ -121,12 +140,14 @@
           }
         );
 
-        releaseArtifact = pkgs.runCommand "tendril-release-${releaseTarget}" {
-          nativeBuildInputs = [ pkgs.coreutils pkgs.gnutar pkgs.gzip ];
-        } ''
+        releaseArtifact = pkgs.runCommand "tendril-release-${releaseTarget}"
+          {
+            nativeBuildInputs = [ pkgs.coreutils pkgs.gnutar pkgs.gzip ];
+          } ''
           mkdir -p "$out" stage
           cp ${tendril}/bin/tendril stage/tendril
-          chmod +x stage/tendril
+          cp ${tendril}/bin/tendril-headless stage/tendril-headless
+          chmod +x stage/tendril stage/tendril-headless
           tar \
             --sort=name \
             --mtime='UTC 1970-01-01' \
@@ -136,7 +157,8 @@
             --use-compress-program="gzip -n" \
             -cf "$out/${releaseArtifactName}" \
             -C stage \
-            tendril
+            tendril \
+            tendril-headless
           (
             cd "$out"
             sha256sum "${releaseArtifactName}" > "${releaseChecksumName}"
@@ -188,6 +210,10 @@
             drv = tendril;
             exePath = "/bin/tendril";
           };
+          tendril-headless = flake-utils.lib.mkApp {
+            drv = tendril;
+            exePath = "/bin/tendril-headless";
+          };
         };
 
         packages = {
@@ -218,7 +244,7 @@
             rust-analyzer
             rustc
             rustfmt
-          ];
+          ] ++ linuxHeadlessDeps;
         };
 
         formatter = pkgs.nixpkgs-fmt;

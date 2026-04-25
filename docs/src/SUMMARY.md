@@ -5,6 +5,7 @@
 - [macOS operator validation](macos-operator-validation.md)
 - [Linux/X11 operator validation](linux-x11-operator-validation.md)
 - [Linux Wayland operator validation](linux-wayland-operator-validation.md)
+- [Headless micro-environment](headless-micro-environment.md)
 - [CLI guide](cli/index.md)
   - [`tendril list`](cli/list.md)
   - [`tendril capture`](cli/capture.md)
