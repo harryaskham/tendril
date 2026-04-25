@@ -436,6 +436,7 @@ fn model_target_from_platform(target: crate::platform::TargetDescriptor) -> Targ
             input: target.input_supported,
             audio: false,
         },
+        diagnostics: target.diagnostics,
         app_name: target.app_name,
         process_id: target.process_id,
     }
@@ -560,9 +561,18 @@ fn render_list_human(output: &ListOutput) -> String {
             .as_deref()
             .map(|app_name| format!(" app={app_name}"))
             .unwrap_or_default();
+        let diagnostic_suffix = target
+            .diagnostics
+            .iter()
+            .find(|diagnostic| {
+                diagnostic.capability == crate::platform::Capability::DisplayCapture
+                    || diagnostic.capability == crate::platform::Capability::WindowCapture
+            })
+            .map(|diagnostic| format!(" diagnostic={}: {}", diagnostic.code, diagnostic.message))
+            .unwrap_or_default();
         let _ = writeln!(
             rendered,
-            "- {:?} {} {} {}x{}+{}+{} scale={}/{} {}{}{}",
+            "- {:?} {} {} {}x{}+{}+{} scale={}/{} {}{}{}{}",
             target.kind,
             target.id,
             target.name,
@@ -575,6 +585,7 @@ fn render_list_human(output: &ListOutput) -> String {
             capability_summary,
             title_suffix,
             app_suffix,
+            diagnostic_suffix,
         );
     }
 
@@ -1199,6 +1210,7 @@ mod tests {
                         input_supported: true,
                         app_name: Some("Mail".to_owned()),
                         process_id: Some(42),
+                        diagnostics: Vec::new(),
                     }],
                 },
                 image_bytes: sample_png_bytes(),
@@ -1940,6 +1952,7 @@ mod tests {
                         input_supported: false,
                         app_name: None,
                         process_id: None,
+                        diagnostics: Vec::new(),
                     }],
                 })
             }

@@ -335,6 +335,8 @@ pub enum PlatformAdapterError {
         platform: PlatformKind,
         timeout_ms: u64,
         message: String,
+        backend: Option<String>,
+        suggested_action: Option<String>,
     },
 }
 
@@ -398,6 +400,27 @@ impl PlatformAdapterError {
             platform,
             timeout_ms,
             message: message.into(),
+            backend: None,
+            suggested_action: None,
+        }
+    }
+
+    #[must_use]
+    pub fn timeout_with_diagnostic(
+        operation: AdapterOperation,
+        platform: PlatformKind,
+        timeout_ms: u64,
+        message: impl Into<String>,
+        backend: impl Into<String>,
+        suggested_action: impl Into<String>,
+    ) -> Self {
+        Self::Timeout {
+            operation,
+            platform,
+            timeout_ms,
+            message: message.into(),
+            backend: Some(backend.into()),
+            suggested_action: Some(suggested_action.into()),
         }
     }
 
@@ -416,6 +439,31 @@ impl PlatformAdapterError {
 pub struct TargetDiscoveryRequest;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TargetCapabilityDiagnostic {
+    pub capability: Capability,
+    pub code: String,
+    pub message: String,
+    pub suggested_action: Option<String>,
+}
+
+impl TargetCapabilityDiagnostic {
+    #[must_use]
+    pub fn capture_unavailable(
+        capability: Capability,
+        code: impl Into<String>,
+        message: impl Into<String>,
+        suggested_action: impl Into<String>,
+    ) -> Self {
+        Self {
+            capability,
+            code: code.into(),
+            message: message.into(),
+            suggested_action: Some(suggested_action.into()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TargetDescriptor {
     pub id: String,
     pub title: Option<String>,
@@ -427,6 +475,8 @@ pub struct TargetDescriptor {
     pub input_supported: bool,
     pub app_name: Option<String>,
     pub process_id: Option<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub diagnostics: Vec<TargetCapabilityDiagnostic>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -1451,11 +1501,13 @@ fn capture_wayland_target(
     let portal_error = match capture_wayland_target_via_portal(&target, &inventory, timeout) {
         Ok(image_bytes) => return Ok(image_bytes),
         Err(WaylandCaptureBackendError::Timeout(message)) => {
-            return Err(PlatformAdapterError::timeout(
+            return Err(PlatformAdapterError::timeout_with_diagnostic(
                 AdapterOperation::Capture,
                 context.platform,
                 u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
                 format!("xdg-desktop-portal screenshot timed out: {message}"),
+                "xdg_desktop_portal_screenshot",
+                "The Wayland screenshot portal did not respond. On headless/Sunshine-style sessions this often means the portal is waiting for an access dialog that cannot be actioned; use `tendril list --json` to check whether capture is advertised for the target, restart/fix the compositor portal backend, or use the packaged X11/Xvfb headless helper.",
             ));
         }
         Err(WaylandCaptureBackendError::Failed(error)) => error,
@@ -1492,7 +1544,7 @@ fn capture_wayland_target(
         .checked_duration_since(Instant::now())
         .unwrap_or_else(|| Duration::from_millis(0));
     if grim_timeout.is_zero() {
-        return Err(PlatformAdapterError::timeout(
+        return Err(PlatformAdapterError::timeout_with_diagnostic(
             AdapterOperation::Capture,
             context.platform,
             u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
@@ -1501,11 +1553,13 @@ fn capture_wayland_target(
                 timeout.as_millis(),
                 portal_error.message
             ),
+            "xdg_desktop_portal_screenshot",
+            "The portal consumed the capture budget before the grim fallback could run. Retry with a larger --timeout-ms only for manual diagnosis; for automation, fix the portal backend or target a display that list reports as capturable.",
         ));
     }
 
     capture_wayland_target_with_grim(&target, grim_timeout).map_err(|grim_error| match grim_error {
-        WaylandCaptureBackendError::Timeout(message) => PlatformAdapterError::timeout(
+        WaylandCaptureBackendError::Timeout(message) => PlatformAdapterError::timeout_with_diagnostic(
             AdapterOperation::Capture,
             context.platform,
             u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
@@ -1513,6 +1567,8 @@ fn capture_wayland_target(
                 "Wayland capture timed out — xdg-desktop-portal screenshot (`{}`) and grim fallback both unresponsive: {message}",
                 portal_error.message
             ),
+            "xdg_desktop_portal_screenshot+grim",
+            "Both Wayland capture backends exceeded the command budget. Check the compositor screenshot portal, confirm grim can capture the target geometry manually, or use the packaged X11/Xvfb headless helper for unattended automation.",
         ),
         WaylandCaptureBackendError::Failed(failure) => PlatformAdapterError::adapter_failure(
             AdapterOperation::Capture,
@@ -3606,6 +3662,7 @@ mod tests {
             input_supported: false,
             app_name: Some("example".to_owned()),
             process_id: Some(7),
+            diagnostics: Vec::new(),
         };
 
         let cropped = crop_wayland_portal_capture_to_target(
@@ -3728,6 +3785,7 @@ mod tests {
             input_supported: false,
             app_name: None,
             process_id: None,
+            diagnostics: Vec::new(),
         }
     }
 

@@ -96,6 +96,21 @@ Expected success:
 - The payload includes target metadata, output dimensions, and a base64 image payload.
 - On a portal-backed session, Tendril should not require `grim` for the successful capture path.
 
+Headless/Sunshine-style display honesty smoke (for example helsinki's simulated `sunshine-headless` output):
+
+```bash
+mkdir -p summaries/wayland-smoke
+nix run .#tendril -- list --json | tee summaries/wayland-smoke/list.json
+nix run .#tendril -- --display 1 capture --json --timeout-ms 2000 -o summaries/wayland-smoke/display.png
+```
+
+Expected result on a known simulated headless output:
+
+- `list --json` succeeds, but the display target reports `capabilities.capture: false`.
+- The display target includes a `diagnostics` entry with code `wayland_headless_display_capture_unavailable` and suggested remediation.
+- `capture` returns quickly with `unsupported_capability` / `capture_not_supported_for_target` rather than spending the command budget on a portal timeout.
+- No `display.png` is created. If a future compositor/backend makes capture work and `list` honestly reports `capture: true`, keep the resulting image under `summaries/...` rather than `/tmp` so Cacophony summaries and capture watchers can see it.
+
 Expected structured backend error when neither a portal screenshot backend nor `grim` is available:
 
 ```json

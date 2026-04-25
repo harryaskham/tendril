@@ -1,0 +1,110 @@
+--- checkout tendril list --json ---
+{
+  "bounds": {
+    "height": 1080,
+    "width": 1920,
+    "x": 0,
+    "y": 0
+  },
+  "capabilities": {
+    "audio": false,
+    "capture": false,
+    "input": true
+  },
+  "diagnostics": [
+    {
+      "capability": "display_capture",
+      "code": "wayland_headless_display_capture_unavailable",
+      "message": "Wayland output `sunshine-headless` appears to be a simulated/headless display. In this class of session xdg-desktop-portal Screenshot can time out waiting for an access dialog and the grim fallback can hang, so Tendril does not advertise display capture for this target.",
+      "suggested_action": "Use a Wayland session with a working screenshot portal/grim backend, or run automation against the packaged X11/Xvfb headless helper. Incorrect simulated refresh-rate metadata is a known caveat and is not itself treated as the failure."
+    }
+  ],
+  "id": "1",
+  "kind": "display",
+  "name": "sunshine-headless",
+  "scale_factor": {
+    "denominator": 1,
+    "numerator": 1
+  }
+}
+
+--- capture before ---
+{
+  "status": "error",
+  "meta": {
+    "schema_version": 1,
+    "command": "capture"
+  },
+  "error": {
+    "category": "unsupported_capability",
+    "code": "capture_not_supported_for_target",
+    "message": "unsupported capability: target `1` does not support capture",
+    "details": {
+      "diagnostics": [
+        {
+          "capability": "display_capture",
+          "code": "wayland_headless_display_capture_unavailable",
+          "message": "Wayland output `sunshine-headless` appears to be a simulated/headless display. In this class of session xdg-desktop-portal Screenshot can time out waiting for an access dialog and the grim fallback can hang, so Tendril does not advertise display capture for this target.",
+          "suggested_action": "Use a Wayland session with a working screenshot portal/grim backend, or run automation against the packaged X11/Xvfb headless helper. Incorrect simulated refresh-rate metadata is a known caveat and is not itself treated as the failure."
+        }
+      ],
+      "target_id": "1",
+      "target_kind": "display"
+    }
+  }
+}
+
+--- run wait ---
+{
+  "data": {
+    "action_count": 1,
+    "adapter": {
+      "audio_backend": "pipe_wire",
+      "platform": "linux",
+      "session": "wayland",
+      "stateless": true
+    },
+    "focus_required": false,
+    "focus_transferred": false,
+    "notes": [
+      "Wayland input dispatched through ydotool (uinput); requires the ydotoold daemon and PATH access to the helper binary."
+    ],
+    "target": {
+      "id": "1",
+      "kind": "display"
+    }
+  },
+  "meta": {
+    "command": "run",
+    "schema_version": 1
+  },
+  "status": "success"
+}
+
+--- capture after ---
+{
+  "status": "error",
+  "meta": {
+    "schema_version": 1,
+    "command": "capture"
+  },
+  "error": {
+    "category": "unsupported_capability",
+    "code": "capture_not_supported_for_target",
+    "message": "unsupported capability: target `1` does not support capture",
+    "details": {
+      "diagnostics": [
+        {
+          "capability": "display_capture",
+          "code": "wayland_headless_display_capture_unavailable",
+          "message": "Wayland output `sunshine-headless` appears to be a simulated/headless display. In this class of session xdg-desktop-portal Screenshot can time out waiting for an access dialog and the grim fallback can hang, so Tendril does not advertise display capture for this target.",
+          "suggested_action": "Use a Wayland session with a working screenshot portal/grim backend, or run automation against the packaged X11/Xvfb headless helper. Incorrect simulated refresh-rate metadata is a known caveat and is not itself treated as the failure."
+        }
+      ],
+      "target_id": "1",
+      "target_kind": "display"
+    }
+  }
+}
+
+statuses: before=1 run=0 after=1

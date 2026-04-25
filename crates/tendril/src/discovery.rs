@@ -7,8 +7,8 @@ use serde_json::Value;
 use crate::model::{Bounds, ScaleFactor};
 use crate::platform::{
     AdapterContext, AdapterOperation, Capability, CapabilityErrorReason, CaptureTargetKind,
-    DesktopSession, PermissionKind, PlatformAdapterError, PlatformKind, TargetDescriptor,
-    TargetDiscoveryRequest, TargetInventory,
+    DesktopSession, PermissionKind, PlatformAdapterError, PlatformKind, TargetCapabilityDiagnostic,
+    TargetDescriptor, TargetDiscoveryRequest, TargetInventory,
 };
 use crate::x11;
 
@@ -167,6 +167,10 @@ fn discover_hyprland_targets(
         })?
     };
 
+    let all_monitors_headless = monitors.as_array().is_some_and(|monitors| {
+        !monitors.is_empty() && monitors.iter().all(is_headless_wayland_monitor)
+    });
+
     let mut targets = Vec::new();
     if let Some(monitors) = monitors.as_array() {
         for (index, monitor) in monitors.iter().enumerate() {
@@ -178,6 +182,9 @@ fn discover_hyprland_targets(
             let name = json_str(monitor, "name")
                 .map_or_else(|| format!("Display {}", index + 1), str::to_owned);
             let scale = json_f64(monitor, "scale").unwrap_or(1.0);
+            let diagnostics = headless_wayland_capture_diagnostic(&name, monitor)
+                .into_iter()
+                .collect::<Vec<_>>();
             targets.push(TargetDescriptor {
                 id: name.clone(),
                 title: None,
@@ -190,10 +197,11 @@ fn discover_hyprland_targets(
                     height,
                 },
                 scale_factor: scale_factor_from_float(scale),
-                capture_supported: true,
+                capture_supported: diagnostics.is_empty(),
                 input_supported: false,
                 app_name: None,
                 process_id: None,
+                diagnostics,
             });
         }
     }
@@ -229,6 +237,10 @@ fn discover_hyprland_targets(
                 .or_else(|| app_name.clone())
                 .unwrap_or_else(|| json_str(client, "address").unwrap_or("window").to_owned());
             let id = format!("hypr:{}", json_str(client, "address").unwrap_or(&name));
+            let diagnostics = all_monitors_headless
+                .then(headless_wayland_session_capture_diagnostic)
+                .into_iter()
+                .collect::<Vec<_>>();
             targets.push(TargetDescriptor {
                 id,
                 title,
@@ -241,15 +253,68 @@ fn discover_hyprland_targets(
                     height,
                 },
                 scale_factor: ScaleFactor::identity(),
-                capture_supported: true,
+                capture_supported: diagnostics.is_empty(),
                 input_supported: false,
                 app_name,
                 process_id: json_u32(client, "pid"),
+                diagnostics,
             });
         }
     }
 
     Ok((!targets.is_empty()).then_some(targets))
+}
+
+fn is_headless_wayland_monitor(monitor: &Value) -> bool {
+    let name_or_description = [json_str(monitor, "name"), json_str(monitor, "description")]
+        .into_iter()
+        .flatten()
+        .any(|value| {
+            let value = value.to_ascii_lowercase();
+            value.contains("headless") || value.contains("sunshine")
+        });
+
+    if name_or_description {
+        return true;
+    }
+
+    let physical_zero = json_u32(monitor, "physicalWidth").unwrap_or(1) == 0
+        && json_u32(monitor, "physicalHeight").unwrap_or(1) == 0;
+    let make_model_empty = json_str(monitor, "make")
+        .unwrap_or_default()
+        .trim()
+        .is_empty()
+        && json_str(monitor, "model")
+            .unwrap_or_default()
+            .trim()
+            .is_empty();
+
+    physical_zero && make_model_empty
+}
+
+fn headless_wayland_capture_diagnostic(
+    name: &str,
+    monitor: &Value,
+) -> Option<TargetCapabilityDiagnostic> {
+    is_headless_wayland_monitor(monitor).then(|| {
+        TargetCapabilityDiagnostic::capture_unavailable(
+            Capability::DisplayCapture,
+            "wayland_headless_display_capture_unavailable",
+            format!(
+                "Wayland output `{name}` appears to be a simulated/headless display. In this class of session xdg-desktop-portal Screenshot can time out waiting for an access dialog and the grim fallback can hang, so Tendril does not advertise display capture for this target."
+            ),
+            "Use a Wayland session with a working screenshot portal/grim backend, or run automation against the packaged X11/Xvfb headless helper. Incorrect simulated refresh-rate metadata is a known caveat and is not itself treated as the failure.",
+        )
+    })
+}
+
+fn headless_wayland_session_capture_diagnostic() -> TargetCapabilityDiagnostic {
+    TargetCapabilityDiagnostic::capture_unavailable(
+        Capability::WindowCapture,
+        "wayland_headless_session_capture_unavailable",
+        "All discovered Wayland outputs appear to be simulated/headless, so window screenshots would use the same portal/grim paths that time out for display capture.",
+        "Use a Wayland session with a working screenshot portal/grim backend, or run automation against the packaged X11/Xvfb headless helper.",
+    )
 }
 
 fn discover_sway_targets(
@@ -315,6 +380,7 @@ fn discover_sway_targets(
                 input_supported: false,
                 app_name: None,
                 process_id: None,
+                diagnostics: Vec::new(),
             });
         }
     }
@@ -353,6 +419,7 @@ fn discover_wlr_randr_displays(
                     input_supported: false,
                     app_name: None,
                     process_id: None,
+                    diagnostics: Vec::new(),
                 });
             }
             continue;
@@ -383,6 +450,7 @@ fn discover_wlr_randr_displays(
             input_supported: false,
             app_name: None,
             process_id: None,
+            diagnostics: Vec::new(),
         });
     }
 
@@ -461,6 +529,7 @@ fn collect_sway_windows(node: &Value, targets: &mut Vec<TargetDescriptor>) {
                                 .get("pid")
                                 .and_then(Value::as_u64)
                                 .and_then(|value| u32::try_from(value).ok()),
+                            diagnostics: Vec::new(),
                         });
                     }
                 }
@@ -541,6 +610,7 @@ fn discover_windows_displays_with_backend(
             input_supported: true,
             app_name: None,
             process_id: None,
+            diagnostics: Vec::new(),
         })
         .collect())
 }
@@ -579,6 +649,7 @@ fn discover_windows_windows_with_backend(
                 input_supported: true,
                 app_name,
                 process_id: Some(window.process_id),
+                diagnostics: Vec::new(),
             }
         })
         .collect())
@@ -1045,13 +1116,16 @@ pub(crate) fn is_filtered_system_window(app_name: Option<&str>, title: Option<&s
 mod tests {
     use super::{
         Bounds, WindowsDiscoveryBackend, discover_windows_targets_with_backend,
-        is_filtered_system_window, is_macos_permission_error, macos_discovery_script,
+        headless_wayland_capture_diagnostic, is_filtered_system_window,
+        is_headless_wayland_monitor, is_macos_permission_error, macos_discovery_script,
         parse_simple_geometry, parse_wlr_randr_mode, wayland_discovery_backend_error,
         wayland_discovery_backend_tools_on_path,
     };
     use crate::platform::{
-        AdapterContext, CaptureTargetKind, DesktopSession, PlatformAdapterError, PlatformKind,
+        AdapterContext, Capability, CaptureTargetKind, DesktopSession, PlatformAdapterError,
+        PlatformKind,
     };
+    use serde_json::json;
 
     #[test]
     fn filters_xdg_desktop_portal_windows_by_app_id() {
@@ -1265,6 +1339,37 @@ mod tests {
             detected
                 .iter()
                 .all(|tool| matches!(*tool, "hyprctl" | "swaymsg" | "wlr-randr"))
+        );
+    }
+
+    #[test]
+    fn wayland_headless_monitor_diagnostic_marks_capture_unavailable() {
+        let monitor = json!({
+            "name": "sunshine-headless",
+            "description": "",
+            "make": "",
+            "model": "",
+            "physicalWidth": 0,
+            "physicalHeight": 0,
+        });
+
+        assert!(is_headless_wayland_monitor(&monitor));
+        let diagnostic = headless_wayland_capture_diagnostic("sunshine-headless", &monitor)
+            .expect("headless monitor should have a capture diagnostic");
+        assert_eq!(diagnostic.capability, Capability::DisplayCapture);
+        assert_eq!(
+            diagnostic.code,
+            "wayland_headless_display_capture_unavailable"
+        );
+        assert!(diagnostic.message.contains("xdg-desktop-portal"));
+        assert!(diagnostic.message.contains("grim"));
+        assert!(
+            diagnostic
+                .suggested_action
+                .as_deref()
+                .is_some_and(|action| {
+                    action.contains("X11/Xvfb") && action.contains("refresh-rate")
+                })
         );
     }
 

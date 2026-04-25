@@ -1,0 +1,251 @@
+{
+  "data": {
+    "adapter": {
+      "audio_backend": "pipe_wire",
+      "platform": "linux",
+      "session": "wayland",
+      "stateless": true
+    },
+    "permissions": [
+      {
+        "permission": "screen_capture",
+        "state": "not_required",
+        "suggested_action": null,
+        "summary": "Linux desktop capture typically relies on session capabilities rather than OS privacy prompts."
+      },
+      {
+        "permission": "accessibility",
+        "state": "not_required",
+        "suggested_action": null,
+        "summary": "Linux input control generally depends on session support instead of a centralized permission prompt."
+      },
+      {
+        "permission": "microphone",
+        "state": "not_required",
+        "suggested_action": null,
+        "summary": "Audio device access is usually mediated by the active audio stack and user session."
+      }
+    ],
+    "targets": [
+      {
+        "bounds": {
+          "height": 1080,
+          "width": 1920,
+          "x": 0,
+          "y": 0
+        },
+        "capabilities": {
+          "audio": false,
+          "capture": false,
+          "input": true
+        },
+        "diagnostics": [
+          {
+            "capability": "display_capture",
+            "code": "wayland_headless_display_capture_unavailable",
+            "message": "Wayland output `sunshine-headless` appears to be a simulated/headless display. In this class of session xdg-desktop-portal Screenshot can time out waiting for an access dialog and the grim fallback can hang, so Tendril does not advertise display capture for this target.",
+            "suggested_action": "Use a Wayland session with a working screenshot portal/grim backend, or run automation against the packaged X11/Xvfb headless helper. Incorrect simulated refresh-rate metadata is a known caveat and is not itself treated as the failure."
+          }
+        ],
+        "id": "1",
+        "kind": "display",
+        "name": "sunshine-headless",
+        "scale_factor": {
+          "denominator": 1,
+          "numerator": 1
+        }
+      },
+      {
+        "app_name": "gcr-prompter",
+        "bounds": {
+          "height": 156,
+          "width": 611,
+          "x": -1585,
+          "y": 357
+        },
+        "capabilities": {
+          "audio": false,
+          "capture": false,
+          "input": true
+        },
+        "diagnostics": [
+          {
+            "capability": "window_capture",
+            "code": "wayland_headless_session_capture_unavailable",
+            "message": "All discovered Wayland outputs appear to be simulated/headless, so window screenshots would use the same portal/grim paths that time out for display capture.",
+            "suggested_action": "Use a Wayland session with a working screenshot portal/grim backend, or run automation against the packaged X11/Xvfb headless helper."
+          }
+        ],
+        "id": "hypr:0x558e76ecb3c0",
+        "kind": "window",
+        "name": "Unlock Keyring",
+        "process_id": 6045,
+        "scale_factor": {
+          "denominator": 1,
+          "numerator": 1
+        },
+        "title": "Unlock Keyring"
+      },
+      {
+        "app_name": "ssh-askpass",
+        "bounds": {
+          "height": 121,
+          "width": 372,
+          "x": 774,
+          "y": 480
+        },
+        "capabilities": {
+          "audio": false,
+          "capture": false,
+          "input": true
+        },
+        "diagnostics": [
+          {
+            "capability": "window_capture",
+            "code": "wayland_headless_session_capture_unavailable",
+            "message": "All discovered Wayland outputs appear to be simulated/headless, so window screenshots would use the same portal/grim paths that time out for display capture.",
+            "suggested_action": "Use a Wayland session with a working screenshot portal/grim backend, or run automation against the packaged X11/Xvfb headless helper."
+          }
+        ],
+        "id": "hypr:0x558e7718af60",
+        "kind": "window",
+        "name": "Enter your Secure Shell passphrase:",
+        "process_id": 831999,
+        "scale_factor": {
+          "denominator": 1,
+          "numerator": 1
+        },
+        "title": "Enter your Secure Shell passphrase:"
+      },
+      {
+        "app_name": "ssh-askpass",
+        "bounds": {
+          "height": 121,
+          "width": 372,
+          "x": 774,
+          "y": 480
+        },
+        "capabilities": {
+          "audio": false,
+          "capture": false,
+          "input": true
+        },
+        "diagnostics": [
+          {
+            "capability": "window_capture",
+            "code": "wayland_headless_session_capture_unavailable",
+            "message": "All discovered Wayland outputs appear to be simulated/headless, so window screenshots would use the same portal/grim paths that time out for display capture.",
+            "suggested_action": "Use a Wayland session with a working screenshot portal/grim backend, or run automation against the packaged X11/Xvfb headless helper."
+          }
+        ],
+        "id": "hypr:0x558e772d1fb0",
+        "kind": "window",
+        "name": "Enter your Secure Shell passphrase:",
+        "process_id": 1403922,
+        "scale_factor": {
+          "denominator": 1,
+          "numerator": 1
+        },
+        "title": "Enter your Secure Shell passphrase:"
+      },
+      {
+        "app_name": "ssh-askpass",
+        "bounds": {
+          "height": 121,
+          "width": 372,
+          "x": 774,
+          "y": 480
+        },
+        "capabilities": {
+          "audio": false,
+          "capture": false,
+          "input": true
+        },
+        "diagnostics": [
+          {
+            "capability": "window_capture",
+            "code": "wayland_headless_session_capture_unavailable",
+            "message": "All discovered Wayland outputs appear to be simulated/headless, so window screenshots would use the same portal/grim paths that time out for display capture.",
+            "suggested_action": "Use a Wayland session with a working screenshot portal/grim backend, or run automation against the packaged X11/Xvfb headless helper."
+          }
+        ],
+        "id": "hypr:0x558e77b49050",
+        "kind": "window",
+        "name": "Enter your Secure Shell passphrase:",
+        "process_id": 1392828,
+        "scale_factor": {
+          "denominator": 1,
+          "numerator": 1
+        },
+        "title": "Enter your Secure Shell passphrase:"
+      },
+      {
+        "app_name": "ssh-askpass",
+        "bounds": {
+          "height": 121,
+          "width": 372,
+          "x": 774,
+          "y": 480
+        },
+        "capabilities": {
+          "audio": false,
+          "capture": false,
+          "input": true
+        },
+        "diagnostics": [
+          {
+            "capability": "window_capture",
+            "code": "wayland_headless_session_capture_unavailable",
+            "message": "All discovered Wayland outputs appear to be simulated/headless, so window screenshots would use the same portal/grim paths that time out for display capture.",
+            "suggested_action": "Use a Wayland session with a working screenshot portal/grim backend, or run automation against the packaged X11/Xvfb headless helper."
+          }
+        ],
+        "id": "hypr:0x558e78306f60",
+        "kind": "window",
+        "name": "Enter your Secure Shell passphrase:",
+        "process_id": 780420,
+        "scale_factor": {
+          "denominator": 1,
+          "numerator": 1
+        },
+        "title": "Enter your Secure Shell passphrase:"
+      },
+      {
+        "app_name": "ssh-askpass",
+        "bounds": {
+          "height": 121,
+          "width": 372,
+          "x": 774,
+          "y": 480
+        },
+        "capabilities": {
+          "audio": false,
+          "capture": false,
+          "input": true
+        },
+        "diagnostics": [
+          {
+            "capability": "window_capture",
+            "code": "wayland_headless_session_capture_unavailable",
+            "message": "All discovered Wayland outputs appear to be simulated/headless, so window screenshots would use the same portal/grim paths that time out for display capture.",
+            "suggested_action": "Use a Wayland session with a working screenshot portal/grim backend, or run automation against the packaged X11/Xvfb headless helper."
+          }
+        ],
+        "id": "hypr:0x558e78572e70",
+        "kind": "window",
+        "name": "Enter your Secure Shell passphrase:",
+        "process_id": 1263514,
+        "scale_factor": {
+          "denominator": 1,
+          "numerator": 1
+        },
+        "title": "Enter your Secure Shell passphrase:"
+      }
+    ]
+  },
+  "meta": {
+    "command": "list",
+    "schema_version": 1
+  },
+  "status": "success"
+}

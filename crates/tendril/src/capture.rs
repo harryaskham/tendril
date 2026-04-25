@@ -78,6 +78,7 @@ fn ensure_capture_supported(target: &PlatformTargetDescriptor) -> Result<(), Ten
             Some(serde_json::json!({
                 "target_id": target.id,
                 "target_kind": target.kind,
+                "diagnostics": target.diagnostics,
             })),
         ))
     }
@@ -360,6 +361,7 @@ mod tests {
             input_supported: true,
             app_name: Some("app".to_owned()),
             process_id: Some(1),
+            diagnostics: Vec::new(),
         };
         let input = CaptureInput {
             target: TargetSelector::Window {
@@ -417,6 +419,7 @@ mod tests {
             input_supported: true,
             app_name: None,
             process_id: None,
+            diagnostics: Vec::new(),
         };
         let input = CaptureInput {
             target: TargetSelector::Display { id: "1".to_owned() },

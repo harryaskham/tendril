@@ -407,6 +407,7 @@ fn discover_displays(
             input_supported: true,
             app_name: None,
             process_id: None,
+            diagnostics: Vec::new(),
         });
     }
 
@@ -434,6 +435,7 @@ fn fallback_display(connection: &X11Connection) -> TargetDescriptor {
         input_supported: true,
         app_name: None,
         process_id: None,
+        diagnostics: Vec::new(),
     }
 }
 
@@ -514,6 +516,7 @@ fn discover_window(connection: &X11Connection, window: Window) -> Option<TargetD
         input_supported: true,
         app_name,
         process_id,
+        diagnostics: Vec::new(),
     })
 }
 

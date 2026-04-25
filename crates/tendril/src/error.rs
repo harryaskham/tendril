@@ -430,6 +430,8 @@ impl From<PlatformAdapterError> for TendrilError {
                 platform,
                 timeout_ms,
                 message,
+                backend,
+                suggested_action,
             } => Self::Timeout {
                 code: "platform_adapter_timeout",
                 message,
@@ -437,6 +439,8 @@ impl From<PlatformAdapterError> for TendrilError {
                     "operation": operation,
                     "platform": platform,
                     "timeout_ms": timeout_ms,
+                    "backend": backend,
+                    "suggested_action": suggested_action,
                 }))),
             },
         }
@@ -473,6 +477,7 @@ fn merge_details(existing: Option<ErrorDetails>, key: String, value: Value) -> E
 #[cfg(test)]
 mod tests {
     use super::TendrilError;
+    use crate::platform::{AdapterOperation, PlatformAdapterError, PlatformKind};
 
     #[test]
     fn validation_errors_preserve_category_and_field_details() {
@@ -497,5 +502,24 @@ mod tests {
         );
         assert_eq!(json_error.code, "command_not_implemented");
         assert_eq!(json_error.details.expect("details")["command"], "list");
+    }
+
+    #[test]
+    fn platform_timeout_preserves_backend_and_remediation_details() {
+        let error = TendrilError::from(PlatformAdapterError::timeout_with_diagnostic(
+            AdapterOperation::Capture,
+            PlatformKind::Linux,
+            10_000,
+            "xdg-desktop-portal screenshot timed out",
+            "xdg_desktop_portal_screenshot",
+            "restart the portal backend",
+        ));
+        let json_error = error.to_json_error();
+        let details = json_error.details.expect("details");
+
+        assert_eq!(json_error.category, mcp_cli::ErrorCategory::Timeout);
+        assert_eq!(json_error.code, "platform_adapter_timeout");
+        assert_eq!(details["backend"], "xdg_desktop_portal_screenshot");
+        assert_eq!(details["suggested_action"], "restart the portal backend");
     }
 }

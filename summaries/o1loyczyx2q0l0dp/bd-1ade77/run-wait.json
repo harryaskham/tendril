@@ -1,0 +1,25 @@
+{
+  "data": {
+    "action_count": 1,
+    "adapter": {
+      "audio_backend": "pipe_wire",
+      "platform": "linux",
+      "session": "wayland",
+      "stateless": true
+    },
+    "focus_required": false,
+    "focus_transferred": false,
+    "notes": [
+      "Wayland input dispatched through ydotool (uinput); requires the ydotoold daemon and PATH access to the helper binary."
+    ],
+    "target": {
+      "id": "1",
+      "kind": "display"
+    }
+  },
+  "meta": {
+    "command": "run",
+    "schema_version": 1
+  },
+  "status": "success"
+}
