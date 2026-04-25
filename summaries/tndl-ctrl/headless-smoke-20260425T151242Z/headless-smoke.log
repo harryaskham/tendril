@@ -1,0 +1,13 @@
+copying path '/nix/store/gay80fqbpm2wakbsyd4in44gx0cwx3h5-source' from 'https://cache.nixos.org'...
+this derivation will be built:
+  /nix/store/9pcfl1rbrg861ldvrfpkgd0bcv24nsvq-tendril-0.0.1.drv
+building '/nix/store/9pcfl1rbrg861ldvrfpkgd0bcv24nsvq-tendril-0.0.1.drv'...
+[tendril-headless] starting Xvfb :90 at 1920x1080x24
+[tendril-headless] starting window manager: openbox
+[tendril-headless] starting browser: chromium
+[tendril-headless] started environment 'tndl-ctrl-20260425T151242Z'; logs are under /run/user/1000/tendril-headless/tndl-ctrl-20260425T151242Z/logs
+[tendril-headless] waiting for Tendril to see a 1920x1080 display and browser window
+[tendril-headless] capturing display 1 into /home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-smoke-20260425T151242Z
+[tendril-headless] running input against window 0x40000c
+[tendril-headless] smoke passed; artifacts: /home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-smoke-20260425T151242Z/tndl-ctrl-20260425T151242Z-{list,capture,run}.json /home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-smoke-20260425T151242Z/tndl-ctrl-20260425T151242Z-display.png
+[tendril-headless] stopped environment 'tndl-ctrl-20260425T151242Z' and removed /run/user/1000/tendril-headless/tndl-ctrl-20260425T151242Z
