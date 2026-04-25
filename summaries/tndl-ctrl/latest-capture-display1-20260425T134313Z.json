@@ -1,0 +1,27 @@
+# latest checkout tendril capture smoke
+timestamp=20260425T134313Z
+command=nix run . -- capture --json --display 1 --max-width 800 --timeout-ms 5000 -o summaries/tndl-ctrl/latest-capture-display1-20260425T134313Z.png
+{
+  "status": "error",
+  "meta": {
+    "schema_version": 1,
+    "command": "capture"
+  },
+  "error": {
+    "category": "unsupported_capability",
+    "code": "capture_not_supported_for_target",
+    "message": "unsupported capability: target `1` does not support capture",
+    "details": {
+      "diagnostics": [
+        {
+          "capability": "display_capture",
+          "code": "wayland_headless_display_capture_unavailable",
+          "message": "Wayland output `sunshine-headless` appears to be a simulated/headless display. In this class of session xdg-desktop-portal Screenshot can time out waiting for an access dialog and the grim fallback can hang, so Tendril does not advertise display capture for this target.",
+          "suggested_action": "Use a Wayland session with a working screenshot portal/grim backend, or run automation against the packaged X11/Xvfb headless helper. Incorrect simulated refresh-rate metadata is a known caveat and is not itself treated as the failure."
+        }
+      ],
+      "target_id": "1",
+      "target_kind": "display"
+    }
+  }
+}

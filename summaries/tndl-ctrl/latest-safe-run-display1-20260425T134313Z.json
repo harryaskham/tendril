@@ -1,0 +1,46 @@
+# latest checkout tendril safe run smoke
+timestamp=20260425T134313Z
+command=nix run . -- run --json --display 1 'wait(50)'
+{
+  "data": {
+    "action_count": 1,
+    "adapter": {
+      "audio_backend": "pipe_wire",
+      "platform": "linux",
+      "session": "wayland",
+      "stateless": true
+    },
+    "execution_lock": {
+      "acquired": true,
+      "enabled": true,
+      "lock_path": "/tmp/nix-shell.RrzWFA/tendril-execution-lock-harry-wayland-1",
+      "owner_pid": 3202710,
+      "queue_depth_at_join": 1,
+      "queue_position_at_join": 1,
+      "stale_locks_reaped": 0,
+      "stale_ms": 30000,
+      "stale_tickets_reaped": 0,
+      "timeout_ms": 60000,
+      "token": "3202710-1777124705838-1",
+      "wait_ms": 0
+    },
+    "focus_required": false,
+    "focus_restored": false,
+    "focus_transferred": false,
+    "notes": [
+      "Wayland input dispatched through ydotool (uinput); requires the ydotoold daemon and PATH access to the helper binary.",
+      "Wayland focus restoration is not portable through Tendril; no previous focus snapshot was captured."
+    ],
+    "pointer_restored": false,
+    "restore_error": "focus restoration is not supported for generic Wayland sessions",
+    "target": {
+      "id": "1",
+      "kind": "display"
+    }
+  },
+  "meta": {
+    "command": "run",
+    "schema_version": 1
+  },
+  "status": "success"
+}
