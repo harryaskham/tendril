@@ -1,0 +1,152 @@
+# Tendril controller safe smoke
+timestamp=20260425T131226Z
+note=Uses system tendril because latest nix-run path is currently tracked by bd-497145. Avoids clicks/typing; run payload is wait-only.
+
+## tendril list --json (first lines)
+{
+  "data": {
+    "adapter": {
+      "audio_backend": "pipe_wire",
+      "platform": "linux",
+      "session": "wayland",
+      "stateless": true
+    },
+    "permissions": [
+      {
+        "permission": "screen_capture",
+        "state": "not_required",
+        "suggested_action": null,
+        "summary": "Linux desktop capture typically relies on session capabilities rather than OS privacy prompts."
+      },
+      {
+        "permission": "accessibility",
+        "state": "not_required",
+        "suggested_action": null,
+        "summary": "Linux input control generally depends on session support instead of a centralized permission prompt."
+      },
+      {
+        "permission": "microphone",
+        "state": "not_required",
+        "suggested_action": null,
+        "summary": "Audio device access is usually mediated by the active audio stack and user session."
+      }
+    ],
+    "targets": [
+      {
+        "bounds": {
+          "height": 1080,
+          "width": 1920,
+          "x": 0,
+          "y": 0
+        },
+        "capabilities": {
+          "audio": false,
+          "capture": true,
+          "input": true
+        },
+        "id": "1",
+        "kind": "display",
+        "name": "sunshine-headless",
+        "scale_factor": {
+          "denominator": 1,
+          "numerator": 1
+        }
+      },
+      {
+        "app_name": "gcr-prompter",
+        "bounds": {
+          "height": 156,
+          "width": 611,
+          "x": -1585,
+          "y": 357
+        },
+        "capabilities": {
+          "audio": false,
+          "capture": true,
+          "input": true
+        },
+        "id": "hypr:0x558e76ecb3c0",
+        "kind": "window",
+        "name": "Unlock Keyring",
+        "process_id": 6045,
+        "scale_factor": {
+          "denominator": 1,
+          "numerator": 1
+        },
+        "title": "Unlock Keyring"
+      },
+      {
+        "app_name": "ssh-askpass",
+        "bounds": {
+          "height": 121,
+          "width": 372,
+          "x": 774,
+          "y": 480
+        },
+        "capabilities": {
+          "audio": false,
+          "capture": true,
+          "input": true
+        },
+        "id": "hypr:0x558e7718af60",
+        "kind": "window",
+        "name": "Enter your Secure Shell passphrase:",
+        "process_id": 831999,
+        "scale_factor": {
+          "denominator": 1,
+          "numerator": 1
+        },
+        "title": "Enter your Secure Shell passphrase:"
+      },
+      {
+        "app_name": "ssh-askpass",
+        "bounds": {
+          "height": 121,
+          "width": 372,
+          "x": 774,
+          "y": 480
+        },
+        "capabilities": {
+          "audio": false,
+          "capture": true,
+          "input": true
+        },
+        "id": "hypr:0x558e772d1fb0",
+        "kind": "window",
+        "name": "Enter your Secure Shell passphrase:",
+        "process_id": 1403922,
+        "scale_factor": {
+          "denominator": 1,
+          "numerator": 1
+        },
+        "title": "Enter your Secure Shell passphrase:"
+      },
+      {
+        "app_name": "ssh-askpass",
+
+## tendril run --json --display 1 'wait(50)'
+{
+  "data": {
+    "action_count": 1,
+    "adapter": {
+      "audio_backend": "pipe_wire",
+      "platform": "linux",
+      "session": "wayland",
+      "stateless": true
+    },
+    "focus_required": false,
+    "focus_transferred": false,
+    "notes": [
+      "Wayland input dispatched through ydotool (uinput); requires the ydotoold daemon and PATH access to the helper binary."
+    ],
+    "target": {
+      "id": "1",
+      "kind": "display"
+    }
+  },
+  "meta": {
+    "command": "run",
+    "schema_version": 1
+  },
+  "status": "success"
+}
