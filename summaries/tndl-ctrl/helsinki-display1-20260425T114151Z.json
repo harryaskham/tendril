@@ -1,0 +1,20 @@
+# Tendril controller capture smoke
+timestamp=20260425T114151Z
+output=summaries/tndl-ctrl/helsinki-display1-20260425T114151Z.png
+{
+  "status": "error",
+  "meta": {
+    "schema_version": 1,
+    "command": "capture"
+  },
+  "error": {
+    "category": "timeout",
+    "code": "platform_adapter_timeout",
+    "message": "timeout: xdg-desktop-portal screenshot timed out: xdg-desktop-portal screenshot did not respond within 3000 ms",
+    "details": {
+      "operation": "capture",
+      "platform": "linux",
+      "timeout_ms": 3000
+    }
+  }
+}
