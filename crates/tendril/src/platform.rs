@@ -17,7 +17,7 @@ use crate::capture::{current_timestamp, read_and_remove_temp_capture, unique_tem
 use crate::discovery;
 use crate::error::TendrilError;
 use crate::input::{relative_point_to_absolute, reliability_delay};
-use crate::model::{Bounds, InputAction, ModifierKey, MouseButton, ScaleFactor};
+use crate::model::{Bounds, FocusSnapshot, InputAction, ModifierKey, MouseButton, ScaleFactor};
 use crate::wayland_input;
 use crate::x11;
 
@@ -465,6 +465,9 @@ pub struct InputRequest {
     pub bounds: Bounds,
     pub app_name: Option<String>,
     pub process_id: Option<u32>,
+    /// Restore the previously focused window/application after dispatching
+    /// input when the platform adapter can observe and restore focus.
+    pub restore_focus: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -478,6 +481,12 @@ pub struct InputOutcome {
     pub focus_transferred: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub focused_target: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub previous_focus: Option<FocusSnapshot>,
+    pub focus_restored: bool,
+    pub pointer_restored: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub restore_error: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
 }
@@ -501,6 +510,14 @@ struct InputFixture {
     focus_transferred: bool,
     #[serde(default)]
     focused_target: Option<String>,
+    #[serde(default)]
+    previous_focus: Option<FocusSnapshot>,
+    #[serde(default)]
+    focus_restored: bool,
+    #[serde(default)]
+    pointer_restored: bool,
+    #[serde(default)]
+    restore_error: Option<String>,
     #[serde(default)]
     notes: Vec<String>,
 }
@@ -569,6 +586,10 @@ fn load_input_fixture(
         focused_target: fixture
             .focused_target
             .or_else(|| fixture.focus_transferred.then(|| request.target_id.clone())),
+        previous_focus: fixture.previous_focus,
+        focus_restored: fixture.focus_restored,
+        pointer_restored: fixture.pointer_restored,
+        restore_error: fixture.restore_error,
         notes: fixture.notes,
     }))
 }
@@ -649,7 +670,10 @@ fn macos_screen_recording_remediation() -> String {
     let exe = std::env::current_exe()
         .ok()
         .and_then(|path| path.canonicalize().ok().or(Some(path)))
-        .map_or_else(|| "<tendril binary>".to_owned(), |path| path.display().to_string());
+        .map_or_else(
+            || "<tendril binary>".to_owned(),
+            |path| path.display().to_string(),
+        );
     let parent = macos_parent_process_summary();
     format!(
         "Grant Screen Recording access to the tendril binary, then rerun the command.\n\
@@ -675,9 +699,10 @@ pub fn screen_recording_remediation_message() -> String {
 }
 
 fn macos_screen_recording_context() -> String {
-    let exe = std::env::current_exe()
-        .ok()
-        .map_or_else(|| "<tendril binary>".to_owned(), |path| path.display().to_string());
+    let exe = std::env::current_exe().ok().map_or_else(
+        || "<tendril binary>".to_owned(),
+        |path| path.display().to_string(),
+    );
     format!(
         "The Screen Recording TCC grant must be attached to this exact binary path: {exe} \
          (and to its parent launcher when invoked via ssh/caco exec)."
@@ -692,9 +717,7 @@ fn macos_parent_process_summary() -> String {
         .args(["-o", "ppid=", "-p", &self_pid.to_string()])
         .output();
     let ppid_str = match ppid_output {
-        Ok(out) if out.status.success() => {
-            String::from_utf8_lossy(&out.stdout).trim().to_owned()
-        }
+        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).trim().to_owned(),
         _ => return "<unknown parent process>".to_owned(),
     };
     if ppid_str.is_empty() {
@@ -1871,6 +1894,19 @@ fn execute_macos_input(
     let mut focus_required = keyboard_input || matches!(request.target, CaptureTargetKind::Window);
     let mut focus_transferred = false;
     let mut notes = Vec::new();
+    let restore_error = if request.restore_focus {
+        let message =
+            "macOS focus restoration is not yet implemented by the Tendril adapter".to_owned();
+        notes.push(format!(
+            "Focus restoration requested but skipped: {message}."
+        ));
+        Some(message)
+    } else {
+        notes.push(
+            "Focus restoration disabled for this run; focus may remain on the target.".to_owned(),
+        );
+        None
+    };
 
     if matches!(request.target, CaptureTargetKind::Window) {
         if let Some(process_id) = request.process_id {
@@ -1917,6 +1953,10 @@ fn execute_macos_input(
             } else {
                 None
             },
+            previous_focus: None,
+            focus_restored: false,
+            pointer_restored: false,
+            restore_error: restore_error.clone(),
             notes,
         });
     }
@@ -1942,6 +1982,10 @@ fn execute_macos_input(
         } else {
             None
         },
+        previous_focus: None,
+        focus_restored: false,
+        pointer_restored: false,
+        restore_error,
         notes,
     })
 }
@@ -2107,6 +2151,19 @@ fn execute_windows_input_with_runtime(
     let mut focus_required = keyboard_input || matches!(request.target, CaptureTargetKind::Window);
     let mut focus_transferred = false;
     let mut notes = Vec::new();
+    let restore_error = if request.restore_focus {
+        let message =
+            "Windows focus restoration is not yet implemented by the Tendril adapter".to_owned();
+        notes.push(format!(
+            "Focus restoration requested but skipped: {message}."
+        ));
+        Some(message)
+    } else {
+        notes.push(
+            "Focus restoration disabled for this run; focus may remain on the target.".to_owned(),
+        );
+        None
+    };
 
     if matches!(request.target, CaptureTargetKind::Window) {
         run_windows_step(
@@ -2139,6 +2196,10 @@ fn execute_windows_input_with_runtime(
             } else {
                 None
             },
+            previous_focus: None,
+            focus_restored: false,
+            pointer_restored: false,
+            restore_error: restore_error.clone(),
             notes,
         });
     }
@@ -2164,6 +2225,10 @@ fn execute_windows_input_with_runtime(
         } else {
             None
         },
+        previous_focus: None,
+        focus_restored: false,
+        pointer_restored: false,
+        restore_error,
         notes,
     })
 }
@@ -3249,6 +3314,7 @@ mod tests {
             },
             app_name: Some("Notepad".to_owned()),
             process_id: Some(42),
+            restore_focus: true,
             text: None,
             actions: vec![
                 InputAction::Hold {
@@ -3315,6 +3381,7 @@ mod tests {
             },
             app_name: None,
             process_id: None,
+            restore_focus: true,
             text: Some("hello".to_owned()),
             actions: Vec::new(),
         };
@@ -3383,8 +3450,7 @@ mod tests {
         // distinct condition (pending consent dialog or wedged System
         // Events) and surfaces with its own `input_command_timeout`
         // error code.
-        let timeout_message =
-            "System Events got an error: AppleEvent timed out. (-1712)";
+        let timeout_message = "System Events got an error: AppleEvent timed out. (-1712)";
         assert!(!is_macos_input_permission_error(timeout_message));
         assert!(super::is_macos_input_apple_event_timeout(timeout_message));
         assert!(super::is_macos_input_apple_event_timeout(
@@ -3422,10 +3488,7 @@ mod tests {
         assert!(script.contains("keystroke \"hello\""));
         // The runner sniffs the leading marker to choose AppleScript
         // over JXA; document that contract here.
-        assert_eq!(
-            super::OsaLanguage::AppleScript.as_flag(),
-            "AppleScript"
-        );
+        assert_eq!(super::OsaLanguage::AppleScript.as_flag(), "AppleScript");
     }
 
     #[test]

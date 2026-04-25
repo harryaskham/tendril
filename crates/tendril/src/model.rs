@@ -323,6 +323,14 @@ pub enum RunInputPayload {
 pub struct RunInput {
     pub target: TargetSelector,
     pub payload: RunInputPayload,
+    /// Restore the previously focused window/application after dispatching
+    /// input when the platform adapter can observe and restore focus.
+    #[serde(default = "default_restore_focus")]
+    pub restore_focus: bool,
+}
+
+fn default_restore_focus() -> bool {
+    true
 }
 
 impl RunInput {
@@ -362,6 +370,14 @@ impl RunInput {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FocusSnapshot {
+    pub id: String,
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RunOutput {
     pub adapter: AdapterInfo,
     pub target: TargetSelector,
@@ -370,6 +386,12 @@ pub struct RunOutput {
     pub action_count: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub focused_target: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub previous_focus: Option<FocusSnapshot>,
+    pub focus_restored: bool,
+    pub pointer_restored: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub restore_error: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
 }
@@ -586,6 +608,7 @@ mod tests {
             payload: RunInputPayload::Text {
                 text: String::new(),
             },
+            restore_focus: true,
         };
 
         let error = input

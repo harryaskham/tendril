@@ -655,6 +655,7 @@ fn build_run_input(target: &TargetScope, command: &RunCommand) -> Result<RunInpu
     let input = RunInput {
         target: required_target(target, "run")?,
         payload: parse_input_definition(&input_definition)?,
+        restore_focus: command.restore_focus && !command.no_restore_focus,
     };
     input.validate()?;
     Ok(input)
@@ -1147,9 +1148,9 @@ mod tests {
 
     use super::{
         AliasRequest, CaptureRequest, ListenRequest, RunRequest, TargetScope, build_alias_input,
-        build_capture_input, build_listen_input, build_listen_response, build_mcp_server, dispatch,
-        dispatch_listen_command, execute_alias, execute_list_with_adapter, render_command_output,
-        render_list_human,
+        build_capture_input, build_listen_input, build_listen_response, build_mcp_server,
+        build_run_input, dispatch, dispatch_listen_command, execute_alias,
+        execute_list_with_adapter, render_command_output, render_list_human,
     };
     use crate::capture::{execute_capture, render_capture_human};
     use crate::cli::{
@@ -1260,6 +1261,14 @@ mod tests {
                 focus_required: true,
                 focus_transferred: true,
                 focused_target: Some(request.target_id.clone()),
+                previous_focus: request.restore_focus.then(|| crate::model::FocusSnapshot {
+                    id: "previous-window".to_owned(),
+                    kind: "window".to_owned(),
+                    name: Some("Previous".to_owned()),
+                }),
+                focus_restored: request.restore_focus,
+                pointer_restored: false,
+                restore_error: None,
                 notes: vec!["fake adapter executed request".to_owned()],
             })
         }
@@ -1494,6 +1503,7 @@ mod tests {
             },
             options: RunCommand {
                 input_definition: Some("send(\"hello\")".to_string()),
+                ..RunCommand::default()
             },
         };
 
@@ -1502,6 +1512,36 @@ mod tests {
             request.options.input_definition.as_deref(),
             Some("send(\"hello\")")
         );
+        assert!(request.options.restore_focus);
+        assert!(!request.options.no_restore_focus);
+    }
+
+    #[test]
+    fn run_request_schema_includes_focus_restore_flags() {
+        let schema = serde_json::to_value(schemars::schema_for!(RunRequest))
+            .expect("run schema should serialize");
+
+        assert_eq!(schema["type"], "object");
+        assert!(schema["properties"].get("restore_focus").is_some());
+        assert!(schema["properties"].get("no_restore_focus").is_some());
+    }
+
+    #[test]
+    fn run_input_disables_focus_restore_when_requested() {
+        let input = build_run_input(
+            &TargetScope {
+                window: Some("window-1".to_owned()),
+                display: None,
+            },
+            &RunCommand {
+                input_definition: Some("send(\"hello\")".to_owned()),
+                no_restore_focus: true,
+                ..RunCommand::default()
+            },
+        )
+        .expect("run input should build");
+
+        assert!(!input.restore_focus);
     }
 
     #[test]
@@ -1763,6 +1803,7 @@ mod tests {
                         text: "hello".to_owned(),
                     }],
                 },
+                restore_focus: true,
             },
             adapter.as_ref(),
         )
@@ -1776,6 +1817,18 @@ mod tests {
 
         assert_eq!(response["result"]["isError"], false);
         assert_eq!(mcp_structured_content(&response), cli_json);
+        assert_eq!(
+            response["result"]["structuredContent"]["data"]["previous_focus"]["id"],
+            "previous-window"
+        );
+        assert_eq!(
+            response["result"]["structuredContent"]["data"]["focus_restored"],
+            true
+        );
+        assert_eq!(
+            response["result"]["structuredContent"]["data"]["pointer_restored"],
+            false
+        );
     }
 
     #[test]
@@ -1818,6 +1871,7 @@ mod tests {
                 display: None,
                 command: Some(Command::Run(RunCommand {
                     input_definition: None,
+                    ..RunCommand::default()
                 })),
             },
             &TendrilConfig::default(),
@@ -1969,6 +2023,7 @@ mod tests {
                 payload: crate::model::RunInputPayload::Text {
                     text: "hello".to_owned(),
                 },
+                restore_focus: true,
             },
             &adapter,
         )

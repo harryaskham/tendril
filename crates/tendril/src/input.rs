@@ -102,6 +102,7 @@ pub(crate) fn execute_run(
         bounds: target.bounds.clone(),
         app_name: target.app_name.clone(),
         process_id: target.process_id,
+        restore_focus: input.restore_focus,
         text,
         actions: actions.clone(),
     })?;
@@ -113,6 +114,10 @@ pub(crate) fn execute_run(
         focus_transferred: outcome.focus_transferred,
         action_count: outcome.action_count,
         focused_target: outcome.focused_target,
+        previous_focus: outcome.previous_focus,
+        focus_restored: outcome.focus_restored,
+        pointer_restored: outcome.pointer_restored,
+        restore_error: outcome.restore_error,
         notes: outcome.notes,
     })
 }
@@ -125,7 +130,7 @@ pub(crate) fn render_run_human(output: &RunOutput) -> String {
     };
 
     format!(
-        "run target: {:?} {}\nplatform: {:?} / {:?}\naction_count: {}\nfocus_required: {}\nfocus_transferred: {}\nfocused_target: {}\nnotes: {}\n",
+        "run target: {:?} {}\nplatform: {:?} / {:?}\naction_count: {}\nfocus_required: {}\nfocus_transferred: {}\nfocused_target: {}\nprevious_focus: {}\nfocus_restored: {}\npointer_restored: {}\nrestore_error: {}\nnotes: {}\n",
         output.target.kind(),
         output.target.id(),
         output.adapter.platform,
@@ -134,6 +139,13 @@ pub(crate) fn render_run_human(output: &RunOutput) -> String {
         output.focus_required,
         output.focus_transferred,
         output.focused_target.as_deref().unwrap_or("<none>"),
+        output
+            .previous_focus
+            .as_ref()
+            .map_or("<none>", |focus| focus.id.as_str()),
+        output.focus_restored,
+        output.pointer_restored,
+        output.restore_error.as_deref().unwrap_or("<none>"),
         notes,
     )
 }

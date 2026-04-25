@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{ArgAction, Args, Parser, Subcommand};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -112,10 +112,37 @@ pub struct CaptureCommand {
     pub timeout_ms: Option<u64>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Args, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Args, Serialize, Deserialize, JsonSchema)]
 pub struct RunCommand {
     /// Placeholder input definition argument for future DSL and string support.
     pub input_definition: Option<String>,
+
+    /// Restore the window/app focus that was active before the run, when the
+    /// active platform adapter can observe and restore focus. This is the
+    /// default to minimize disruption on shared desktops.
+    #[arg(long = "restore-focus", default_value_t = true, action = ArgAction::SetTrue)]
+    #[serde(default = "default_restore_focus")]
+    pub restore_focus: bool,
+
+    /// Preserve legacy behavior for workflows that intentionally leave focus
+    /// on the automation target after `tendril run`.
+    #[arg(long = "no-restore-focus", action = ArgAction::SetTrue)]
+    #[serde(default)]
+    pub no_restore_focus: bool,
+}
+
+impl Default for RunCommand {
+    fn default() -> Self {
+        Self {
+            input_definition: None,
+            restore_focus: true,
+            no_restore_focus: false,
+        }
+    }
+}
+
+fn default_restore_focus() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Args, Serialize, Deserialize, JsonSchema)]

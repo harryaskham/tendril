@@ -48,5 +48,8 @@ fn list_capture_and_run_flow_uses_isolated_config_and_dynamic_fixtures() {
     assert_eq!(run_json["data"]["focus_required"], true);
     assert_eq!(run_json["data"]["focus_transferred"], true);
     assert_eq!(run_json["data"]["focused_target"], "window-1");
+    assert_eq!(run_json["data"]["previous_focus"]["id"], "previous-window");
+    assert_eq!(run_json["data"]["focus_restored"], true);
+    assert_eq!(run_json["data"]["pointer_restored"], true);
     assert_eq!(run_json["data"]["notes"][0], "fixture input executed");
 }

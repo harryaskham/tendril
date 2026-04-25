@@ -17,7 +17,7 @@ use x11rb::protocol::xtest::ConnectionExt as _;
 
 use crate::error::TendrilError;
 use crate::input::reliability_delay;
-use crate::model::{Bounds, InputAction, ModifierKey, MouseButton, ScaleFactor};
+use crate::model::{Bounds, FocusSnapshot, InputAction, ModifierKey, MouseButton, ScaleFactor};
 use crate::platform::{
     AdapterContext, AdapterOperation, Capability, CapabilityErrorReason, CaptureTargetKind,
     InputOutcome, InputRequest, PlatformAdapterError, PlatformKind, TargetDescriptor,
@@ -96,6 +96,42 @@ pub(crate) fn execute_input(
     let mut focus_required = false;
     let mut focus_transferred = false;
     let mut notes = Vec::new();
+    let mut restore_error = None;
+    let restore_state = if request.restore_focus {
+        match capture_x11_restore_state(&connection) {
+            Ok(Some(state)) => {
+                notes.push(format!(
+                    "Captured previous X11 focus {} and pointer position for post-run restoration.",
+                    format_window_id(state.window)
+                ));
+                Some(state)
+            }
+            Ok(None) => {
+                let message =
+                    "X11 did not report a restorable active window before input".to_owned();
+                notes.push(format!(
+                    "Focus restoration requested but skipped: {message}."
+                ));
+                restore_error = Some(message);
+                None
+            }
+            Err(error) => {
+                notes.push(format!(
+                    "Focus restoration requested but pre-run snapshot failed: {error}."
+                ));
+                restore_error = Some(error);
+                None
+            }
+        }
+    } else {
+        notes.push(
+            "Focus restoration disabled for this run; focus may remain on the target.".to_owned(),
+        );
+        None
+    };
+    let previous_focus = restore_state
+        .as_ref()
+        .map(|state| focus_snapshot_for_window(&connection, state.window));
 
     if keyboard_input {
         focus_required = true;
@@ -152,11 +188,20 @@ pub(crate) fn execute_input(
                 Some("text"),
             )
         })?;
+        let restore = restore_x11_state_if_requested(&connection, restore_state.as_ref());
+        if let Some(error) = restore.error {
+            notes.push(format!("Focus restoration after input failed: {error}."));
+            restore_error = Some(error);
+        }
         return Ok(InputOutcome {
             action_count: 1,
             focus_required,
             focus_transferred,
             focused_target: focus_transferred.then(|| request.target_id.clone()),
+            previous_focus,
+            focus_restored: restore.focus_restored,
+            pointer_restored: restore.pointer_restored,
+            restore_error,
             notes,
         });
     }
@@ -185,13 +230,137 @@ pub(crate) fn execute_input(
         }
     }
 
+    let restore = restore_x11_state_if_requested(&connection, restore_state.as_ref());
+    if let Some(error) = restore.error {
+        notes.push(format!("Focus restoration after input failed: {error}."));
+        restore_error = Some(error);
+    }
+
     Ok(InputOutcome {
         action_count: request.actions.len(),
         focus_required,
         focus_transferred,
         focused_target: focus_transferred.then(|| request.target_id.clone()),
+        previous_focus,
+        focus_restored: restore.focus_restored,
+        pointer_restored: restore.pointer_restored,
+        restore_error,
         notes,
     })
+}
+
+#[derive(Debug, Clone)]
+struct X11RestoreState {
+    window: Window,
+    pointer_root: Option<(i32, i32)>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct X11RestoreOutcome {
+    focus_restored: bool,
+    pointer_restored: bool,
+    error: Option<String>,
+}
+
+fn capture_x11_restore_state(
+    connection: &X11Connection,
+) -> Result<Option<X11RestoreState>, String> {
+    let window = match active_x11_window(connection)? {
+        Some(window) => Some(window),
+        None => input_focus_window(connection)?,
+    };
+    let Some(window) = window else {
+        return Ok(None);
+    };
+    let pointer_root = connection
+        .conn
+        .query_pointer(connection.screen.root)
+        .ok()
+        .and_then(|cookie| cookie.reply().ok())
+        .map(|reply| (i32::from(reply.root_x), i32::from(reply.root_y)));
+    Ok(Some(X11RestoreState {
+        window,
+        pointer_root,
+    }))
+}
+
+fn restore_x11_state_if_requested(
+    connection: &X11Connection,
+    restore_state: Option<&X11RestoreState>,
+) -> X11RestoreOutcome {
+    let Some(state) = restore_state else {
+        return X11RestoreOutcome::default();
+    };
+
+    let mut outcome = X11RestoreOutcome::default();
+    let mut errors = Vec::new();
+    match activate_window(connection, state.window) {
+        Ok(()) => outcome.focus_restored = true,
+        Err(error) => errors.push(format!("failed to restore X11 focus: {error}")),
+    }
+
+    if let Some((x, y)) = state.pointer_root {
+        match move_pointer(connection, x, y, None, Some("restore_pointer")) {
+            Ok(()) => {
+                if let Err(error) = connection.conn.flush() {
+                    errors.push(format!(
+                        "failed to flush restored X11 pointer position: {error}"
+                    ));
+                } else {
+                    outcome.pointer_restored = true;
+                }
+            }
+            Err(error) => errors.push(format!("failed to restore X11 pointer position: {error}")),
+        }
+    }
+
+    if !errors.is_empty() {
+        outcome.error = Some(errors.join("; "));
+    }
+    outcome
+}
+
+fn active_x11_window(connection: &X11Connection) -> Result<Option<Window>, String> {
+    let reply = connection
+        .conn
+        .get_property(
+            false,
+            connection.screen.root,
+            connection.atoms._NET_ACTIVE_WINDOW,
+            AtomEnum::WINDOW,
+            0,
+            1,
+        )
+        .map_err(|error| format!("failed to query _NET_ACTIVE_WINDOW: {error}"))?
+        .reply()
+        .map_err(|error| format!("failed to read _NET_ACTIVE_WINDOW: {error}"))?;
+    Ok(reply
+        .value32()
+        .and_then(|mut values| values.next())
+        .filter(|window| *window != 0))
+}
+
+fn input_focus_window(connection: &X11Connection) -> Result<Option<Window>, String> {
+    let reply = connection
+        .conn
+        .get_input_focus()
+        .map_err(|error| format!("failed to query X11 input focus: {error}"))?
+        .reply()
+        .map_err(|error| format!("failed to read X11 input focus: {error}"))?;
+    Ok(
+        (reply.focus != 0 && reply.focus != 1 && reply.focus != connection.screen.root)
+            .then_some(reply.focus),
+    )
+}
+
+fn focus_snapshot_for_window(connection: &X11Connection, window: Window) -> FocusSnapshot {
+    FocusSnapshot {
+        id: format_window_id(window),
+        kind: "window".to_owned(),
+        name: connection
+            .text_property(window, connection.atoms._NET_WM_NAME)
+            .or_else(|| connection.text_property(window, connection.atoms.WM_NAME)),
+    }
 }
 
 fn discover_displays(

@@ -218,6 +218,13 @@ fn sample_input_fixture() -> Value {
         "focus_required": true,
         "focus_transferred": true,
         "focused_target": "window-1",
+        "previous_focus": {
+            "id": "previous-window",
+            "kind": "window",
+            "name": "Previous Fixture"
+        },
+        "focus_restored": true,
+        "pointer_restored": true,
         "notes": ["fixture input executed"]
     })
 }

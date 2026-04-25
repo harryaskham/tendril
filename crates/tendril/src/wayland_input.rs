@@ -150,11 +150,23 @@ pub(crate) fn execute_input(
 
     if let Some(text) = &request.text {
         dispatch_text(backend, text, Some(0), Some("text"))?;
+        if request.restore_focus {
+            notes.push(
+                "Wayland focus restoration is not portable through Tendril; no previous focus snapshot was captured."
+                    .to_owned(),
+            );
+        }
         return Ok(InputOutcome {
             action_count: 1,
             focus_required,
             focus_transferred: false,
             focused_target: None,
+            previous_focus: None,
+            focus_restored: false,
+            pointer_restored: false,
+            restore_error: request.restore_focus.then(|| {
+                "focus restoration is not supported for generic Wayland sessions".to_owned()
+            }),
             notes,
         });
     }
@@ -175,11 +187,24 @@ pub(crate) fn execute_input(
         }
     }
 
+    if request.restore_focus {
+        notes.push(
+            "Wayland focus restoration is not portable through Tendril; no previous focus snapshot was captured."
+                .to_owned(),
+        );
+    }
+
     Ok(InputOutcome {
         action_count: request.actions.len(),
         focus_required,
         focus_transferred: false,
         focused_target: None,
+        previous_focus: None,
+        focus_restored: false,
+        pointer_restored: false,
+        restore_error: request
+            .restore_focus
+            .then(|| "focus restoration is not supported for generic Wayland sessions".to_owned()),
         notes,
     })
 }
@@ -885,6 +910,7 @@ mod tests {
             },
             app_name: None,
             process_id: None,
+            restore_focus: true,
             text: None,
             actions,
         }
