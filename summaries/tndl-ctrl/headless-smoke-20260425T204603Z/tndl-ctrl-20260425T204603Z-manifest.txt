@@ -1,0 +1,6 @@
+Tendril headless smoke passed.
+name=tndl-ctrl-20260425T204603Z
+display=:90
+resolution=1920x1080x24
+runtime_dir=/run/user/1000/tendril-headless/tndl-ctrl-20260425T204603Z
+artifacts=/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-smoke-20260425T204603Z
