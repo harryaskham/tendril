@@ -10,7 +10,7 @@ fn cli_and_mcp_stdio_return_equivalent_structured_payloads() {
 
     let cli_list = harness.cli_json(&["--json", "list"]);
     let cli_capture = harness.cli_json(&["--json", "--window", "window-1", "capture"]);
-    let cli_run = harness.cli_json(&[
+    let mut cli_run = harness.cli_json(&[
         "--json",
         "--window",
         "window-1",
@@ -111,7 +111,15 @@ fn cli_and_mcp_stdio_return_equivalent_structured_payloads() {
     assert_eq!(responses[3]["result"]["structuredContent"], cli_capture);
 
     assert_eq!(responses[4]["result"]["isError"], false);
-    assert_eq!(responses[4]["result"]["structuredContent"], cli_run);
+    let mcp_run = &responses[4]["result"]["structuredContent"];
+    assert_eq!(mcp_run["data"]["execution_lock"]["enabled"], true);
+    assert_eq!(mcp_run["data"]["execution_lock"]["acquired"], true);
+    // CLI and MCP both exercise the default execution lock, but each call has
+    // its own process-specific owner PID, token, and timing metadata. Normalize
+    // the transient lock report before asserting the rest of the shared run
+    // envelope stays byte-for-byte equivalent across surfaces.
+    cli_run["data"]["execution_lock"] = mcp_run["data"]["execution_lock"].clone();
+    assert_eq!(mcp_run, &cli_run);
 
     // The listen surface depends on a real audio backend, which may or may
     // not be available depending on the environment:

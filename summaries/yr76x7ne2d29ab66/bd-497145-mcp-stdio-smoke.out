@@ -1,0 +1,1 @@
+Verified external MCP smoke for nix run .#tendril -- mcp stdio with tools ['list', 'capture', 'run', 'listen'] and list status success.

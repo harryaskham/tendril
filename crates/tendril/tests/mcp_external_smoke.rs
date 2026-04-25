@@ -104,7 +104,17 @@ fn external_client_smoke_script_verifies_stdio_contract_against_built_binary() {
     let run_properties = property_names(&run_tool["inputSchema"]);
     assert_eq!(
         run_properties,
-        vec!["display", "input_definition", "window"]
+        vec![
+            "display",
+            "input_definition",
+            "lock_path",
+            "lock_stale_ms",
+            "lock_timeout_ms",
+            "no_lock",
+            "no_restore_focus",
+            "restore_focus",
+            "window",
+        ]
     );
 
     let listen_properties = property_names(&listen_tool["inputSchema"]);

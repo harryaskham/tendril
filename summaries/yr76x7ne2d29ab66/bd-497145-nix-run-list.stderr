@@ -1,0 +1,4 @@
+warning: Git tree '/home/harry/.cacophony/agents/tendril/yr76x7ne2d29ab66/checkout' is dirty
+this derivation will be built:
+  /nix/store/fin6z6yvqy64y7244yvyvvjdg13i4lmf-tendril-0.0.1.drv
+building '/nix/store/fin6z6yvqy64y7244yvyvvjdg13i4lmf-tendril-0.0.1.drv'...

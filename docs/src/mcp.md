@@ -15,7 +15,7 @@ The current MCP server publishes these tools:
 - `run`
 - `listen`
 
-Those tools are backed by the same typed command models used by the CLI, which keeps validation and result envelopes aligned across both surfaces. MCP `run` calls use the same default host-local execution lock/queue as CLI `tendril run`; pass `no_lock`, `lock_timeout_ms`, `lock_stale_ms`, or `lock_path` in the tool arguments when an advanced workflow needs to opt out or tune the queue.
+Those tools are backed by the same typed command models used by the CLI, which keeps validation and result envelopes aligned across both surfaces. MCP `run` calls use the same default focus-restoration and host-local execution lock/queue behavior as CLI `tendril run`; pass `restore_focus`, `no_restore_focus`, `no_lock`, `lock_timeout_ms`, `lock_stale_ms`, or `lock_path` in the tool arguments when an advanced workflow needs to tune focus handling or the queue.
 
 For the Pi/Cacophony-facing launch contract, environment assumptions, and stable tool argument summary, see the dedicated [Pi and Cacophony MCP integration contract](reference/pi-cacophony-mcp-contract.md).
 

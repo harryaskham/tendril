@@ -117,13 +117,15 @@ if not isinstance(tools, list):
     raise SystemExit(f"tools/list did not return a tools array: {tools_list!r}")
 
 tool_names = [tool.get("name") for tool in tools]
-if tool_names != ["list", "capture", "run"]:
-    raise SystemExit(f"expected MCP tools [list, capture, run], got: {tool_names!r}")
+expected_tool_names = ["list", "capture", "run", "listen"]
+if tool_names != expected_tool_names:
+    raise SystemExit(f"expected MCP tools {expected_tool_names!r}, got: {tool_names!r}")
 
 by_name = {tool["name"]: tool for tool in tools}
 list_schema = by_name["list"].get("inputSchema") or {}
 capture_schema = by_name["capture"].get("inputSchema") or {}
 run_schema = by_name["run"].get("inputSchema") or {}
+listen_schema = by_name["listen"].get("inputSchema") or {}
 
 if list_schema.get("type") != "object":
     raise SystemExit(f"expected list input schema to be an object, got: {list_schema!r}")
@@ -136,6 +138,7 @@ expected_capture_properties = {
     "max_height",
     "format",
     "compression",
+    "timeout_ms",
 }
 if capture_properties != expected_capture_properties:
     raise SystemExit(
@@ -144,11 +147,29 @@ if capture_properties != expected_capture_properties:
     )
 
 run_properties = set((run_schema.get("properties") or {}).keys())
-expected_run_properties = {"window", "display", "input_definition"}
+expected_run_properties = {
+    "window",
+    "display",
+    "input_definition",
+    "restore_focus",
+    "no_restore_focus",
+    "no_lock",
+    "lock_timeout_ms",
+    "lock_stale_ms",
+    "lock_path",
+}
 if run_properties != expected_run_properties:
     raise SystemExit(
         "run schema drifted from the published Tendril contract; "
         f"expected {sorted(expected_run_properties)!r}, got {sorted(run_properties)!r}"
+    )
+
+listen_properties = set((listen_schema.get("properties") or {}).keys())
+expected_listen_properties = {"source", "duration_ms", "format", "output"}
+if listen_properties != expected_listen_properties:
+    raise SystemExit(
+        "listen schema drifted from the published Tendril contract; "
+        f"expected {sorted(expected_listen_properties)!r}, got {sorted(listen_properties)!r}"
     )
 
 call_result = tool_call.get("result") or {}
