@@ -1,0 +1,12 @@
+copying path '/nix/store/gay80fqbpm2wakbsyd4in44gx0cwx3h5-source' from 'https://cache.nixos.org'...
+this derivation will be built:
+  /nix/store/v75q3021dbd3ilg72dkiz1ks7z7h0fz1-tendril-0.0.1.drv
+building '/nix/store/v75q3021dbd3ilg72dkiz1ks7z7h0fz1-tendril-0.0.1.drv'...
+[tendril-headless] starting Xvfb :90 at 1920x1080x24
+[tendril-headless] starting window manager: openbox
+[tendril-headless] starting browser: chromium
+[tendril-headless] started environment 'tndl-ctrl-browser-20260426T060933Z'; logs are under /run/user/1000/tendril-headless/tndl-ctrl-browser-20260426T060933Z/logs
+[tendril-headless] waiting for Tendril to see a 1920x1080 display and browser window
+/nix/store/vlp288v9fz7l33dymh9w3qmypvx4g7y0-tendril-0.0.1/bin/.tendril-headless-wrapped: line 170: 3905650 Trace/breakpoint trap      (core dumped) browser_env "$display" "$dir" "$browser" "${chromium_args[@]}" > "$dir/logs/browser.log" 2>&1
+[tendril-headless] stopped environment 'tndl-ctrl-browser-20260426T060933Z' and removed /run/user/1000/tendril-headless/tndl-ctrl-browser-20260426T060933Z
+[tendril-headless] error: Tendril did not discover expected headless targets; rerun with --keep-runtime to inspect logs under /run/user/1000/tendril-headless/tndl-ctrl-browser-20260426T060933Z/logs

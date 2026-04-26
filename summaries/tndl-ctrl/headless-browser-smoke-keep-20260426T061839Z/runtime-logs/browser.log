@@ -1,0 +1,3 @@
+[0426/072127.400020:ERROR:third_party/crashpad/crashpad/util/process/process_memory_range.cc:75] read out of range
+[0426/072127.408395:ERROR:third_party/crashpad/crashpad/util/file/file_io_posix.cc:145] open /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq: No such file or directory (2)
+[0426/072127.408419:ERROR:third_party/crashpad/crashpad/util/file/file_io_posix.cc:145] open /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq: No such file or directory (2)

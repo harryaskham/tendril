@@ -1,0 +1,12 @@
+warning: Git tree '/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout' is dirty
+this derivation will be built:
+  /nix/store/p3why2dj94w47yi12ncyak8g3xavjccc-tendril-0.0.1.drv
+building '/nix/store/p3why2dj94w47yi12ncyak8g3xavjccc-tendril-0.0.1.drv'...
+[tendril-headless] starting Xvfb :90 at 1920x1080x24
+[tendril-headless] starting window manager: openbox
+[tendril-headless] starting browser: chromium
+[tendril-headless] started environment 'tndl-ctrl-browser-keep-20260426T061839Z'; logs are under /run/user/1000/tendril-headless/tndl-ctrl-browser-keep-20260426T061839Z/logs
+[tendril-headless] waiting for Tendril to see a 1920x1080 display and browser window
+/nix/store/ckdk89kcf9xlw3kwpyz64y3w4r6a2g06-tendril-0.0.1/bin/.tendril-headless-wrapped: line 170: 3953027 Trace/breakpoint trap      (core dumped) browser_env "$display" "$dir" "$browser" "${chromium_args[@]}" > "$dir/logs/browser.log" 2>&1
+[tendril-headless] stopped environment 'tndl-ctrl-browser-keep-20260426T061839Z' and kept /run/user/1000/tendril-headless/tndl-ctrl-browser-keep-20260426T061839Z
+[tendril-headless] error: Tendril did not discover expected headless targets; rerun with --keep-runtime to inspect logs under /run/user/1000/tendril-headless/tndl-ctrl-browser-keep-20260426T061839Z/logs
