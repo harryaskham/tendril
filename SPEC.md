@@ -94,6 +94,7 @@ The initial CLI surface will include:
 #### Input execution
 
 - Plain string input is the simplest input form and should use the most reliable platform-appropriate path available.
+- A single bare input segment that looks like a DSL key token or a reserved action verb with a quoted argument (for example `Return` or `type "hi"`) must fail with a structured `invalid_run_input` diagnostic and usage hint rather than being typed literally into the focused target.
 - The DSL must support at least:
   - key taps,
   - `hold(<modifier>)`,
