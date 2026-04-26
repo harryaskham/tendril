@@ -16,6 +16,8 @@ BASE_DIR="$DEFAULT_BASE_DIR"
 ARTIFACT_DIR="$DEFAULT_ARTIFACT_DIR"
 DISPLAY_NUMBER=""
 BROWSER_RENDERER_LIMIT="${TENDRIL_HEADLESS_BROWSER_RENDERER_LIMIT:-2}"
+BROWSER_STARTUP_GRACE="${TENDRIL_HEADLESS_BROWSER_STARTUP_GRACE:-3}"
+CHROMIUM_SANDBOX="${TENDRIL_HEADLESS_CHROMIUM_SANDBOX:-false}"
 KEEP_RUNTIME="false"
 GIT_ADD_ARTIFACTS="${TENDRIL_HEADLESS_GIT_ADD_ARTIFACTS:-true}"
 TENDRIL_BIN="${TENDRIL_HEADLESS_TENDRIL_BIN:-tendril}"
@@ -42,9 +44,12 @@ Options:
   --height <px>          Desktop height (default: 1080).
   --depth <bits>         Xvfb screen depth (default: 24).
   --browser <path>       Browser binary; otherwise auto-detect chromium/google-chrome/firefox.
+                         Explicit browsers disable automatic browser fallback.
   --tendril-bin <path>   Tendril binary for smoke (default: tendril or $TENDRIL_HEADLESS_TENDRIL_BIN).
   --artifact-dir <dir>   Smoke artifact directory (default: summaries/$CACOPHONY_AGENT or summaries/manual).
   --browser-renderers <n> Chromium renderer process cap (default: 2; set 0 to omit the flag).
+                         Chromium sandboxing is disabled by default in this
+                         disposable Xvfb sandbox; set TENDRIL_HEADLESS_CHROMIUM_SANDBOX=true to keep it.
   --no-git-add-artifacts Do not run git add for smoke artifacts.
   --keep-runtime         Keep runtime files on stop.
   -h, --help             Show this help.
@@ -154,6 +159,7 @@ parse_args() {
   done
 
   [[ -n "$COMMAND" ]] || COMMAND="inspect"
+  [[ "$BROWSER_STARTUP_GRACE" =~ ^[0-9]+$ ]] || fail "TENDRIL_HEADLESS_BROWSER_STARTUP_GRACE must be a non-negative integer number of seconds"
 }
 
 runtime_dir() {
@@ -285,26 +291,47 @@ browser_env() {
     MOZ_ENABLE_WAYLAND=0 \
     ELECTRON_OZONE_PLATFORM_HINT=x11 \
     HOME="$dir/home" \
+    XDG_CONFIG_HOME="$dir/config" \
+    XDG_CACHE_HOME="$dir/cache" \
+    XDG_STATE_HOME="$dir/state" \
     TMPDIR="$dir/tmp" \
     "$@"
 }
 
-choose_browser() {
+resolve_browser_candidate() {
+  local candidate="$1"
+  if command -v "$candidate" >/dev/null 2>&1; then
+    command -v "$candidate"
+    return 0
+  fi
+  if [[ -x "$candidate" ]]; then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+  return 1
+}
+
+choose_browsers() {
   if [[ -n "$BROWSER_BIN" ]]; then
-    command -v "$BROWSER_BIN" >/dev/null 2>&1 || [[ -x "$BROWSER_BIN" ]] || fail "browser not found or not executable: $BROWSER_BIN"
-    printf '%s' "$BROWSER_BIN"
+    resolve_browser_candidate "$BROWSER_BIN" || fail "browser not found or not executable: $BROWSER_BIN"
     return 0
   fi
 
-  local candidate
-  for candidate in chromium chromium-browser google-chrome-stable google-chrome firefox; do
-    if have "$candidate"; then
-      printf '%s' "$candidate"
-      return 0
+  local candidate resolved seen
+  seen=""
+  for candidate in chromium chromium-browser google-chrome-stable google-chrome firefox firefox-esr; do
+    if resolved="$(resolve_browser_candidate "$candidate")"; then
+      case " $seen " in
+        *" $resolved "*) ;;
+        *)
+          printf '%s\n' "$resolved"
+          seen="$seen $resolved"
+          ;;
+      esac
     fi
   done
 
-  fail "no supported browser found on PATH; install chromium/google-chrome/firefox or pass --browser"
+  [[ -n "$seen" ]] || fail "no supported browser found on PATH; install chromium/google-chrome/firefox or pass --browser"
 }
 
 choose_window_manager() {
@@ -327,6 +354,144 @@ choose_terminal() {
     fi
   done
   printf ''
+}
+
+safe_log_name() {
+  printf '%s' "$(basename "$1")" | tr -c 'A-Za-z0-9_.-' '_'
+}
+
+job_running() {
+  local target="$1" job_pid
+  for job_pid in $(jobs -pr); do
+    if [[ "$job_pid" == "$target" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+wait_for_child_status() {
+  local pid="$1" status
+  set +e
+  wait "$pid"
+  status="$?"
+  set -e
+  printf '%s' "$status"
+}
+
+diagnose_browser_log() {
+  local log_file="$1"
+  [[ -f "$log_file" ]] || return 0
+  if grep -Eq 'Trace/breakpoint trap|crashpad|Crashpad|scaling_cur_freq|No usable sandbox|SUID sandbox|namespace|zygote|core dumped' "$log_file"; then
+    log "browser diagnostic excerpts from $log_file:"
+    grep -E 'Trace/breakpoint trap|crashpad|Crashpad|scaling_cur_freq|No usable sandbox|SUID sandbox|namespace|zygote|core dumped' "$log_file" \
+      | tail -20 \
+      | while IFS= read -r line; do log "  $line"; done
+  fi
+}
+
+browser_startup_alive() {
+  local pid="$1" browser="$2" log_file="$3" attempts attempt status
+  attempts=$((BROWSER_STARTUP_GRACE * 10))
+  if [[ "$attempts" -le 0 ]]; then
+    attempts=1
+  fi
+  for attempt in $(seq 1 "$attempts"); do
+    if ! job_running "$pid"; then
+      status="$(wait_for_child_status "$pid")"
+      log "browser exited during startup: $browser (status $status); see $log_file"
+      diagnose_browser_log "$log_file"
+      return 1
+    fi
+    sleep 0.1
+  done
+  return 0
+}
+
+launch_browser() {
+  local display="$1" dir="$2" browser="$3" smoke_url="$4" attempt="$5" browser_base failed_log
+  browser_base="$(safe_log_name "$browser")"
+  log "starting browser: $browser"
+  case "$(basename "$browser")" in
+    firefox|firefox-esr)
+      mkdir -p "$dir/browser-profile/firefox"
+      browser_env "$display" "$dir" "$browser" \
+        --no-remote \
+        --new-instance \
+        --profile "$dir/browser-profile/firefox" \
+        --width "$WIDTH" \
+        --height "$HEIGHT" \
+        "$smoke_url" \
+        >"$dir/logs/browser.log" 2>&1 &
+      browser_pid="$!"
+      ;;
+    *)
+      local -a chromium_args=(
+        --ozone-platform=x11
+        --user-data-dir="$dir/browser-profile/chromium"
+        --no-first-run
+        --no-default-browser-check
+        --disable-background-networking
+        --disable-breakpad
+        --disable-component-update
+        --disable-crash-reporter
+        --disable-crashpad
+        --disable-dev-shm-usage
+        --disable-extensions
+        --disable-features=Crashpad
+        --disable-gpu
+        --disable-notifications
+        --disable-software-rasterizer
+        --disable-sync
+        --enable-automation
+        --password-store=basic
+        --test-type
+        --window-size="${WIDTH},${HEIGHT}"
+        --start-maximized
+        --app="$smoke_url"
+      )
+      if [[ "$CHROMIUM_SANDBOX" != "true" ]]; then
+        chromium_args=(--no-sandbox --disable-setuid-sandbox "${chromium_args[@]}")
+      fi
+      if [[ "$BROWSER_RENDERER_LIMIT" -gt 0 ]]; then
+        chromium_args=(--renderer-process-limit="$BROWSER_RENDERER_LIMIT" "${chromium_args[@]}")
+      fi
+      browser_env "$display" "$dir" "$browser" \
+        "${chromium_args[@]}" \
+        >"$dir/logs/browser.log" 2>&1 &
+      browser_pid="$!"
+      ;;
+  esac
+
+  if browser_startup_alive "$browser_pid" "$browser" "$dir/logs/browser.log"; then
+    return 0
+  fi
+
+  failed_log="$dir/logs/browser-${attempt}-${browser_base}.failed.log"
+  cp "$dir/logs/browser.log" "$failed_log" >/dev/null 2>&1 || true
+  log "preserved failed browser attempt log: $failed_log"
+  browser_pid=""
+  return 1
+}
+
+launch_browser_candidates() {
+  local display="$1" dir="$2" smoke_url="$3" candidate attempt
+  shift 3
+  attempt=1
+  browser=""
+  browser_pid=""
+  for candidate in "$@"; do
+    if launch_browser "$display" "$dir" "$candidate" "$smoke_url" "$attempt"; then
+      browser="$candidate"
+      return 0
+    fi
+    attempt=$((attempt + 1))
+    if [[ -n "$BROWSER_BIN" ]]; then
+      break
+    fi
+    log "trying next browser candidate after $candidate failed"
+  done
+  return 1
 }
 
 choose_display() {
@@ -399,14 +564,16 @@ start_env() {
     return 0
   fi
 
-  local dir display_number display browser wm terminal xvfb_pid wm_pid browser_pid terminal_pid
+  local dir display_number display browser wm terminal xvfb_pid wm_pid browser_pid terminal_pid browser_list
+  local -a browser_candidates
   dir="$(runtime_dir)"
   rm -rf "$dir"
-  mkdir -p "$dir/logs" "$dir/browser-profile" "$dir/home" "$dir/tmp"
+  mkdir -p "$dir/logs" "$dir/browser-profile" "$dir/home" "$dir/tmp" "$dir/config" "$dir/cache" "$dir/state"
 
   display_number="$(choose_display)"
   display=":${display_number}"
-  browser="$(choose_browser)"
+  browser_list="$(choose_browsers)"
+  mapfile -t browser_candidates <<<"$browser_list"
   wm="$(choose_window_manager)"
   terminal="$(choose_terminal)"
 
@@ -453,47 +620,15 @@ start_env() {
   smoke_url="file://${smoke_page}"
 
   browser_pid=""
-  log "starting browser: $browser"
-  case "$(basename "$browser")" in
-    firefox|firefox-esr)
-      mkdir -p "$dir/browser-profile/firefox"
-      browser_env "$display" "$dir" "$browser" \
-        --no-remote \
-        --new-instance \
-        --profile "$dir/browser-profile/firefox" \
-        --width "$WIDTH" \
-        --height "$HEIGHT" \
-        "$smoke_url" \
-        >"$dir/logs/browser.log" 2>&1 &
-      browser_pid="$!"
-      ;;
-    *)
-      local -a chromium_args=(
-        --ozone-platform=x11
-        --user-data-dir="$dir/browser-profile/chromium"
-        --no-first-run
-        --no-default-browser-check
-        --disable-background-networking
-        --disable-component-update
-        --disable-crash-reporter
-        --disable-dev-shm-usage
-        --disable-extensions
-        --disable-gpu
-        --disable-notifications
-        --disable-sync
-        --window-size="${WIDTH},${HEIGHT}"
-        --start-maximized
-        --app="$smoke_url"
-      )
-      if [[ "$BROWSER_RENDERER_LIMIT" -gt 0 ]]; then
-        chromium_args=(--renderer-process-limit="$BROWSER_RENDERER_LIMIT" "${chromium_args[@]}")
+  if ! launch_browser_candidates "$display" "$dir" "$smoke_url" "${browser_candidates[@]}"; then
+    log "all browser candidates failed before Tendril discovery; logs are under $dir/logs"
+    for pid in "$terminal_pid" "$wm_pid" "$xvfb_pid"; do
+      if pid_alive "$pid"; then
+        kill "$pid" >/dev/null 2>&1 || true
       fi
-      browser_env "$display" "$dir" "$browser" \
-        "${chromium_args[@]}" \
-        >"$dir/logs/browser.log" 2>&1 &
-      browser_pid="$!"
-      ;;
-  esac
+    done
+    fail "could not keep a supported browser alive for the headless environment"
+  fi
 
   write_state "$dir" "$display" "$xvfb_pid" "$wm_pid" "$browser_pid" "$terminal_pid" "$browser" "$wm" "$terminal"
   sleep 1
@@ -584,6 +719,17 @@ git_add_artifacts() {
   fi
 }
 
+preserve_runtime_logs() {
+  local runtime="$1" artifact_dir="$2" target
+  [[ -d "$runtime/logs" ]] || return 0
+  [[ -n "$artifact_dir" ]] || return 0
+  target="$artifact_dir/runtime-logs"
+  mkdir -p "$target"
+  cp -a "$runtime/logs/." "$target/" >/dev/null 2>&1 || true
+  git_add_artifacts "$target"
+  log "preserved runtime logs under $target"
+}
+
 wait_for_targets() {
   local list_json attempt browser_pid
   browser_pid="${TENDRIL_HEADLESS_BROWSER_PID:-}"
@@ -643,11 +789,13 @@ run_smoke() {
 
   log "waiting for Tendril to see a ${WIDTH}x${HEIGHT} display and browser window"
   if ! list_json="$(wait_for_targets)"; then
+    diagnose_browser_log "$dir/logs/browser.log"
+    preserve_runtime_logs "$dir" "$artifact_dir"
     if [[ "$started_here" == "true" ]]; then
       stop_env || true
       trap - EXIT
     fi
-    fail "Tendril did not discover expected headless targets; rerun with --keep-runtime to inspect logs under $dir/logs"
+    fail "Tendril did not discover expected headless browser targets; runtime logs were preserved under $artifact_dir/runtime-logs (rerun with --keep-runtime to also keep $dir)"
   fi
   printf '%s\n' "$list_json" >"$artifact_dir/${NAME}-list.json"
 

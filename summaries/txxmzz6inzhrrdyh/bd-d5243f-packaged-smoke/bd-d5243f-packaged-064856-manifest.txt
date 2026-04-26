@@ -1,0 +1,8 @@
+Tendril headless browser smoke passed.
+name=bd-d5243f-packaged-064856
+display=:90
+browser=/nix/store/20ra63h4njcpr9v7vz34vhgrkm8g0icp-chromium-146.0.7680.177/bin/chromium
+browser_window=0x600003
+resolution=1920x1080x24
+runtime_dir=/run/user/1000/tendril-headless/bd-d5243f-packaged-064856
+artifacts=/home/harry/.cacophony/agents/tendril/txxmzz6inzhrrdyh/checkout/summaries/txxmzz6inzhrrdyh/bd-d5243f-packaged-smoke

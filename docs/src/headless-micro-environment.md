@@ -24,8 +24,11 @@ prompts.
   the X11 Ozone backend so a host Wayland session cannot steal the browser away
   from the Xvfb display.
 - Resource guardrails for the default Chromium path: fixed-size Xvfb screen,
-  disabled background/sync/extension work, and a renderer process cap of 2
-  (`--browser-renderers <n>` to tune, `0` to omit).
+  disabled background/sync/extension work, disabled crashpad/breakpad reporting,
+  disabled Chromium sandboxing inside the disposable Xvfb sandbox, and a renderer
+  process cap of 2 (`--browser-renderers <n>` to tune, `0` to omit). Set
+  `TENDRIL_HEADLESS_CHROMIUM_SANDBOX=true` if you need to validate with the
+  browser sandbox enabled.
 - Clean lifecycle commands: `start`, `env`, `inspect`, `reset`, `stop`, and
   `smoke`.
 - Smoke artifacts written to a git-trackable summaries directory by default:
@@ -161,6 +164,11 @@ scripts/tendril-headless.sh --name browser-task stop
   are removed by `stop` unless `--keep-runtime` is supplied.
 - Smoke capture artifacts are refused if `--artifact-dir` points at `/tmp`,
   `/var/tmp`, or `/run`; use a checkout-local summaries path for captures.
+- If a browser exits before Tendril can discover it, the helper logs the early
+  exit, preserves diagnostic excerpts for common Chromium crashpad/sandbox
+  failures, tries the next auto-detected browser candidate when `--browser` was
+  not explicit, and copies runtime logs to `<artifact-dir>/runtime-logs` on
+  smoke failure before cleaning up the sandbox.
 - The Nix package installs both `tendril` and `tendril-headless`; release
   archives include both binaries.
 - The helper is Linux/X11-first. On macOS and Windows, use the native Tendril

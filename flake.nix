@@ -111,7 +111,7 @@
               wrapProgram $out/bin/tendril \
                 --suffix PATH : ${lib.makeBinPath linuxRuntimeDeps}
               wrapProgram $out/bin/tendril-headless \
-                --suffix PATH : ${lib.makeBinPath (linuxRuntimeDeps ++ linuxHeadlessDeps)} \
+                --prefix PATH : ${lib.makeBinPath (linuxRuntimeDeps ++ linuxHeadlessDeps)} \
                 --set-default TENDRIL_HEADLESS_TENDRIL_BIN "$out/bin/tendril"
             '';
             meta = {
