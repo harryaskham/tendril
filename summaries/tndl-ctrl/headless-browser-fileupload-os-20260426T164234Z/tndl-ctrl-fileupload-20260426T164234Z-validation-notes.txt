@@ -1,0 +1,19 @@
+Outcome: failed / follow-up required.
+
+Goal:
+- Use Tendril in a fresh tendril-headless desktop to navigate Firefox to a local upload form, click the browser file input, select a local file through the native file chooser, verify the page displays the uploaded file contents, and also prove OS terminal control.
+
+Observed:
+- Safe click-address-bar navigation to the upload form worked.
+- Clicking the file input at window-relative coordinates near the visible Browse button returned success, but the subsequent list output still showed only the Firefox window and XTerm; no separate native file chooser/dialog target was discoverable.
+- The controller script's chooser-window heuristic matched the Firefox window itself because the page title contained "File Upload".
+- Running `hold(ctrl),l,release(ctrl),send("/absolute/path/upload-proof.txt"),Return` against that Firefox window succeeded and navigated Firefox directly to the local text file. This is the same class of unsafe browser-chrome navigation as bd-0cf2e1, but the guard did not reject an absolute filesystem path without a `file://` prefix.
+- Final browser capture shows the raw `tendril-file-upload-control-ok` text file, not the upload form's `Uploaded file confirmed` message.
+- Terminal/OS control still succeeded; XTerm created `os-fileupload-dir/result.txt` containing `fileupload-os-control-ok`.
+
+Important artifacts:
+- list before/after file-input click: `tndl-ctrl-fileupload-20260426T164234Z-list-initial.json`, `tndl-ctrl-fileupload-20260426T164234Z-list-after-dialog.json`
+- upload form before click: `tndl-ctrl-fileupload-20260426T164234Z-browser-fileupload-before.png`
+- final browser capture showing unintended raw text-file navigation: `tndl-ctrl-fileupload-20260426T164234Z-browser-fileupload-after.png`
+- run that opened/navigated the absolute file path on Firefox: `tndl-ctrl-fileupload-20260426T164234Z-file-dialog-path-run.json`
+- terminal proof: `tndl-ctrl-fileupload-20260426T164234Z-xterm-os-after.png`, `os-fileupload-dir/result.txt`

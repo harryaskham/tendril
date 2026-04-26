@@ -1,0 +1,13 @@
+Hands-on Tendril browser file-upload plus OS-control validation.
+name=tndl-ctrl-fileupload-20260426T164234Z
+display=:90
+display_id=1
+browser_window=0x600016
+xterm_window=0x40000c
+chooser_window=0x600016
+page_url=file:///home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-fileupload-os-20260426T164234Z/file-upload-task.html
+upload_file=/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-fileupload-os-20260426T164234Z/upload-source/upload-proof.txt
+file_dialog_path_status=0
+os_controlled_file=/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-fileupload-os-20260426T164234Z/os-fileupload-dir/result.txt
+status=failed_followup_required
+outcome=Browser file-upload workflow did not complete. No native file chooser target was discovered after clicking the file input, the chooser heuristic matched the browser window itself, and Ctrl+L plus an absolute filesystem path navigated Firefox to the raw text file instead of being rejected.
