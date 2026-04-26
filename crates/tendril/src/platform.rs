@@ -499,6 +499,12 @@ pub struct CaptureRequest {
 /// freeze a CLI/MCP session for longer than ten seconds.
 pub const DEFAULT_CAPTURE_TIMEOUT_MS: u64 = 10_000;
 
+/// Maximum time spent on the portal-first path when a bounded fallback backend
+/// is available. The portal may wait on an invisible compositor/permission UI;
+/// reserving most of the command budget for `grim` lets supported wlroots
+/// sessions capture successfully instead of timing out before the fallback runs.
+const WAYLAND_PORTAL_FALLBACK_TIMEOUT_MS: u64 = 1_500;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CaptureArtifact {
     pub target_id: String,
@@ -1118,7 +1124,7 @@ impl CaptureAdapter for LinuxAdapter {
             DesktopSession::Wayland => Ok(FeatureSupport::available(capability).with_notes(vec![
                 "Wayland capture prefers xdg-desktop-portal screenshot capture, then crops the requested target bounds locally."
                     .to_owned(),
-                "If the portal screenshot backend is unavailable, Tendril falls back to grim on compositor stacks that permit geometry-scoped screenshots."
+                "When `grim` is available, Tendril bounds the portal-first attempt and falls back to grim if the portal is unavailable or does not answer promptly."
                     .to_owned(),
                 "Wayland discovery still requires a supported compositor metadata backend: Hyprland (`hyprctl`), sway (`swaymsg`), or wlroots output enumeration (`wlr-randr`)."
                     .to_owned(),
@@ -1479,6 +1485,50 @@ impl From<WaylandCaptureBackendFailure> for WaylandCaptureBackendError {
     }
 }
 
+fn wayland_portal_attempt_timeout(total: Duration, fallback_available: bool) -> Duration {
+    if !fallback_available {
+        return total;
+    }
+
+    let fallback_cap = Duration::from_millis(WAYLAND_PORTAL_FALLBACK_TIMEOUT_MS);
+    let half_budget = total / 2;
+    let reserved = fallback_cap.min(half_budget);
+    reserved.max(Duration::from_millis(1)).min(total)
+}
+
+fn attempt_wayland_portal_capture(
+    context: &AdapterContext,
+    target: &TargetDescriptor,
+    inventory: &TargetInventory,
+    timeout: Duration,
+    portal_timeout: Duration,
+    grim_available: bool,
+) -> Result<Result<Vec<u8>, WaylandCaptureBackendFailure>, PlatformAdapterError> {
+    match capture_wayland_target_via_portal(target, inventory, portal_timeout) {
+        Ok(image_bytes) => Ok(Ok(image_bytes)),
+        Err(WaylandCaptureBackendError::Timeout(message)) if grim_available => {
+            Ok(Err(WaylandCaptureBackendFailure {
+                message: format!(
+                    "timed out after {} ms: {message}",
+                    portal_timeout.as_millis()
+                ),
+                missing_backend: false,
+            }))
+        }
+        Err(WaylandCaptureBackendError::Timeout(message)) => {
+            Err(PlatformAdapterError::timeout_with_diagnostic(
+                AdapterOperation::Capture,
+                context.platform,
+                u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
+                format!("xdg-desktop-portal screenshot timed out: {message}"),
+                "xdg_desktop_portal_screenshot",
+                "The Wayland screenshot portal did not respond and no `grim` fallback was available. Use `tendril list --json` to check whether capture is advertised for the target, install/fix a compositor screenshot backend, or use the packaged X11/Xvfb headless helper.",
+            ))
+        }
+        Err(WaylandCaptureBackendError::Failed(error)) => Ok(Err(error)),
+    }
+}
+
 fn capture_wayland_target(
     context: &AdapterContext,
     request: &CaptureRequest,
@@ -1502,23 +1552,22 @@ fn capture_wayland_target(
 
     let timeout = Duration::from_millis(request.timeout_ms.unwrap_or(DEFAULT_CAPTURE_TIMEOUT_MS));
     let deadline = Instant::now() + timeout;
+    let grim_available = wayland_capture_program_on_path("grim");
+    let portal_timeout = wayland_portal_attempt_timeout(timeout, grim_available);
 
-    let portal_error = match capture_wayland_target_via_portal(&target, &inventory, timeout) {
+    let portal_error = match attempt_wayland_portal_capture(
+        context,
+        &target,
+        &inventory,
+        timeout,
+        portal_timeout,
+        grim_available,
+    )? {
         Ok(image_bytes) => return Ok(image_bytes),
-        Err(WaylandCaptureBackendError::Timeout(message)) => {
-            return Err(PlatformAdapterError::timeout_with_diagnostic(
-                AdapterOperation::Capture,
-                context.platform,
-                u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
-                format!("xdg-desktop-portal screenshot timed out: {message}"),
-                "xdg_desktop_portal_screenshot",
-                "The Wayland screenshot portal did not respond. On headless/Sunshine-style sessions this often means the portal is waiting for an access dialog that cannot be actioned; use `tendril list --json` to check whether capture is advertised for the target, restart/fix the compositor portal backend, or use the packaged X11/Xvfb headless helper.",
-            ));
-        }
-        Err(WaylandCaptureBackendError::Failed(error)) => error,
+        Err(error) => error,
     };
 
-    if !wayland_capture_program_on_path("grim") {
+    if !grim_available {
         return if portal_error.missing_backend {
             Err(PlatformAdapterError::unsupported(
                 wayland_capture_capability(request.target),
@@ -3069,11 +3118,12 @@ mod tests {
         CaptureAdapter, CaptureTargetKind, DesktopSession, InputControlAdapter, InputRequest,
         LinuxAdapter, MacOsAdapter, ModifierKey, MouseButton, PermissionAdapter, PermissionKind,
         PermissionState, PlatformAdapter, PlatformAdapterError, PlatformKind, TargetDescriptor,
-        TargetInventory, WaylandCaptureBackendError, WindowsAdapter, WindowsRuntimeBackend,
-        capture_wayland_target_with_grim, crop_wayland_portal_capture_to_target,
-        detect_linux_audio_backend, detect_linux_session, execute_windows_input_with_runtime,
-        is_macos_input_permission_error, javascript_string_literal, macos_focus_pid_jxa_script,
-        macos_focus_window_jxa_script, macos_text_jxa_script, wayland_capture_program_on_path,
+        TargetInventory, WAYLAND_PORTAL_FALLBACK_TIMEOUT_MS, WaylandCaptureBackendError,
+        WindowsAdapter, WindowsRuntimeBackend, capture_wayland_target_with_grim,
+        crop_wayland_portal_capture_to_target, detect_linux_audio_backend, detect_linux_session,
+        execute_windows_input_with_runtime, is_macos_input_permission_error,
+        javascript_string_literal, macos_focus_pid_jxa_script, macos_focus_window_jxa_script,
+        macos_text_jxa_script, wayland_capture_program_on_path, wayland_portal_attempt_timeout,
         wayland_workspace_origin, windows_key_is_supported,
     };
     use crate::{TendrilError, model::InputAction};
@@ -3629,6 +3679,22 @@ mod tests {
         );
         assert!(support.notes.iter().any(|note| note.contains("grim")));
         assert!(support.notes.iter().any(|note| note.contains("hyprctl")));
+    }
+
+    #[test]
+    fn wayland_portal_timeout_reserves_budget_for_grim_fallback() {
+        assert_eq!(
+            wayland_portal_attempt_timeout(std::time::Duration::from_secs(10), true),
+            std::time::Duration::from_millis(WAYLAND_PORTAL_FALLBACK_TIMEOUT_MS),
+        );
+        assert_eq!(
+            wayland_portal_attempt_timeout(std::time::Duration::from_secs(10), false),
+            std::time::Duration::from_secs(10),
+        );
+        assert_eq!(
+            wayland_portal_attempt_timeout(std::time::Duration::from_millis(800), true),
+            std::time::Duration::from_millis(400),
+        );
     }
 
     #[test]
