@@ -1,0 +1,12 @@
+Tendril browser mouse-button and OS command validation produced a browser-navigation repro.
+name=tndl-ctrl-buttons-20260426T130857Z
+display=:90
+display_id=1
+browser_window=0x600016
+xterm_window=0x40000c
+page_url=file:///home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-buttons-os-20260426T130857Z/mouse-buttons-task.html
+os_controlled_file=/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-buttons-os-20260426T130857Z/os-buttons-dir/result.txt
+scenario=browser file URL navigation, left/middle/right mouse events, terminal mkdir/printf/cat
+observed_browser=Run returned success, but Ctrl+L did not focus Firefox's address bar. The file URL was typed into the existing Tendril Smoke Browser page input, so the intended mouse-buttons page never loaded. This is tracked as bd-0cf2e1.
+observed_os=Terminal control succeeded; result.txt contains button-sweep-os-control-ok and the XTerm capture is visible after the bd-1f08f8 fix.
+status=mixed; repro artifact for bd-0cf2e1
