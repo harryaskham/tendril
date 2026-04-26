@@ -234,7 +234,7 @@ fn reject_unsafe_browser_navigation_chord(
     };
 
     Err(TendrilError::validation(format!(
-        "refusing X11 browser navigation through Ctrl+L followed by URL text `{}` because synthetic browser-chrome shortcuts can stay in the focused page control (observed with Firefox page inputs); use capture -> click the visible address bar -> Ctrl+A -> send URL -> Return -> recapture/verify instead",
+        "refusing X11 browser navigation through Ctrl+L followed by navigation text `{}` because synthetic browser-chrome shortcuts can stay in the focused page control (observed with Firefox page inputs); use capture -> click the visible address bar -> Ctrl+A -> send URL/path -> Return -> recapture/verify instead",
         summarize_navigation_text(navigation_text)
     ))
     .with_code("invalid_run_input")
@@ -342,13 +342,21 @@ fn is_return_key(action: &InputAction) -> bool {
 }
 
 fn looks_like_navigation_text(text: &str) -> bool {
-    let trimmed = text.trim().to_ascii_lowercase();
-    trimmed.contains("://")
-        || trimmed.starts_with("about:")
-        || trimmed.starts_with("chrome:")
-        || trimmed.starts_with("edge:")
-        || trimmed.starts_with("localhost:")
-        || trimmed.starts_with("127.0.0.1:")
+    let trimmed = text.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    lower.contains("://")
+        || lower.starts_with("about:")
+        || lower.starts_with("chrome:")
+        || lower.starts_with("edge:")
+        || lower.starts_with("localhost:")
+        || lower.starts_with("127.0.0.1:")
+        || looks_like_absolute_filesystem_path(trimmed)
+}
+
+fn looks_like_absolute_filesystem_path(text: &str) -> bool {
+    // Linux/X11 browsers accept absolute POSIX paths such as `/tmp/file.txt`
+    // in the address bar and navigate to them as local filesystem targets.
+    text.starts_with('/')
 }
 
 fn summarize_navigation_text(text: &str) -> String {
@@ -1171,8 +1179,9 @@ fn scaled_coordinate(value: i32, numerator: u32, denominator: u32) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_dsl_sequence, parse_input_definition, reject_unsafe_browser_navigation_chord,
-        relative_point_to_absolute, remap_output_point_to_source,
+        looks_like_navigation_text, parse_dsl_sequence, parse_input_definition,
+        reject_unsafe_browser_navigation_chord, relative_point_to_absolute,
+        remap_output_point_to_source,
     };
     use crate::model::{
         Bounds, CoordinateTransform, InputAction, ModifierKey, MouseButton, RunInputPayload,
@@ -1223,6 +1232,41 @@ mod tests {
             &ctrl_a_after_ctrl_l,
         )
         .expect_err("Ctrl+A after an unsafe Ctrl+L should still be rejected before URL text");
+    }
+
+    #[test]
+    fn x11_browser_ctrl_l_absolute_filesystem_paths_are_rejected() {
+        let browser = browser_target("0x600016", "firefox", Some("Mozilla Firefox"));
+
+        for path in [
+            "/home/harry/upload-proof.txt",
+            " /tmp/folder with spaces/upload-proof.txt ",
+            "/Users/alice/upload-proof.txt",
+        ] {
+            let actions = parse_dsl_sequence(&format!(
+                r#"hold(ctrl),l,release(ctrl),send("{path}"),Return"#
+            ))
+            .expect("dsl should parse");
+            let error =
+                reject_unsafe_browser_navigation_chord(&x11_adapter_info(), &browser, &actions)
+                    .expect_err("absolute filesystem path navigation should be rejected");
+
+            assert_eq!(error.code(), "invalid_run_input");
+            let details = error.details().expect("details");
+            assert_eq!(details["action_index"], 3);
+            assert_eq!(details["url_preview"], path);
+        }
+    }
+
+    #[test]
+    fn navigation_text_classifier_preserves_search_text() {
+        assert!(looks_like_navigation_text("/home/harry/upload-proof.txt"));
+        assert!(looks_like_navigation_text(
+            " /Users/alice/upload-proof.txt "
+        ));
+        assert!(looks_like_navigation_text("file:///tmp/upload-proof.txt"));
+        assert!(!looks_like_navigation_text("literal search text"));
+        assert!(!looks_like_navigation_text("how to use /tmp on linux"));
     }
 
     #[test]
