@@ -1,0 +1,22 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Tendril Agent Web App</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 32px; background: #f7fbff; color: #102030; }
+    h1 { font-size: 42px; margin: 0 0 24px; }
+    label { display: block; font-size: 24px; font-weight: 700; margin-bottom: 12px; }
+    input { position: absolute; left: 60px; top: 120px; width: 680px; height: 52px; font-size: 28px; padding: 0 14px; border: 3px solid #177ddc; border-radius: 10px; }
+    button { position: absolute; left: 60px; top: 200px; width: 260px; height: 58px; font-size: 24px; font-weight: 700; background: #0a7a3d; color: white; border: 0; border-radius: 10px; }
+    #result { position: absolute; left: 60px; top: 290px; min-width: 980px; padding: 20px; background: #083b2b; color: white; font-size: 30px; font-weight: 800; border-left: 12px solid #13d46d; }
+  </style>
+</head>
+<body>
+  <h1>Tendril Agent Web App</h1>
+  <label for="task">Browser form task</label>
+  <input id="task" autofocus value="waiting for Tendril agent">
+  <button id="run" onclick="document.getElementById('result').textContent='Agent submitted form: ' + document.getElementById('task').value">Submit task</button>
+  <div id="result">Waiting for browser automation</div>
+</body>
+</html>
