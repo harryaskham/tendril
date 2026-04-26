@@ -629,6 +629,8 @@ fn is_known_bare_key_token(input: &str) -> bool {
             | "escape"
             | "space"
             | "backspace"
+            | "insert"
+            | "ins"
             | "delete"
             | "del"
             | "left"
@@ -1445,6 +1447,27 @@ mod tests {
     }
 
     #[test]
+    fn parser_accepts_shift_insert_terminal_paste_chord() {
+        let actions = parse_dsl_sequence("hold(shift),Insert,release(shift)")
+            .expect("Shift+Insert terminal paste chord should parse");
+
+        assert_eq!(
+            actions,
+            vec![
+                InputAction::Hold {
+                    modifier: ModifierKey::Shift,
+                },
+                InputAction::KeyTap {
+                    key: "insert".to_owned(),
+                },
+                InputAction::Release {
+                    modifier: ModifierKey::Shift,
+                },
+            ]
+        );
+    }
+
+    #[test]
     fn parser_reports_precise_invalid_syntax_details() {
         let error = parse_dsl_sequence(r"hold(ctrl),send(abc),wait(1s)")
             .expect_err("invalid send syntax should fail");
@@ -1493,7 +1516,7 @@ mod tests {
 
     #[test]
     fn ambiguous_single_bare_key_tokens_are_rejected_with_hint() {
-        for token in ["Return", "tab", "Escape", "F12", "Up"] {
+        for token in ["Return", "tab", "Escape", "F12", "Up", "Insert"] {
             let error = parse_input_definition(token).expect_err("bare key token should fail");
             assert_eq!(error.code(), "invalid_run_input");
             let details = error.details().expect("details");

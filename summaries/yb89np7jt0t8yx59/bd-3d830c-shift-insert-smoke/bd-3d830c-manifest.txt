@@ -1,0 +1,10 @@
+Tendril headless browser smoke passed.
+name=bd-3d830c
+display=:90
+browser=/nix/store/20ra63h4njcpr9v7vz34vhgrkm8g0icp-chromium-146.0.7680.177/bin/chromium
+browser_window=0x600003
+xterm_shift_insert_window=0x40000c
+xterm_shift_insert_run=/home/harry/.cacophony/agents/tendril/yb89np7jt0t8yx59/checkout/summaries/yb89np7jt0t8yx59/bd-3d830c-shift-insert-smoke/bd-3d830c-xterm-shift-insert-run.json
+resolution=1920x1080x24
+runtime_dir=/run/user/1000/tendril-headless/bd-3d830c
+artifacts=/home/harry/.cacophony/agents/tendril/yb89np7jt0t8yx59/checkout/summaries/yb89np7jt0t8yx59/bd-3d830c-shift-insert-smoke

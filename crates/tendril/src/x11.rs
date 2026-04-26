@@ -43,6 +43,7 @@ const XK_DOWN: u32 = 0xff54;
 const XK_PAGE_UP: u32 = 0xff55;
 const XK_PAGE_DOWN: u32 = 0xff56;
 const XK_END: u32 = 0xff57;
+const XK_INSERT: u32 = 0xff63;
 const XK_DELETE: u32 = 0xffff;
 const XK_SHIFT_L: u32 = 0xffe1;
 const XK_CONTROL_L: u32 = 0xffe3;
@@ -1395,6 +1396,7 @@ fn key_name_to_keysym(value: &str) -> Option<u32> {
         "tab" => Some(XK_TAB),
         "space" => Some(u32::from(' ')),
         "backspace" => Some(XK_BACK_SPACE),
+        "insert" | "ins" => Some(XK_INSERT),
         "delete" | "del" => Some(XK_DELETE),
         "left" => Some(XK_LEFT),
         "right" => Some(XK_RIGHT),
@@ -1418,7 +1420,7 @@ fn keysym_for_char(character: char) -> u32 {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct KeyStroke {
     keycode: u8,
     shift: bool,
@@ -1643,8 +1645,8 @@ mod tests {
     use image::{DynamicImage, ImageBuffer, ImageFormat as RasterImageFormat, Rgba};
 
     use super::{
-        capture_png_is_solid_black, decode_class_name, decode_text_property, keysym_for_char,
-        parse_window_id,
+        KeyStroke, KeyboardMap, XK_INSERT, capture_png_is_solid_black, decode_class_name,
+        decode_text_property, key_name_to_keysym, keysym_for_char, parse_window_id,
     };
 
     #[test]
@@ -1674,6 +1676,31 @@ mod tests {
         assert_eq!(keysym_for_char('A'), u32::from('A'));
         assert_eq!(keysym_for_char('é'), u32::from('é'));
         assert_eq!(keysym_for_char('Ж'), 0x0100_0416);
+    }
+
+    #[test]
+    fn accepts_insert_key_names_for_x11_input() {
+        assert_eq!(key_name_to_keysym("insert"), Some(XK_INSERT));
+        assert_eq!(key_name_to_keysym("Insert"), Some(XK_INSERT));
+        assert_eq!(key_name_to_keysym("ins"), Some(XK_INSERT));
+    }
+
+    #[test]
+    fn maps_insert_keysym_from_x11_keyboard_layout() {
+        let keyboard_map = KeyboardMap {
+            min_keycode: 10,
+            max_keycode: 12,
+            keysyms_per_keycode: 2,
+            keysyms: vec![0, 0, XK_INSERT, 0, 0, 0],
+        };
+
+        assert_eq!(
+            keyboard_map.stroke_for_keysym(XK_INSERT),
+            Some(KeyStroke {
+                keycode: 11,
+                shift: false,
+            })
+        );
     }
 
     #[test]

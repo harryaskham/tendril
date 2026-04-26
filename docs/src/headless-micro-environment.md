@@ -75,11 +75,15 @@ What the smoke does:
 4. Captures the display with explicit `--max-width 1920 --max-height 1080`.
 5. Runs browser-visible input against the discovered browser window:
    `send("tendril browser control confirmed"),Return,wait(500ms)`.
-6. Captures the controlled browser window after input so the artifact visibly
+6. When the helper launched XTerm, runs `hold(shift),Insert,release(shift),wait(100ms)`
+   against that terminal and records the run JSON. This catches X11 backend
+   regressions where the Insert key cannot be dispatched for terminal paste
+   shortcuts.
+7. Captures the controlled browser window after input so the artifact visibly
    shows the typed value and confirmation banner.
-7. Writes artifacts under `summaries/<agent-id>/` and runs `git add` for that
+8. Writes artifacts under `summaries/<agent-id>/` and runs `git add` for that
    directory unless `--no-git-add-artifacts` is set.
-8. Stops the sandbox when the smoke command started it.
+9. Stops the sandbox when the smoke command started it.
 
 Expected artifacts:
 
@@ -87,6 +91,7 @@ Expected artifacts:
 summaries/<agent-id>/smoke-list.json
 summaries/<agent-id>/smoke-capture.json
 summaries/<agent-id>/smoke-run.json
+summaries/<agent-id>/smoke-xterm-shift-insert-run.json (when XTerm is available)
 summaries/<agent-id>/smoke-display.png
 summaries/<agent-id>/smoke-browser-after.png
 summaries/<agent-id>/smoke-browser-after-capture.json

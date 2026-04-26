@@ -40,6 +40,8 @@ Commands:
   reset      Stop then start the environment.
   stop       Stop processes and remove the runtime directory.
   smoke      Run Tendril list/capture/run against the isolated desktop.
+             When XTerm is available, also dispatch Shift+Insert to prove the
+             X11 backend supports the standard terminal paste shortcut.
   firefox-upload
              Set a file input in the running headless Firefox via Marionette.
   file-upload-smoke
@@ -892,8 +894,9 @@ run_smoke() {
   fi
   trap 'if [[ "${started_here:-false}" == "true" ]]; then stop_env; fi' EXIT
 
-  local dir list_json display_id window_id capture_json run_json browser_capture_json
+  local dir list_json display_id window_id xterm_window_id capture_json run_json xterm_run_json browser_capture_json xterm_manifest_note
   dir="${TENDRIL_HEADLESS_RUNTIME_DIR:-$(runtime_dir)}"
+  xterm_manifest_note="xterm_shift_insert_run=skipped"
 
   log "waiting for Tendril to see a ${WIDTH}x${HEIGHT} display and browser window"
   if ! list_json="$(wait_for_targets)"; then
@@ -968,6 +971,39 @@ assert payload["data"]["action_count"] >= 2
 assert payload["data"]["focus_required"] is True
 ' <<<"$run_json"
 
+  xterm_window_id="$(python3 -c '
+import json, sys
+terminal_pid=sys.argv[1]
+payload=json.load(sys.stdin)
+for target in payload["data"].get("targets", []):
+    if target.get("kind") != "window":
+        continue
+    if terminal_pid and str(target.get("process_id") or "") == terminal_pid:
+        print(target["id"])
+        break
+    haystack=" ".join(str(target.get(k) or "") for k in ("name", "title", "app_name")).lower()
+    if any(token in haystack for token in ("xterm", "uxterm", "tendril headless shell")):
+        print(target["id"])
+        break
+' "${TENDRIL_HEADLESS_TERMINAL_PID:-}" <<<"$list_json" || true)"
+
+  if [[ -n "$xterm_window_id" ]]; then
+    log "running XTerm Shift+Insert paste shortcut smoke against window $xterm_window_id"
+    xterm_run_json="$(run_tendril --json --window "$xterm_window_id" run 'hold(shift),Insert,release(shift),wait(100ms)')"
+    printf '%s\n' "$xterm_run_json" >"$artifact_dir/${NAME}-xterm-shift-insert-run.json"
+    python3 -c '
+import json, sys
+payload=json.load(sys.stdin)
+assert payload["status"] == "success"
+assert payload["data"]["action_count"] >= 3
+' <<<"$xterm_run_json"
+    xterm_manifest_note="xterm_shift_insert_window=$xterm_window_id
+xterm_shift_insert_run=$artifact_dir/${NAME}-xterm-shift-insert-run.json"
+  else
+    log "skipping XTerm Shift+Insert paste shortcut smoke because no XTerm window target was discovered"
+    xterm_manifest_note="xterm_shift_insert_run=skipped (no XTerm window target discovered)"
+  fi
+
   log "capturing controlled browser window $window_id into $artifact_dir"
   browser_capture_json="$(run_tendril --json --window "$window_id" capture --max-width "$WIDTH" --max-height "$HEIGHT" -o "$artifact_dir/${NAME}-browser-after.png")"
   printf '%s\n' "$browser_capture_json" >"$artifact_dir/${NAME}-browser-after-capture.json"
@@ -985,6 +1021,7 @@ name=$NAME
 display=$DISPLAY
 browser=${TENDRIL_HEADLESS_BROWSER:-}
 browser_window=$window_id
+${xterm_manifest_note}
 resolution=${WIDTH}x${HEIGHT}x${DEPTH}
 runtime_dir=$dir
 artifacts=$artifact_dir
