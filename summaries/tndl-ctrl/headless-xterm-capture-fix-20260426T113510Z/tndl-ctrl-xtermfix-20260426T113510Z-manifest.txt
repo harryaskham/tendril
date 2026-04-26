@@ -1,0 +1,9 @@
+Post-landing validation for bd-1f08f8 XTerm capture fix.
+name=tndl-ctrl-xtermfix-20260426T113510Z
+display=:90
+display_id=1
+browser_window=0x600016
+xterm_window=0x40000c
+scenario=foreground browser, run terminal command with restore-focus, then capture XTerm window
+result_file=/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-xterm-capture-fix-20260426T113510Z/os-side-effect/result.txt
+status=0
