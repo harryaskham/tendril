@@ -381,6 +381,9 @@ pub struct FocusSnapshot {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+// Keep these independently named status flags in the public JSON output so
+// existing Tendril clients do not need to unpack an internal state object.
+#[allow(clippy::struct_excessive_bools)]
 pub struct RunOutput {
     pub adapter: AdapterInfo,
     pub target: TargetSelector,

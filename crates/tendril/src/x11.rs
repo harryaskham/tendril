@@ -92,75 +92,7 @@ pub(crate) fn execute_input(
 
     ensure_xtest_available(&connection, platform)?;
 
-    let keyboard_input = request.text.is_some() || request.actions.iter().any(action_is_keyboard);
-    let mut focus_required = false;
-    let mut focus_transferred = false;
-    let mut notes = Vec::new();
-    let mut restore_error = None;
-    let restore_state = if request.restore_focus {
-        match capture_x11_restore_state(&connection) {
-            Ok(Some(state)) => {
-                notes.push(format!(
-                    "Captured previous X11 focus {} and pointer position for post-run restoration.",
-                    format_window_id(state.window)
-                ));
-                Some(state)
-            }
-            Ok(None) => {
-                let message =
-                    "X11 did not report a restorable active window before input".to_owned();
-                notes.push(format!(
-                    "Focus restoration requested but skipped: {message}."
-                ));
-                restore_error = Some(message);
-                None
-            }
-            Err(error) => {
-                notes.push(format!(
-                    "Focus restoration requested but pre-run snapshot failed: {error}."
-                ));
-                restore_error = Some(error);
-                None
-            }
-        }
-    } else {
-        notes.push(
-            "Focus restoration disabled for this run; focus may remain on the target.".to_owned(),
-        );
-        None
-    };
-    let previous_focus = restore_state
-        .as_ref()
-        .map(|state| focus_snapshot_for_window(&connection, state.window));
-
-    if keyboard_input {
-        focus_required = true;
-        if matches!(request.target, CaptureTargetKind::Window) {
-            let window = parse_window_id(&request.target_id).map_err(|message| {
-                input_execution_error("invalid_target", message, None, Some("focus"))
-            })?;
-            activate_window(&connection, window).map_err(|error| {
-                input_execution_error(
-                    "focus_failed",
-                    format!("failed to focus target window: {error}"),
-                    None,
-                    Some("focus"),
-                )
-            })?;
-            focus_transferred = true;
-            notes.push(
-                "Activated the target window before keyboard delivery for X11 reliability."
-                    .to_owned(),
-            );
-            std::thread::sleep(reliability_delay());
-        } else {
-            notes.push(
-                "Display-scoped keyboard input uses the currently focused control; place focus explicitly if a different app should receive text or key taps."
-                    .to_owned(),
-            );
-        }
-    }
-
+    let run_state = prepare_x11_input_state(&connection, request)?;
     let keyboard_map = KeyboardMap::load(&connection).map_err(|error| {
         input_execution_error(
             "keyboard_mapping_failed",
@@ -180,73 +112,12 @@ pub(crate) fn execute_input(
             Some(0),
             Some("text"),
         )?;
-        connection.conn.flush().map_err(|error| {
-            input_execution_error(
-                "dispatch_failed",
-                format!("failed to flush X11 text events: {error}"),
-                Some(0),
-                Some("text"),
-            )
-        })?;
-        let restore = restore_x11_state_if_requested(&connection, restore_state.as_ref());
-        if let Some(error) = restore.error {
-            notes.push(format!("Focus restoration after input failed: {error}."));
-            restore_error = Some(error);
-        }
-        return Ok(InputOutcome {
-            action_count: 1,
-            focus_required,
-            focus_transferred,
-            focused_target: focus_transferred.then(|| request.target_id.clone()),
-            previous_focus,
-            focus_restored: restore.focus_restored,
-            pointer_restored: restore.pointer_restored,
-            restore_error,
-            notes,
-        });
+        flush_x11_input(&connection, Some(0), Some("text"), "text events")?;
+        return Ok(run_state.finish(&connection, request, 1));
     }
 
-    for (action_index, action) in request.actions.iter().enumerate() {
-        let label = action_label(action);
-        dispatch_action(
-            &connection,
-            &keyboard_map,
-            request,
-            action,
-            action_index,
-            &label,
-            &mut held_modifiers,
-        )?;
-        if !matches!(action, InputAction::Wait { .. }) {
-            connection.conn.flush().map_err(|error| {
-                input_execution_error(
-                    "dispatch_failed",
-                    format!("failed to flush X11 input events: {error}"),
-                    Some(action_index),
-                    Some(&label),
-                )
-            })?;
-            std::thread::sleep(reliability_delay());
-        }
-    }
-
-    let restore = restore_x11_state_if_requested(&connection, restore_state.as_ref());
-    if let Some(error) = restore.error {
-        notes.push(format!("Focus restoration after input failed: {error}."));
-        restore_error = Some(error);
-    }
-
-    Ok(InputOutcome {
-        action_count: request.actions.len(),
-        focus_required,
-        focus_transferred,
-        focused_target: focus_transferred.then(|| request.target_id.clone()),
-        previous_focus,
-        focus_restored: restore.focus_restored,
-        pointer_restored: restore.pointer_restored,
-        restore_error,
-        notes,
-    })
+    dispatch_x11_actions(&connection, &keyboard_map, request, &mut held_modifiers)?;
+    Ok(run_state.finish(&connection, request, request.actions.len()))
 }
 
 #[derive(Debug, Clone)]
@@ -260,6 +131,194 @@ struct X11RestoreOutcome {
     focus_restored: bool,
     pointer_restored: bool,
     error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct X11InputRunState {
+    focus_required: bool,
+    focus_transferred: bool,
+    previous_focus: Option<FocusSnapshot>,
+    restore_state: Option<X11RestoreState>,
+    restore_error: Option<String>,
+    notes: Vec<String>,
+}
+
+impl X11InputRunState {
+    fn finish(
+        mut self,
+        connection: &X11Connection,
+        request: &InputRequest,
+        action_count: usize,
+    ) -> InputOutcome {
+        let X11RestoreOutcome {
+            focus_restored,
+            pointer_restored,
+            error,
+        } = restore_x11_state_if_requested(connection, self.restore_state.as_ref());
+        if let Some(error) = error {
+            self.notes
+                .push(format!("Focus restoration after input failed: {error}."));
+            self.restore_error = Some(error);
+        }
+
+        InputOutcome {
+            action_count,
+            focus_required: self.focus_required,
+            focus_transferred: self.focus_transferred,
+            focused_target: self.focus_transferred.then(|| request.target_id.clone()),
+            previous_focus: self.previous_focus,
+            focus_restored,
+            pointer_restored,
+            restore_error: self.restore_error,
+            notes: self.notes,
+        }
+    }
+}
+
+fn prepare_x11_input_state(
+    connection: &X11Connection,
+    request: &InputRequest,
+) -> Result<X11InputRunState, TendrilError> {
+    let mut notes = Vec::new();
+    let mut restore_error = None;
+    let restore_state = capture_requested_restore_state(
+        connection,
+        request.restore_focus,
+        &mut notes,
+        &mut restore_error,
+    );
+    let previous_focus = restore_state
+        .as_ref()
+        .map(|state| focus_snapshot_for_window(connection, state.window));
+
+    let keyboard_input = request.text.is_some() || request.actions.iter().any(action_is_keyboard);
+    let (focus_required, focus_transferred) = if keyboard_input {
+        (
+            true,
+            prepare_keyboard_focus(connection, request, &mut notes)?,
+        )
+    } else {
+        (false, false)
+    };
+
+    Ok(X11InputRunState {
+        focus_required,
+        focus_transferred,
+        previous_focus,
+        restore_state,
+        restore_error,
+        notes,
+    })
+}
+
+fn capture_requested_restore_state(
+    connection: &X11Connection,
+    restore_focus: bool,
+    notes: &mut Vec<String>,
+    restore_error: &mut Option<String>,
+) -> Option<X11RestoreState> {
+    if !restore_focus {
+        notes.push(
+            "Focus restoration disabled for this run; focus may remain on the target.".to_owned(),
+        );
+        return None;
+    }
+
+    match capture_x11_restore_state(connection) {
+        Ok(Some(state)) => {
+            notes.push(format!(
+                "Captured previous X11 focus {} and pointer position for post-run restoration.",
+                format_window_id(state.window)
+            ));
+            Some(state)
+        }
+        Ok(None) => {
+            let message = "X11 did not report a restorable active window before input".to_owned();
+            notes.push(format!(
+                "Focus restoration requested but skipped: {message}."
+            ));
+            *restore_error = Some(message);
+            None
+        }
+        Err(error) => {
+            notes.push(format!(
+                "Focus restoration requested but pre-run snapshot failed: {error}."
+            ));
+            *restore_error = Some(error);
+            None
+        }
+    }
+}
+
+fn prepare_keyboard_focus(
+    connection: &X11Connection,
+    request: &InputRequest,
+    notes: &mut Vec<String>,
+) -> Result<bool, TendrilError> {
+    if !matches!(request.target, CaptureTargetKind::Window) {
+        notes.push(
+            "Display-scoped keyboard input uses the currently focused control; place focus explicitly if a different app should receive text or key taps."
+                .to_owned(),
+        );
+        return Ok(false);
+    }
+
+    let window = parse_window_id(&request.target_id)
+        .map_err(|message| input_execution_error("invalid_target", message, None, Some("focus")))?;
+    activate_window(connection, window).map_err(|error| {
+        input_execution_error(
+            "focus_failed",
+            format!("failed to focus target window: {error}"),
+            None,
+            Some("focus"),
+        )
+    })?;
+    notes.push(
+        "Activated the target window before keyboard delivery for X11 reliability.".to_owned(),
+    );
+    std::thread::sleep(reliability_delay());
+    Ok(true)
+}
+
+fn dispatch_x11_actions(
+    connection: &X11Connection,
+    keyboard_map: &KeyboardMap,
+    request: &InputRequest,
+    held_modifiers: &mut HashSet<ModifierKey>,
+) -> Result<(), TendrilError> {
+    for (action_index, action) in request.actions.iter().enumerate() {
+        let label = action_label(action);
+        dispatch_action(
+            connection,
+            keyboard_map,
+            request,
+            action,
+            action_index,
+            &label,
+            held_modifiers,
+        )?;
+        if !matches!(action, InputAction::Wait { .. }) {
+            flush_x11_input(connection, Some(action_index), Some(&label), "input events")?;
+            std::thread::sleep(reliability_delay());
+        }
+    }
+    Ok(())
+}
+
+fn flush_x11_input(
+    connection: &X11Connection,
+    action_index: Option<usize>,
+    label: Option<&str>,
+    event_kind: &str,
+) -> Result<(), TendrilError> {
+    connection.conn.flush().map_err(|error| {
+        input_execution_error(
+            "dispatch_failed",
+            format!("failed to flush X11 {event_kind}: {error}"),
+            action_index,
+            label,
+        )
+    })
 }
 
 fn capture_x11_restore_state(

@@ -525,6 +525,9 @@ pub struct InputRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+// These booleans are stable wire-format flags mirrored by RunOutput and test
+// fixtures; keep them as explicit JSON fields instead of hiding them in enums.
+#[allow(clippy::struct_excessive_bools)]
 pub struct InputOutcome {
     pub action_count: usize,
     pub focus_required: bool,
@@ -551,6 +554,8 @@ struct CaptureFixture {
 }
 
 #[derive(Debug, Default, Deserialize)]
+// Fixture JSON intentionally mirrors InputOutcome's explicit boolean flags.
+#[allow(clippy::struct_excessive_bools)]
 struct InputFixture {
     #[serde(default)]
     action_count: Option<usize>,

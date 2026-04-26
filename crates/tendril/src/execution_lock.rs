@@ -617,13 +617,12 @@ mod tests {
         let lock_path = tempdir.path().join("lock");
         let _first = acquire_execution_lock(&request(lock_path.clone())).expect("first lock");
 
-        let error = match acquire_execution_lock(&ExecutionLockRequest {
+        let Err(error) = acquire_execution_lock(&ExecutionLockRequest {
             timeout_ms: 100,
             stale_ms: 2_000,
             ..request(lock_path)
-        }) {
-            Ok(_) => panic!("second lock should time out"),
-            Err(error) => error,
+        }) else {
+            panic!("second lock should time out");
         };
 
         assert!(matches!(error, TendrilError::Timeout { .. }));
