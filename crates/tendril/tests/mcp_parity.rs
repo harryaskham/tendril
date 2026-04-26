@@ -102,7 +102,17 @@ fn cli_and_mcp_stdio_return_equivalent_structured_payloads() {
         .iter()
         .map(|tool| tool["name"].as_str().expect("tool name"))
         .collect::<Vec<_>>();
-    assert_eq!(tool_names, vec!["list", "capture", "run", "listen"]);
+    assert_eq!(
+        tool_names,
+        vec![
+            "list",
+            "capture",
+            "run",
+            "listen",
+            "clipboard_get",
+            "clipboard_set"
+        ]
+    );
 
     assert_eq!(responses[2]["result"]["isError"], false);
     assert_eq!(responses[2]["result"]["structuredContent"], cli_list);

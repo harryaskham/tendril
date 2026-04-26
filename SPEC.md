@@ -560,13 +560,28 @@ Scenario: An agent needs to copy a code snippet from a documentation browser win
    tendril --json --window <browser-id> run 'hold(ctrl),c,release(ctrl)'
    ```
 
-5. **Switch to the terminal and paste.**
+5. **Inspect or serve the OS clipboard explicitly when the workflow must be deterministic.**
+   ```bash
+   tendril --json clipboard get --selection clipboard --timeout-ms 3000
+   ```
+   On Linux/X11 this reads the live `CLIPBOARD` owner and returns structured
+   diagnostics such as `clipboard_selection_unowned` instead of silently
+   treating an empty paste as success. For OS→browser/terminal transfer, keep a
+   helper process alive while the target requests the paste:
+   ```bash
+   tendril --json clipboard set --text 'hello from OS' --serve-ms 8000
+   ```
+
+6. **Switch to the terminal and paste.**
    ```bash
    tendril --json --window <terminal-id> run 'lclick(<cursor_x>,<cursor_y>),wait(200ms),hold(ctrl),hold(shift),v,release(shift),release(ctrl)'
    ```
-   Note: terminal paste often uses Ctrl+Shift+V rather than Ctrl+V.
+   Note: terminal paste often uses Ctrl+Shift+V rather than Ctrl+V. In the
+   headless X11 micro-environment, prefer the documented `clipboard-smoke`
+   recipe when validating browser↔OS transfer because primary/middle-click and
+   Shift+Insert can exercise different selections or toolkit bindings.
 
-6. **Capture the terminal to verify the paste succeeded.**
+7. **Capture the terminal to verify the paste succeeded.**
    ```bash
    tendril --json --window <terminal-id> capture --max-width 1280
    ```
@@ -574,8 +589,8 @@ Scenario: An agent needs to copy a code snippet from a documentation browser win
 Key Tendril features exercised:
 - Multi-window workflow: discovering and operating on two different windows
 - Drag gesture for text selection
-- Clipboard interaction via keyboard shortcuts
-- Cross-application coordination without Tendril-side state
+- Clipboard interaction via keyboard shortcuts and explicit X11 clipboard get/set helpers
+- Cross-application coordination without persistent Tendril-side state
 - Target-scoped input so each `run` call goes to the correct window
 
 ### CUJ 4: Agent monitors a dashboard and reacts to an alert

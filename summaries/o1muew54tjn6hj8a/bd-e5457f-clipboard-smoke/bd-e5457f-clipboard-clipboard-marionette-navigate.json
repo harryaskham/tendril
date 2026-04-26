@@ -1,0 +1,21 @@
+{
+  "helper": "tendril-headless firefox-marionette-navigate",
+  "marionette": {
+    "hello": {
+      "applicationType": "gecko",
+      "marionetteProtocol": 3
+    },
+    "port": 62090,
+    "sessionId": "801569f5-79a6-4a76-ac9c-c22fd89ac603"
+  },
+  "page": {
+    "bodyText": "Tendril Clipboard Task\n\nCopy proof text from Firefox to the OS clipboard, then paste OS-provided text back into Firefox.\n\nBrowser source text\nOS paste target\n\nWaiting for Tendril clipboard smoke.",
+    "title": "Tendril Clipboard Task",
+    "url": "file:///home/harry/.cacophony/agents/tendril/o1muew54tjn6hj8a/checkout/summaries/o1muew54tjn6hj8a/bd-e5457f-clipboard-smoke/clipboard-task.html"
+  },
+  "request": {
+    "navigate_url": "file:///home/harry/.cacophony/agents/tendril/o1muew54tjn6hj8a/checkout/summaries/o1muew54tjn6hj8a/bd-e5457f-clipboard-smoke/clipboard-task.html"
+  },
+  "status": "success",
+  "transport": "firefox-marionette"
+}

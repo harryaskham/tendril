@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tendril Clipboard Task</title>
+  <style>
+    body { font-family: sans-serif; margin: 32px; background: #101820; color: #f7fbff; }
+    textarea { display: block; width: 760px; height: 96px; margin: 12px 0 24px; font: 20px monospace; }
+    .ok { color: #77dd77; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <h1>Tendril Clipboard Task</h1>
+  <p>Copy proof text from Firefox to the OS clipboard, then paste OS-provided text back into Firefox.</p>
+  <label for="browser-proof">Browser source text</label>
+  <textarea id="browser-proof">browser-to-os-clipboard-control-ok</textarea>
+  <label for="os-target">OS paste target</label>
+  <textarea id="os-target"></textarea>
+  <p id="status">Waiting for Tendril clipboard smoke.</p>
+  <script>
+    const proof = document.getElementById('browser-proof');
+    const target = document.getElementById('os-target');
+    const status = document.getElementById('status');
+    proof.addEventListener('focus', () => proof.select());
+    proof.addEventListener('copy', () => {
+      document.body.dataset.copyObserved = 'true';
+      status.textContent = 'Copy event observed for proof text.';
+    });
+    target.addEventListener('paste', () => {
+      document.body.dataset.pasteObserved = 'true';
+      status.textContent = 'Paste event observed in Firefox.';
+    });
+    target.addEventListener('input', () => {
+      if (target.value.includes('os-to-browser-clipboard-control-ok')) {
+        document.body.dataset.osPasteOk = 'true';
+        status.textContent = 'Firefox received OS clipboard text.';
+        status.className = 'ok';
+      }
+    });
+  </script>
+</body>
+</html>

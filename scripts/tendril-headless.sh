@@ -46,6 +46,8 @@ Commands:
              Set a file input in the running headless Firefox via Marionette.
   file-upload-smoke
              Reproduce the native Firefox chooser limitation, then upload via helper.
+  clipboard-smoke
+             Prove Firefox↔OS text transfer through Tendril's explicit X11 clipboard helper.
 
 Options:
   --name <name>          Environment name (default: default).
@@ -80,6 +82,9 @@ Copy-paste smoke using the latest checkout through Nix:
 
 Firefox file-upload smoke:
   scripts/tendril-headless.sh --browser firefox --tendril-bin ./target/debug/tendril file-upload-smoke
+
+Firefox/X11 clipboard smoke:
+  scripts/tendril-headless.sh --browser firefox --tendril-bin ./target/debug/tendril clipboard-smoke
 USAGE
 }
 
@@ -148,7 +153,7 @@ dsl_escape() {
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      start|env|inspect|reset|stop|smoke|firefox-upload|file-upload-smoke)
+      start|env|inspect|reset|stop|smoke|firefox-upload|file-upload-smoke|clipboard-smoke)
         if [[ -n "$COMMAND" ]]; then
           fail "only one command may be provided"
         fi
@@ -874,6 +879,54 @@ sys.exit(0 if has_display and has_browser else 1)
   return 1
 }
 
+write_clipboard_smoke_page() {
+  local dir="$1"
+  cat >"$dir/clipboard-task.html" <<'EOF_HTML'
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tendril Clipboard Task</title>
+  <style>
+    body { font-family: sans-serif; margin: 32px; background: #101820; color: #f7fbff; }
+    textarea { display: block; width: 760px; height: 96px; margin: 12px 0 24px; font: 20px monospace; }
+    .ok { color: #77dd77; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <h1>Tendril Clipboard Task</h1>
+  <p>Copy proof text from Firefox to the OS clipboard, then paste OS-provided text back into Firefox.</p>
+  <label for="browser-proof">Browser source text</label>
+  <textarea id="browser-proof">browser-to-os-clipboard-control-ok</textarea>
+  <label for="os-target">OS paste target</label>
+  <textarea id="os-target"></textarea>
+  <p id="status">Waiting for Tendril clipboard smoke.</p>
+  <script>
+    const proof = document.getElementById('browser-proof');
+    const target = document.getElementById('os-target');
+    const status = document.getElementById('status');
+    proof.addEventListener('focus', () => proof.select());
+    proof.addEventListener('copy', () => {
+      document.body.dataset.copyObserved = 'true';
+      status.textContent = 'Copy event observed for proof text.';
+    });
+    target.addEventListener('paste', () => {
+      document.body.dataset.pasteObserved = 'true';
+      status.textContent = 'Paste event observed in Firefox.';
+    });
+    target.addEventListener('input', () => {
+      if (target.value.includes('os-to-browser-clipboard-control-ok')) {
+        document.body.dataset.osPasteOk = 'true';
+        status.textContent = 'Firefox received OS clipboard text.';
+        status.className = 'ok';
+      }
+    });
+  </script>
+</body>
+</html>
+EOF_HTML
+}
+
 run_smoke() {
   ensure_name_safe
   local tendril_program
@@ -1343,6 +1396,159 @@ finally:
 PY
 }
 
+run_clipboard_smoke() {
+  ensure_name_safe
+  if [[ -z "$BROWSER_BIN" ]]; then
+    BROWSER_BIN="firefox"
+  fi
+  local tendril_program
+  tendril_program="${TENDRIL_BIN%% *}"
+  [[ -x "$tendril_program" || "$(command -v "$tendril_program" 2>/dev/null || true)" ]] || fail "Tendril binary not found: $TENDRIL_BIN; pass --tendril-bin ./target/debug/tendril or --tendril-bin 'nix run .#tendril --'"
+
+  local artifact_dir
+  artifact_dir="$(resolve_artifact_dir)"
+  ensure_artifact_dir_safe "$artifact_dir"
+  mkdir -p "$artifact_dir"
+  write_clipboard_smoke_page "$artifact_dir"
+  local clipboard_url browser_proof os_proof
+  clipboard_url="file://$artifact_dir/clipboard-task.html"
+  browser_proof="browser-to-os-clipboard-control-ok"
+  os_proof="os-to-browser-clipboard-control-ok"
+
+  local started_here="false"
+  if ! state_alive; then
+    start_env >/dev/null
+    started_here="true"
+  else
+    log "using existing environment '$NAME' on DISPLAY=${DISPLAY}"
+  fi
+  trap 'if [[ "${started_here:-false}" == "true" ]]; then stop_env; fi' EXIT
+
+  local dir list_json display_id window_id navigate_json before_capture browser_copy_run browser_get_json
+  local set_pid set_json set_err browser_paste_run set_status browser_recopy_run os_get_json after_capture
+  dir="${TENDRIL_HEADLESS_RUNTIME_DIR:-$(runtime_dir)}"
+
+  log "waiting for Tendril to see a ${WIDTH}x${HEIGHT} Firefox window"
+  if ! list_json="$(wait_for_targets)"; then
+    diagnose_browser_log "$dir/logs/browser.log"
+    preserve_runtime_logs "$dir" "$artifact_dir"
+    fail "Tendril did not discover expected headless Firefox targets"
+  fi
+  printf '%s\n' "$list_json" >"$artifact_dir/${NAME}-clipboard-list-initial.json"
+
+  display_id="$(python3 -c '
+import json, sys
+width=int(sys.argv[1]); height=int(sys.argv[2]); payload=json.load(sys.stdin)
+for target in payload["data"]["targets"]:
+    bounds=target.get("bounds", {})
+    if target.get("kind") == "display" and bounds.get("width") == width and bounds.get("height") == height:
+        print(target["id"]); break
+else:
+    raise SystemExit(1)
+' "$WIDTH" "$HEIGHT" <<<"$list_json")"
+
+  window_id="$(python3 -c '
+import json, sys
+browser_pid=sys.argv[1]
+payload=json.load(sys.stdin)
+for target in payload["data"]["targets"]:
+    haystack=" ".join(str(target.get(k) or "") for k in ("name", "title", "app_name")).lower()
+    if target.get("kind") == "window" and ((browser_pid and str(target.get("process_id") or "") == browser_pid) or "firefox" in haystack):
+        print(target["id"]); break
+else:
+    raise SystemExit("no Firefox window found")
+' "${TENDRIL_HEADLESS_BROWSER_PID:-}" <<<"$list_json")"
+
+  log "navigating Firefox to clipboard smoke page through Marionette preflight"
+  NAVIGATE_URL="$clipboard_url" \
+    HELPER_OUTPUT="$artifact_dir/${NAME}-clipboard-marionette-navigate.json" \
+    run_firefox_navigate_helper
+  navigate_json="$(cat "$artifact_dir/${NAME}-clipboard-marionette-navigate.json")"
+  python3 -c '
+import json, sys
+payload=json.loads(sys.argv[1])
+assert payload["status"] == "success"
+assert "Tendril Clipboard Task" in (payload.get("page", {}).get("title") or "")
+' "$navigate_json"
+
+  log "capturing clipboard page before copy"
+  before_capture="$(run_tendril --json --window "$window_id" capture --max-width "$WIDTH" --max-height "$HEIGHT" -o "$artifact_dir/${NAME}-clipboard-before.png")"
+  printf '%s\n' "$before_capture" >"$artifact_dir/${NAME}-clipboard-before-capture.json"
+
+  log "copying Firefox textarea text through Tendril keyboard input"
+  browser_copy_run="$(run_tendril --json --window "$window_id" run 'lclick(700,330),hold(ctrl),a,release(ctrl),hold(ctrl),c,release(ctrl),wait(500ms)')"
+  printf '%s\n' "$browser_copy_run" >"$artifact_dir/${NAME}-clipboard-browser-copy-run.json"
+  browser_get_json="$(run_tendril --json clipboard get --selection clipboard --timeout-ms 3000)"
+  printf '%s\n' "$browser_get_json" >"$artifact_dir/${NAME}-clipboard-browser-to-os-get.json"
+  python3 -c '
+import json, sys
+payload=json.loads(sys.argv[1])
+expected=sys.argv[2]
+assert payload["status"] == "success", payload
+assert payload["data"]["text"] == expected, payload["data"].get("text")
+' "$browser_get_json" "$browser_proof"
+
+  log "serving OS clipboard text and pasting it back into Firefox"
+  set_json="$artifact_dir/${NAME}-clipboard-os-set.json"
+  set_err="$artifact_dir/${NAME}-clipboard-os-set.err"
+  (run_tendril --json clipboard set --selection clipboard --text "$os_proof" --serve-ms 4000 >"$set_json" 2>"$set_err") &
+  set_pid="$!"
+  sleep 0.4
+  browser_paste_run="$(run_tendril --json --window "$window_id" run 'lclick(700,500),hold(ctrl),a,release(ctrl),hold(ctrl),v,release(ctrl),wait(500ms)')"
+  printf '%s\n' "$browser_paste_run" >"$artifact_dir/${NAME}-clipboard-os-to-browser-paste-run.json"
+  set_status=0
+  wait "$set_pid" || set_status="$?"
+  if [[ "$set_status" != "0" ]]; then
+    fail "clipboard set helper failed with status $set_status; see $set_json and $set_err"
+  fi
+  python3 -c '
+import json, sys
+payload=json.load(open(sys.argv[1]))
+assert payload["status"] == "success", payload
+assert payload["data"]["served_requests"] >= 1, payload["data"]
+' "$set_json"
+
+  log "copying Firefox paste target back to OS clipboard for verification"
+  browser_recopy_run="$(run_tendril --json --window "$window_id" run 'lclick(700,500),hold(ctrl),a,release(ctrl),hold(ctrl),c,release(ctrl),wait(500ms)')"
+  printf '%s\n' "$browser_recopy_run" >"$artifact_dir/${NAME}-clipboard-browser-recopy-run.json"
+  os_get_json="$(run_tendril --json clipboard get --selection clipboard --timeout-ms 3000)"
+  printf '%s\n' "$os_get_json" >"$artifact_dir/${NAME}-clipboard-os-to-browser-readback-get.json"
+  python3 -c '
+import json, sys
+payload=json.loads(sys.argv[1])
+expected=sys.argv[2]
+assert payload["status"] == "success", payload
+assert payload["data"]["text"] == expected, payload["data"].get("text")
+' "$os_get_json" "$os_proof"
+
+  log "capturing verified clipboard page through Tendril"
+  after_capture="$(run_tendril --json --display "$display_id" capture --max-width "$WIDTH" --max-height "$HEIGHT" -o "$artifact_dir/${NAME}-clipboard-after-display.png")"
+  printf '%s\n' "$after_capture" >"$artifact_dir/${NAME}-clipboard-after-display-capture.json"
+
+  cat >"$artifact_dir/${NAME}-clipboard-manifest.txt" <<EOF_MANIFEST
+Tendril headless Firefox clipboard smoke passed.
+name=$NAME
+display=$DISPLAY
+browser=${TENDRIL_HEADLESS_BROWSER:-}
+browser_window=$window_id
+marionette_port=${TENDRIL_HEADLESS_MARIONETTE_PORT:-}
+resolution=${WIDTH}x${HEIGHT}x${DEPTH}
+runtime_dir=$dir
+clipboard_url=$clipboard_url
+browser_to_os_proof=$browser_proof
+os_to_browser_proof=$os_proof
+workflow=Firefox textarea Ctrl+C -> tendril clipboard get; tendril clipboard set -> Firefox Ctrl+V -> Firefox textarea Ctrl+C -> tendril clipboard get.
+artifacts=$artifact_dir
+EOF_MANIFEST
+  git_add_artifacts "$artifact_dir"
+
+  log "clipboard smoke passed; artifacts are under $artifact_dir"
+  if [[ "$started_here" == "true" ]]; then
+    stop_env
+    trap - EXIT
+  fi
+}
+
 run_file_upload_smoke() {
   ensure_name_safe
   if [[ -z "$BROWSER_BIN" ]]; then
@@ -1499,5 +1705,6 @@ case "$COMMAND" in
   smoke) run_smoke ;;
   firefox-upload) run_firefox_upload_helper ;;
   file-upload-smoke) run_file_upload_smoke ;;
+  clipboard-smoke) run_clipboard_smoke ;;
   *) fail "unsupported command: $COMMAND" ;;
 esac

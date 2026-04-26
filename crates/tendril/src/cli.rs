@@ -39,7 +39,7 @@ impl TendrilCli {
     #[must_use]
     pub fn agent_help() -> String {
         format!(
-            "Tendril is a stateless desktop inspection and control CLI for agents.\n\nWorkflow:\n  1. list targets:   tendril list --json\n  2. capture state:  tendril --window <id> capture --json\n  3. save to file:   tendril --window <id> capture -o /tmp/screen.png\n  4. run input:      tendril --window <id> run 'send(\"hello\")'\n  5. reuse a target: eval \"$(tendril --window <id> alias --name desk)\"\n\nCommands:\n  list     Discover windows and displays\n  capture  Capture a screenshot from a window or display\n  run      Type text or execute an input sequence against a target\n  alias    Emit a shell helper that pre-fills --window/--display\n  listen   Probe supported audio capture paths\n  mcp      Serve Tendril over MCP stdio\n\nUse --json for machine-readable success/error envelopes.\nUse -o/--output on capture to save the image directly to a file.\nUse --help on any subcommand for detailed flags.\n\n{WORKFLOW_HINT}\n"
+            "Tendril is a stateless desktop inspection and control CLI for agents.\n\nWorkflow:\n  1. list targets:   tendril list --json\n  2. capture state:  tendril --window <id> capture --json\n  3. save to file:   tendril --window <id> capture -o /tmp/screen.png\n  4. run input:      tendril --window <id> run 'send(\"hello\")'\n  5. read clipboard: tendril clipboard get --json\n  6. reuse a target: eval \"$(tendril --window <id> alias --name desk)\"\n\nCommands:\n  list       Discover windows and displays\n  capture    Capture a screenshot from a window or display\n  run        Type text or execute an input sequence against a target\n  clipboard  Read or serve Linux/X11 text selections for deterministic browser↔OS transfer\n  alias      Emit a shell helper that pre-fills --window/--display\n  listen     Probe supported audio capture paths\n  mcp        Serve Tendril over MCP stdio\n\nUse --json for machine-readable success/error envelopes.\nUse -o/--output on capture to save the image directly to a file.\nUse --help on any subcommand for detailed flags.\n\n{WORKFLOW_HINT}\n"
         )
     }
 }
@@ -55,6 +55,8 @@ pub enum Command {
     Run(RunCommand),
     /// Capture audio from a supported source.
     Listen(ListenCommand),
+    /// Read or serve an OS clipboard/text selection.
+    Clipboard(ClipboardCommand),
     /// Emit shell helpers for repeated targeting.
     Alias(AliasCommand),
     /// Expose the CLI surface over MCP stdio.
@@ -75,6 +77,7 @@ impl Command {
             Self::Capture(_) => "capture",
             Self::Run(_) => "run",
             Self::Listen(_) => "listen",
+            Self::Clipboard(_) => "clipboard",
             Self::Alias(_) => "alias",
             Self::Mcp(_) => "mcp",
         }
@@ -166,6 +169,47 @@ fn default_restore_focus() -> bool {
     true
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Args, Serialize, Deserialize, JsonSchema)]
+pub struct ClipboardCommand {
+    #[command(subcommand)]
+    pub command: ClipboardSubcommand,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Subcommand, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "action", rename_all = "snake_case")]
+pub enum ClipboardSubcommand {
+    /// Read a text selection from the OS clipboard.
+    Get(ClipboardGetCommand),
+    /// Own and serve a text selection for other applications to paste.
+    Set(ClipboardSetCommand),
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Args, Serialize, Deserialize, JsonSchema)]
+pub struct ClipboardGetCommand {
+    /// X11 selection to read: `clipboard` (Ctrl+C/Ctrl+V) or `primary` (selection/middle-click).
+    #[arg(long)]
+    pub selection: Option<String>,
+
+    /// Maximum time in milliseconds to wait for the owner to answer.
+    #[arg(long = "timeout-ms")]
+    pub timeout_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Args, Serialize, Deserialize, JsonSchema)]
+pub struct ClipboardSetCommand {
+    /// X11 selection to serve: `clipboard` (Ctrl+C/Ctrl+V) or `primary` (selection/middle-click).
+    #[arg(long)]
+    pub selection: Option<String>,
+
+    /// Text to expose through the selection while this process serves requests.
+    #[arg(long)]
+    pub text: String,
+
+    /// Time in milliseconds to stay alive serving paste/read requests.
+    #[arg(long = "serve-ms")]
+    pub serve_ms: Option<u64>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Args, Serialize, Deserialize, JsonSchema)]
 pub struct ListenCommand {
     /// Audio source selector: `system`, `loopback`, `microphone`, or `device:<id>`.
@@ -234,6 +278,7 @@ mod tests {
         assert!(help.contains("capture --json"));
         assert!(help.contains("capture -o /tmp/screen.png"));
         assert!(help.contains(" run 'send(\"hello\")'"));
+        assert!(help.contains("clipboard get --json"));
         assert!(help.contains("alias --name desk"));
     }
 }

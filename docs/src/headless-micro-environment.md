@@ -103,6 +103,66 @@ Cacophony summary collectors and `/tmp/watch-captures.sh` can then surface the
 captures to the operator. The display capture proves the isolated desktop is
 reachable; the browser-after capture is the proof of in-browser control.
 
+## Browser↔OS clipboard smoke test
+
+For deterministic clipboard transfer in the headless X11 desktop, prefer the
+explicit Tendril clipboard helper over terminal-only paste fallbacks. X11
+clipboard data is owned by a live client process; middle-click primary paste and
+Shift+Insert can exercise a different selection or toolkit binding than the
+browser's Ctrl+C clipboard. The helper makes that state visible and returns a
+structured error if no owner responds.
+
+Focused end-to-end smoke:
+
+```bash
+cargo build -p tendril
+scripts/tendril-headless.sh \
+  --name clipboard-smoke \
+  --browser firefox \
+  --tendril-bin ./target/debug/tendril \
+  --artifact-dir "summaries/${CACOPHONY_AGENT:-manual}/clipboard-smoke" \
+  clipboard-smoke
+```
+
+What the smoke proves:
+
+1. Starts the isolated Xvfb desktop with Firefox and XTerm available.
+2. Opens a local page with proof text `browser-to-os-clipboard-control-ok`.
+3. Uses Tendril input to click the Firefox textarea and dispatch Ctrl+A/C.
+4. Reads the OS-side X11 `CLIPBOARD` selection with
+   `tendril clipboard get --json` and asserts it equals the browser proof text.
+5. Serves OS text `os-to-browser-clipboard-control-ok` with
+   `tendril clipboard set --serve-ms ...` while Tendril dispatches Ctrl+V into
+   Firefox.
+6. Copies the Firefox paste target back out and reads it with
+   `tendril clipboard get --json`, proving the OS→browser transfer as well.
+7. Writes JSON, PNG, stderr, and manifest artifacts under the requested
+   `summaries/` directory.
+
+Manual recipe after starting the environment:
+
+```bash
+# Browser -> OS: perform the browser copy through Tendril input, then inspect
+# the X11 CLIPBOARD owner through Tendril instead of assuming terminal paste.
+tendril --json --window "$firefox_window" run \
+  'lclick(<textarea_x>,<textarea_y>),hold(ctrl),a,release(ctrl),hold(ctrl),c,release(ctrl),wait(500ms)'
+tendril --json clipboard get --selection clipboard --timeout-ms 3000
+
+# OS -> Browser: keep the helper alive while the browser requests the paste.
+(tendril --json clipboard set --text 'hello from OS' --serve-ms 8000 >clipboard-set.json) &
+server_pid=$!
+tendril --json --window "$firefox_window" run \
+  'lclick(<target_x>,<target_y>),hold(ctrl),v,release(ctrl),wait(500ms)'
+wait "$server_pid"
+```
+
+If `clipboard get` returns `clipboard_selection_unowned`, the source application
+did not own the requested X11 selection. If it returns
+`clipboard_conversion_failed` or `clipboard_incr_not_supported`, the owner did
+not provide a direct plain-text selection; retry with a smaller text selection
+or file a platform/toolkit-specific clipboard backend bead with the JSON error
+details.
+
 ## Manual lifecycle
 
 Start an environment and export its display into the current shell:

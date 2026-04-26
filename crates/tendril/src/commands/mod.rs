@@ -11,8 +11,14 @@ use tracing::info;
 
 use crate::capture::{execute_capture, render_capture_human};
 use crate::cli::{
-    AliasCommand, CaptureCommand, Command, ListCommand, ListenCommand, McpSubcommand, RunCommand,
+    AliasCommand, CaptureCommand, ClipboardCommand, ClipboardGetCommand, ClipboardSetCommand,
+    ClipboardSubcommand, Command, ListCommand, ListenCommand, McpSubcommand, RunCommand,
     TendrilCli, WORKFLOW_HINT,
+};
+use crate::clipboard::{
+    ClipboardGetInput, ClipboardSelection, ClipboardSetInput, DEFAULT_CLIPBOARD_SERVE_MS,
+    DEFAULT_CLIPBOARD_TIMEOUT_MS, execute_clipboard_get, execute_clipboard_set,
+    render_clipboard_get_human, render_clipboard_set_human,
 };
 use crate::config::TendrilConfig;
 use crate::error::TendrilError;
@@ -77,6 +83,28 @@ pub struct AliasRequest {
     pub target: TargetScope,
     #[serde(flatten)]
     pub options: AliasCommand,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ClipboardGetRequest {
+    /// Selection to read: `clipboard` or `primary`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selection: Option<String>,
+    /// Maximum time in milliseconds to wait for the owner to answer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ClipboardSetRequest {
+    /// Selection to serve: `clipboard` or `primary`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selection: Option<String>,
+    /// Text to expose through the selection.
+    pub text: String,
+    /// Time in milliseconds to stay alive serving paste/read requests.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub serve_ms: Option<u64>,
 }
 
 /// MCP request wrapper for the `listen` tool.
@@ -310,6 +338,7 @@ fn dispatch_cli_command(
         Command::Listen(command) => {
             dispatch_listen_command(command, cli.json, &AdapterContext::detect())
         }
+        Command::Clipboard(command) => dispatch_clipboard_command(command, cli.json),
         Command::Alias(command) => {
             let input = build_alias_input(&target_scope_from_cli(cli), command)?;
             info!(
@@ -391,6 +420,31 @@ fn build_tool_router() -> ToolRouter<CommandContext> {
                 &context.adapter_context,
             )?;
             serde_json::to_value(response)
+                .map_err(|error| TendrilError::serialization(error.to_string()))
+        },
+    );
+    router.add_typed_tool(
+        "clipboard_get",
+        "Read text from the Linux/X11 clipboard or primary selection.",
+        |_context: &CommandContext, command: ClipboardGetRequest| {
+            let input = build_clipboard_get_input(&ClipboardGetCommand {
+                selection: command.selection,
+                timeout_ms: command.timeout_ms,
+            })?;
+            serde_json::to_value(execute_clipboard_get(&input)?)
+                .map_err(|error| TendrilError::serialization(error.to_string()))
+        },
+    );
+    router.add_typed_tool(
+        "clipboard_set",
+        "Own and serve text through the Linux/X11 clipboard or primary selection.",
+        |_context: &CommandContext, command: ClipboardSetRequest| {
+            let input = build_clipboard_set_input(&ClipboardSetCommand {
+                selection: command.selection,
+                text: command.text,
+                serve_ms: command.serve_ms,
+            })?;
+            serde_json::to_value(execute_clipboard_set(&input)?)
                 .map_err(|error| TendrilError::serialization(error.to_string()))
         },
     );
@@ -497,6 +551,10 @@ fn build_help_output() -> HelpOutput {
                 command: "tendril --window <id> run 'send(\"hello\")'".to_owned(),
                 description: "Execute text or input sequences against the chosen target.".to_owned(),
             },
+            HelpWorkflowStep {
+                command: "tendril clipboard get --json".to_owned(),
+                description: "Read text copied by a browser or app from the Linux/X11 clipboard selection.".to_owned(),
+            },
         ],
         commands: vec![
             HelpCommandSummary {
@@ -510,6 +568,10 @@ fn build_help_output() -> HelpOutput {
             HelpCommandSummary {
                 name: "run".to_owned(),
                 description: "Execute text or input sequences against a target.".to_owned(),
+            },
+            HelpCommandSummary {
+                name: "clipboard".to_owned(),
+                description: "Read or serve Linux/X11 text selections for deterministic browser↔OS clipboard transfer.".to_owned(),
             },
             HelpCommandSummary {
                 name: "alias".to_owned(),
@@ -542,6 +604,14 @@ fn build_help_output() -> HelpOutput {
                 command: "tendril --window <id> capture --json -o /tmp/screen.png".to_owned(),
             },
             HelpExample {
+                description: "Read text copied from a browser through the X11 clipboard".to_owned(),
+                command: "tendril clipboard get --json".to_owned(),
+            },
+            HelpExample {
+                description: "Serve text for another X11 app to paste".to_owned(),
+                command: "tendril clipboard set --text 'hello from OS' --serve-ms 8000".to_owned(),
+            },
+            HelpExample {
                 description: "Create a reusable wrapper for repeated targeting".to_owned(),
                 command: "eval \"$(tendril --window <id> alias --name desk)\"".to_owned(),
             },
@@ -550,6 +620,7 @@ fn build_help_output() -> HelpOutput {
             "Use --json for machine-readable success and error envelopes.".to_owned(),
             "Use -o/--output on capture to save the decoded image directly to a file; combine with --json to also get the JSON envelope.".to_owned(),
             "Alias helpers are plain shell wrappers around explicit tendril arguments; Tendril does not store session state.".to_owned(),
+            "On Linux/X11, clipboard selections are owned by a live process; `clipboard set` intentionally stays alive for --serve-ms so browser/terminal paste requests can complete deterministically.".to_owned(),
         ],
     }
 }
@@ -671,6 +742,57 @@ fn capture_response_value(
 ) -> Result<Value, TendrilError> {
     serde_json::to_value(execute_capture(input, adapter)?)
         .map_err(|error| TendrilError::serialization(error.to_string()))
+}
+
+fn dispatch_clipboard_command(
+    command: &ClipboardCommand,
+    json_mode: bool,
+) -> Result<CommandOutput, TendrilError> {
+    match &command.command {
+        ClipboardSubcommand::Get(command) => {
+            let input = build_clipboard_get_input(command)?;
+            let output = execute_clipboard_get(&input)?;
+            Ok(render_command_output(
+                "clipboard",
+                json_mode,
+                output,
+                render_clipboard_get_human,
+            ))
+        }
+        ClipboardSubcommand::Set(command) => {
+            let input = build_clipboard_set_input(command)?;
+            let output = execute_clipboard_set(&input)?;
+            Ok(render_command_output(
+                "clipboard",
+                json_mode,
+                output,
+                render_clipboard_set_human,
+            ))
+        }
+    }
+}
+
+fn build_clipboard_get_input(
+    command: &ClipboardGetCommand,
+) -> Result<ClipboardGetInput, TendrilError> {
+    let input = ClipboardGetInput {
+        selection: ClipboardSelection::parse(command.selection.as_deref())?,
+        timeout_ms: command.timeout_ms.unwrap_or(DEFAULT_CLIPBOARD_TIMEOUT_MS),
+    };
+    input.validate()?;
+    Ok(input)
+}
+
+fn build_clipboard_set_input(
+    command: &ClipboardSetCommand,
+) -> Result<ClipboardSetInput, TendrilError> {
+    let input = ClipboardSetInput {
+        selection: ClipboardSelection::parse(command.selection.as_deref())?,
+        text: command.text.clone(),
+        serve_ms: command.serve_ms.unwrap_or(DEFAULT_CLIPBOARD_SERVE_MS),
+    };
+    input.validate()?;
+    Ok(input)
 }
 
 fn build_run_input(target: &TargetScope, command: &RunCommand) -> Result<RunInput, TendrilError> {
@@ -1246,15 +1368,20 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::{
-        AliasRequest, CaptureRequest, ListenRequest, RunRequest, TargetScope, build_alias_input,
-        build_capture_input, build_listen_input, build_listen_response, build_mcp_server,
+        AliasRequest, CaptureRequest, ClipboardGetRequest, ClipboardSetRequest, ListenRequest,
+        RunRequest, TargetScope, build_alias_input, build_capture_input, build_clipboard_get_input,
+        build_clipboard_set_input, build_listen_input, build_listen_response, build_mcp_server,
         build_run_input, dispatch, dispatch_listen_command, execute_alias,
         execute_list_with_adapter, render_command_output, render_list_human,
     };
     use crate::capture::{execute_capture, render_capture_human};
     use crate::cli::{
-        AliasCommand, CaptureCommand, Command, ListCommand, ListenCommand, McpCommand,
-        McpSubcommand, RunCommand, TendrilCli, WORKFLOW_HINT,
+        AliasCommand, CaptureCommand, ClipboardGetCommand, ClipboardSetCommand, Command,
+        ListCommand, ListenCommand, McpCommand, McpSubcommand, RunCommand, TendrilCli,
+        WORKFLOW_HINT,
+    };
+    use crate::clipboard::{
+        ClipboardSelection, DEFAULT_CLIPBOARD_SERVE_MS, DEFAULT_CLIPBOARD_TIMEOUT_MS,
     };
     use crate::config::{ImageFormat, TendrilConfig};
     use crate::error::TendrilError;
@@ -1652,7 +1779,17 @@ mod tests {
             .into_iter()
             .map(|tool| tool.name)
             .collect();
-        assert_eq!(names, vec!["list", "capture", "run", "listen"]);
+        assert_eq!(
+            names,
+            vec![
+                "list",
+                "capture",
+                "run",
+                "listen",
+                "clipboard_get",
+                "clipboard_set"
+            ]
+        );
     }
 
     #[test]
@@ -1674,6 +1811,14 @@ mod tests {
             .iter()
             .find(|tool| tool.name == "listen")
             .expect("listen tool should be registered");
+        let clipboard_get = tools
+            .iter()
+            .find(|tool| tool.name == "clipboard_get")
+            .expect("clipboard_get tool should be registered");
+        let clipboard_set = tools
+            .iter()
+            .find(|tool| tool.name == "clipboard_set")
+            .expect("clipboard_set tool should be registered");
 
         assert_eq!(
             list.input_schema,
@@ -1695,6 +1840,36 @@ mod tests {
             serde_json::to_value(schemars::schema_for!(ListenRequest))
                 .expect("listen schema should serialize")
         );
+        assert_eq!(
+            clipboard_get.input_schema,
+            serde_json::to_value(schemars::schema_for!(ClipboardGetRequest))
+                .expect("clipboard_get schema should serialize")
+        );
+        assert_eq!(
+            clipboard_set.input_schema,
+            serde_json::to_value(schemars::schema_for!(ClipboardSetRequest))
+                .expect("clipboard_set schema should serialize")
+        );
+    }
+
+    #[test]
+    fn clipboard_input_parses_selection_and_defaults() {
+        let get = build_clipboard_get_input(&ClipboardGetCommand {
+            selection: Some("primary".to_owned()),
+            timeout_ms: None,
+        })
+        .expect("clipboard get input should build");
+        assert_eq!(get.selection, ClipboardSelection::Primary);
+        assert_eq!(get.timeout_ms, DEFAULT_CLIPBOARD_TIMEOUT_MS);
+
+        let set = build_clipboard_set_input(&ClipboardSetCommand {
+            selection: None,
+            text: "hello clipboard".to_owned(),
+            serve_ms: None,
+        })
+        .expect("clipboard set input should build");
+        assert_eq!(set.selection, ClipboardSelection::Clipboard);
+        assert_eq!(set.serve_ms, DEFAULT_CLIPBOARD_SERVE_MS);
     }
 
     #[test]

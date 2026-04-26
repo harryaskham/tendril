@@ -81,7 +81,17 @@ fn external_client_smoke_script_verifies_stdio_contract_against_built_binary() {
         .iter()
         .map(|tool| tool["name"].as_str().expect("tool name"))
         .collect::<Vec<_>>();
-    assert_eq!(tool_names, vec!["list", "capture", "run", "listen"]);
+    assert_eq!(
+        tool_names,
+        vec![
+            "list",
+            "capture",
+            "run",
+            "listen",
+            "clipboard_get",
+            "clipboard_set"
+        ]
+    );
 
     let capture_tool = tool(tools, "capture");
     let run_tool = tool(tools, "run");
