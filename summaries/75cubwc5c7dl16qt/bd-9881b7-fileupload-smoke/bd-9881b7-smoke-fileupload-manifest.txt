@@ -1,0 +1,12 @@
+Tendril headless Firefox file-upload smoke passed.
+name=bd-9881b7-smoke
+display=:90
+browser=/home/harry/.nix-profile/bin/firefox
+browser_window=0x600004
+marionette_port=62090
+resolution=1920x1080x24
+runtime_dir=/run/user/1000/tendril-headless/bd-9881b7-smoke
+upload_url=file:///home/harry/.cacophony/agents/tendril/75cubwc5c7dl16qt/checkout/summaries/75cubwc5c7dl16qt/bd-9881b7-fileupload-smoke/file-upload-task.html
+proof_file=/home/harry/.cacophony/agents/tendril/75cubwc5c7dl16qt/checkout/summaries/75cubwc5c7dl16qt/bd-9881b7-fileupload-smoke/upload-source/upload-proof.txt
+native_chooser_result=no separate chooser target discovered after Tendril click; upload completed via Firefox Marionette helper.
+artifacts=/home/harry/.cacophony/agents/tendril/75cubwc5c7dl16qt/checkout/summaries/75cubwc5c7dl16qt/bd-9881b7-fileupload-smoke

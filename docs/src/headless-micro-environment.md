@@ -29,8 +29,8 @@ prompts.
   process cap of 2 (`--browser-renderers <n>` to tune, `0` to omit). Set
   `TENDRIL_HEADLESS_CHROMIUM_SANDBOX=true` if you need to validate with the
   browser sandbox enabled.
-- Clean lifecycle commands: `start`, `env`, `inspect`, `reset`, `stop`, and
-  `smoke`.
+- Clean lifecycle commands: `start`, `env`, `inspect`, `reset`, `stop`,
+  `smoke`, `firefox-upload`, and `file-upload-smoke`.
 - Smoke artifacts written to a git-trackable summaries directory by default:
   `summaries/$CACOPHONY_AGENT/` or `summaries/manual/`.
 
@@ -151,6 +151,69 @@ tendril --json --window "$window_id" capture -o "summaries/${CACOPHONY_AGENT:-ma
 ```
 
 Do not use `hold(ctrl),l,release(ctrl),send("URL"),Return` as the browser-navigation preflight on Linux/X11. Firefox can leave focus inside an existing page input even though Tendril successfully dispatched the chord, causing the URL to be typed into the page. Click the visible address bar and recapture/verify the page changed before continuing.
+
+## Firefox file uploads
+
+In the packaged Xvfb desktop, Firefox's native file picker is not a reliable
+Tendril target. A Tendril click on a visible `<input type="file">` Browse button
+can return a successful `run` result, but `tendril list` still exposes only the
+Firefox top-level window (and the optional XTerm shell), with no separate Open
+File/File Chooser window to capture or control. Treat that as a browser-native
+modal boundary rather than an agent-controllable OS dialog.
+
+Use the explicit Firefox helper when an agent must upload a local file in the
+headless browser. The helper starts Firefox with Marionette enabled, then uses
+WebDriver's file-input path injection for the selected element. It does not use
+terminal side effects; follow it with Tendril capture artifacts of the browser
+window so the page itself proves the upload succeeded.
+
+Focused end-to-end smoke:
+
+```bash
+cargo build -p tendril
+scripts/tendril-headless.sh \
+  --name file-upload-smoke \
+  --browser firefox \
+  --tendril-bin ./target/debug/tendril \
+  --artifact-dir "summaries/${CACOPHONY_AGENT:-manual}/file-upload-smoke" \
+  file-upload-smoke
+```
+
+The smoke:
+
+1. starts a Firefox-backed headless desktop with a recorded Marionette port,
+2. opens a checkout-local upload page,
+3. captures the upload form,
+4. clicks the native Browse button with Tendril and records that no separate
+   chooser target appears in `list`,
+5. uploads `upload-source/upload-proof.txt` through `firefox-upload`, and
+6. captures the browser after upload, where the page displays `Uploaded file
+   confirmed` and the proof file contents.
+
+For a custom page in a running Firefox environment:
+
+```bash
+eval "$(scripts/tendril-headless.sh --name browser-upload --browser firefox start)"
+
+scripts/tendril-headless.sh \
+  --name browser-upload \
+  --navigate-url 'file:///absolute/path/to/form.html' \
+  --file-input-selector 'input[type="file"]' \
+  --upload-file '/absolute/path/to/proof.txt' \
+  --helper-output "summaries/${CACOPHONY_AGENT:-manual}/firefox-upload-helper.json" \
+  firefox-upload
+
+window_id=$(tendril --json list | python3 -c '
+import json, sys
+for target in json.load(sys.stdin)["data"]["targets"]:
+    haystack=" ".join(str(target.get(k) or "") for k in ("name", "title", "app_name")).lower()
+    if target["kind"] == "window" and "firefox" in haystack:
+        print(target["id"])
+        break
+')
+tendril --json --window "$window_id" capture \
+  -o "summaries/${CACOPHONY_AGENT:-manual}/firefox-upload-after.png"
+```
 
 Reset or stop the environment:
 

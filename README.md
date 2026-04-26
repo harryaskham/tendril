@@ -112,8 +112,10 @@ Smoke captures are written under `summaries/$CACOPHONY_AGENT/` by default so
 Cacophony summaries and `/tmp/watch-captures.sh` can surface them. The smoke
 path requires a discovered browser window and writes a browser-after capture
 showing Tendril-controlled input; XTerm or window-manager helper windows are not
-accepted as browser-control proof. The Nix package also exposes the helper as
-`nix run .#tendril-headless -- smoke`.
+accepted as browser-control proof. Firefox file uploads in this headless desktop
+use the explicit `firefox-upload`/`file-upload-smoke` helper because the native
+Firefox chooser is not exposed as a separate Tendril target after clicking a file
+input. The Nix package also exposes the helper; run `nix run .#tendril-headless -- smoke`.
 
 Examples:
 

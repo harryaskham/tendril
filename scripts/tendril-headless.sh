@@ -23,6 +23,11 @@ GIT_ADD_ARTIFACTS="${TENDRIL_HEADLESS_GIT_ADD_ARTIFACTS:-true}"
 TENDRIL_BIN="${TENDRIL_HEADLESS_TENDRIL_BIN:-tendril}"
 BROWSER_BIN="${TENDRIL_HEADLESS_BROWSER:-}"
 COMMAND=""
+UPLOAD_FILE=""
+FILE_INPUT_SELECTOR='input[type="file"]'
+NAVIGATE_URL=""
+HELPER_OUTPUT=""
+MARIONETTE_PORT="${TENDRIL_HEADLESS_MARIONETTE_PORT:-}"
 
 usage() {
   cat <<'USAGE'
@@ -35,6 +40,10 @@ Commands:
   reset      Stop then start the environment.
   stop       Stop processes and remove the runtime directory.
   smoke      Run Tendril list/capture/run against the isolated desktop.
+  firefox-upload
+             Set a file input in the running headless Firefox via Marionette.
+  file-upload-smoke
+             Reproduce the native Firefox chooser limitation, then upload via helper.
 
 Options:
   --name <name>          Environment name (default: default).
@@ -50,6 +59,12 @@ Options:
   --browser-renderers <n> Chromium renderer process cap (default: 2; set 0 to omit the flag).
                          Chromium sandboxing is disabled by default in this
                          disposable Xvfb sandbox; set TENDRIL_HEADLESS_CHROMIUM_SANDBOX=true to keep it.
+  --marionette-port <n>  Firefox Marionette port for browser helpers (default: auto-pick localhost port).
+  --upload-file <path>   Local file path for firefox-upload.
+  --file-input-selector <css>
+                         CSS selector for firefox-upload (default: input[type="file"]).
+  --navigate-url <url>   Optional URL to load before firefox-upload selects the file.
+  --helper-output <path> Write firefox-upload JSON to a file instead of stdout.
   --no-git-add-artifacts Do not run git add for smoke artifacts.
   --keep-runtime         Keep runtime files on stop.
   -h, --help             Show this help.
@@ -60,6 +75,9 @@ Copy-paste smoke from a built checkout:
 
 Copy-paste smoke using the latest checkout through Nix:
   scripts/tendril-headless.sh --tendril-bin 'nix run .#tendril --' smoke
+
+Firefox file-upload smoke:
+  scripts/tendril-headless.sh --browser firefox --tendril-bin ./target/debug/tendril file-upload-smoke
 USAGE
 }
 
@@ -80,10 +98,55 @@ quote() {
   printf '%q' "$1"
 }
 
+port_available() {
+  python3 - "$1" <<'PY'
+import socket
+import sys
+port = int(sys.argv[1])
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        sock.bind(("127.0.0.1", port))
+    except OSError:
+        raise SystemExit(1)
+PY
+}
+
+choose_marionette_port() {
+  local display_number="$1" candidate
+  if [[ -n "$MARIONETTE_PORT" ]]; then
+    printf '%s' "$MARIONETTE_PORT"
+    return 0
+  fi
+
+  candidate=$((62000 + display_number))
+  if [[ "$candidate" -le 65535 ]] && port_available "$candidate"; then
+    printf '%s' "$candidate"
+    return 0
+  fi
+
+  for candidate in $(seq 62090 62250); do
+    if port_available "$candidate"; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done
+
+  fail "could not find a free localhost port for Firefox Marionette"
+}
+
+abspath() {
+  python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$1"
+}
+
+dsl_escape() {
+  python3 -c 'import json, sys; print(json.dumps(sys.argv[1])[1:-1])' "$1"
+}
+
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      start|env|inspect|reset|stop|smoke)
+      start|env|inspect|reset|stop|smoke|firefox-upload|file-upload-smoke)
         if [[ -n "$COMMAND" ]]; then
           fail "only one command may be provided"
         fi
@@ -140,6 +203,31 @@ parse_args() {
         [[ "$BROWSER_RENDERER_LIMIT" =~ ^[0-9]+$ ]] || fail "--browser-renderers requires a non-negative integer"
         shift 2
         ;;
+      --marionette-port)
+        MARIONETTE_PORT="${2:-}"
+        [[ "$MARIONETTE_PORT" =~ ^[0-9]+$ ]] && [[ "$MARIONETTE_PORT" -gt 0 ]] && [[ "$MARIONETTE_PORT" -le 65535 ]] || fail "--marionette-port requires a TCP port number from 1 to 65535"
+        shift 2
+        ;;
+      --upload-file)
+        UPLOAD_FILE="${2:-}"
+        [[ -n "$UPLOAD_FILE" ]] || fail "--upload-file requires a value"
+        shift 2
+        ;;
+      --file-input-selector)
+        FILE_INPUT_SELECTOR="${2:-}"
+        [[ -n "$FILE_INPUT_SELECTOR" ]] || fail "--file-input-selector requires a value"
+        shift 2
+        ;;
+      --navigate-url)
+        NAVIGATE_URL="${2:-}"
+        [[ -n "$NAVIGATE_URL" ]] || fail "--navigate-url requires a value"
+        shift 2
+        ;;
+      --helper-output)
+        HELPER_OUTPUT="${2:-}"
+        [[ -n "$HELPER_OUTPUT" ]] || fail "--helper-output requires a value"
+        shift 2
+        ;;
       --no-git-add-artifacts)
         GIT_ADD_ARTIFACTS="false"
         shift
@@ -160,6 +248,9 @@ parse_args() {
 
   [[ -n "$COMMAND" ]] || COMMAND="inspect"
   [[ "$BROWSER_STARTUP_GRACE" =~ ^[0-9]+$ ]] || fail "TENDRIL_HEADLESS_BROWSER_STARTUP_GRACE must be a non-negative integer number of seconds"
+  if [[ -n "$MARIONETTE_PORT" ]]; then
+    [[ "$MARIONETTE_PORT" =~ ^[0-9]+$ ]] && [[ "$MARIONETTE_PORT" -gt 0 ]] && [[ "$MARIONETTE_PORT" -le 65535 ]] || fail "TENDRIL_HEADLESS_MARIONETTE_PORT must be a TCP port number from 1 to 65535"
+  fi
 }
 
 runtime_dir() {
@@ -414,14 +505,27 @@ launch_browser() {
   log "starting browser: $browser"
   case "$(basename "$browser")" in
     firefox|firefox-esr)
-      mkdir -p "$dir/browser-profile/firefox"
-      browser_env "$display" "$dir" "$browser" \
-        --no-remote \
-        --new-instance \
-        --profile "$dir/browser-profile/firefox" \
-        --width "$WIDTH" \
-        --height "$HEIGHT" \
-        "$smoke_url" \
+      local firefox_profile
+      local -a firefox_args
+      firefox_profile="$dir/browser-profile/firefox"
+      mkdir -p "$firefox_profile"
+      firefox_args=(
+        --no-remote
+        --new-instance
+        --profile "$firefox_profile"
+        --width "$WIDTH"
+        --height "$HEIGHT"
+        "$smoke_url"
+      )
+      if [[ -n "${MARIONETTE_PORT:-}" ]]; then
+        cat >"$firefox_profile/user.js" <<EOF_FIREFOX_PREFS
+user_pref("marionette.enabled", true);
+user_pref("marionette.port", ${MARIONETTE_PORT});
+EOF_FIREFOX_PREFS
+        firefox_args=(-marionette "${firefox_args[@]}")
+      fi
+      MOZ_MARIONETTE=1 browser_env "$display" "$dir" "$browser" \
+        "${firefox_args[@]}" \
         >"$dir/logs/browser.log" 2>&1 &
       browser_pid="$!"
       ;;
@@ -511,7 +615,7 @@ choose_display() {
 }
 
 write_state() {
-  local dir="$1" display="$2" xvfb_pid="$3" wm_pid="$4" browser_pid="$5" terminal_pid="$6" browser="$7" wm="$8" terminal="$9"
+  local dir="$1" display="$2" xvfb_pid="$3" wm_pid="$4" browser_pid="$5" terminal_pid="$6" browser="$7" wm="$8" terminal="$9" marionette_port="${10:-}"
   cat > "$(state_file)" <<EOF_STATE
 export TENDRIL_HEADLESS_NAME=$(quote "$NAME")
 export TENDRIL_HEADLESS_RUNTIME_DIR=$(quote "$dir")
@@ -521,6 +625,7 @@ export TENDRIL_HEADLESS_DEPTH=$(quote "$DEPTH")
 export TENDRIL_HEADLESS_BROWSER=$(quote "$browser")
 export TENDRIL_HEADLESS_WINDOW_MANAGER=$(quote "$wm")
 export TENDRIL_HEADLESS_TERMINAL=$(quote "$terminal")
+export TENDRIL_HEADLESS_MARIONETTE_PORT=$(quote "$marionette_port")
 export TENDRIL_HEADLESS_XVFB_PID=$(quote "$xvfb_pid")
 export TENDRIL_HEADLESS_WM_PID=$(quote "$wm_pid")
 export TENDRIL_HEADLESS_BROWSER_PID=$(quote "$browser_pid")
@@ -539,6 +644,7 @@ export TENDRIL_HEADLESS_NAME=$(quote "$TENDRIL_HEADLESS_NAME")
 export TENDRIL_HEADLESS_RUNTIME_DIR=$(quote "$TENDRIL_HEADLESS_RUNTIME_DIR")
 export TENDRIL_HEADLESS_WIDTH=$(quote "$TENDRIL_HEADLESS_WIDTH")
 export TENDRIL_HEADLESS_HEIGHT=$(quote "$TENDRIL_HEADLESS_HEIGHT")
+export TENDRIL_HEADLESS_MARIONETTE_PORT=$(quote "${TENDRIL_HEADLESS_MARIONETTE_PORT:-}")
 EOF_EXPORTS
 }
 
@@ -572,6 +678,7 @@ start_env() {
 
   display_number="$(choose_display)"
   display=":${display_number}"
+  MARIONETTE_PORT="$(choose_marionette_port "$display_number")"
   browser_list="$(choose_browsers)"
   mapfile -t browser_candidates <<<"$browser_list"
   wm="$(choose_window_manager)"
@@ -630,7 +737,7 @@ start_env() {
     fail "could not keep a supported browser alive for the headless environment"
   fi
 
-  write_state "$dir" "$display" "$xvfb_pid" "$wm_pid" "$browser_pid" "$terminal_pid" "$browser" "$wm" "$terminal"
+  write_state "$dir" "$display" "$xvfb_pid" "$wm_pid" "$browser_pid" "$terminal_pid" "$browser" "$wm" "$terminal" "$MARIONETTE_PORT"
   sleep 1
   log "started environment '$NAME'; logs are under $dir/logs"
   print_exports
@@ -684,6 +791,7 @@ inspect_env() {
   printf 'resolution: %sx%sx%s\n' "${TENDRIL_HEADLESS_WIDTH:-}" "${TENDRIL_HEADLESS_HEIGHT:-}" "${TENDRIL_HEADLESS_DEPTH:-}"
   printf 'runtime_dir: %s\n' "${TENDRIL_HEADLESS_RUNTIME_DIR:-}"
   printf 'browser: %s pid=%s alive=%s\n' "${TENDRIL_HEADLESS_BROWSER:-}" "${TENDRIL_HEADLESS_BROWSER_PID:-}" "$(pid_alive "${TENDRIL_HEADLESS_BROWSER_PID:-}" && printf true || printf false)"
+  printf 'marionette_port: %s\n' "${TENDRIL_HEADLESS_MARIONETTE_PORT:-}"
   printf 'window_manager: %s pid=%s alive=%s\n' "${TENDRIL_HEADLESS_WINDOW_MANAGER:-}" "${TENDRIL_HEADLESS_WM_PID:-}" "$(pid_alive "${TENDRIL_HEADLESS_WM_PID:-}" && printf true || printf false)"
   printf 'terminal: %s pid=%s alive=%s\n' "${TENDRIL_HEADLESS_TERMINAL:-}" "${TENDRIL_HEADLESS_TERMINAL_PID:-}" "$(pid_alive "${TENDRIL_HEADLESS_TERMINAL_PID:-}" && printf true || printf false)"
 }
@@ -890,6 +998,460 @@ EOF_MANIFEST
   fi
 }
 
+write_file_upload_smoke_page() {
+  local dir="$1"
+  cat >"$dir/file-upload-task.html" <<'EOF_HTML'
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tendril File Upload Task</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      box-sizing: border-box;
+      padding: 64px 84px;
+      background: #111827;
+      color: #f9fafb;
+      font: 28px/1.45 system-ui, sans-serif;
+    }
+    main { max-width: 1280px; }
+    h1 { margin: 0 0 20px; font-size: 52px; }
+    .upload-box {
+      margin-top: 32px;
+      padding: 32px;
+      border: 4px solid #38bdf8;
+      border-radius: 24px;
+      background: #0f172a;
+    }
+    input[type=file] {
+      display: block;
+      width: 900px;
+      max-width: 100%;
+      padding: 18px;
+      border: 3px solid #facc15;
+      border-radius: 14px;
+      background: #fff8dc;
+      color: #111827;
+      font: 30px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    #status {
+      margin-top: 32px;
+      white-space: pre-wrap;
+      padding: 24px;
+      min-height: 180px;
+      border-left: 12px solid #22c55e;
+      background: rgba(34, 197, 94, 0.16);
+      font: 28px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Tendril File Upload Task</h1>
+    <p>Choose the proof file. The page prints the selected file name and contents.</p>
+    <section class="upload-box">
+      <label for="upload-input">Upload proof file</label>
+      <input id="upload-input" type="file">
+    </section>
+    <pre id="status">Waiting for upload.</pre>
+  </main>
+  <script>
+    const input = document.getElementById('upload-input');
+    const status = document.getElementById('status');
+    input.addEventListener('change', async () => {
+      if (!input.files.length) {
+        status.textContent = 'No file selected.';
+        return;
+      }
+      const file = input.files[0];
+      const text = await file.text();
+      status.textContent = `Uploaded file confirmed\nname=${file.name}\ncontents=${text}`;
+      document.body.dataset.uploadConfirmed = text;
+    });
+  </script>
+</body>
+</html>
+EOF_HTML
+}
+
+run_firefox_upload_helper() {
+  ensure_name_safe
+  state_alive || fail "environment '$NAME' is not running; start it first or run file-upload-smoke"
+  local browser_base port upload_abs output_target
+  browser_base="$(basename "${TENDRIL_HEADLESS_BROWSER:-}")"
+  case "$browser_base" in
+    firefox|firefox-esr|.firefox-wrapper|firefox-bin) ;;
+    *) fail "firefox-upload requires a Firefox headless environment, got browser=${TENDRIL_HEADLESS_BROWSER:-unknown}; start with --browser firefox" ;;
+  esac
+  port="${TENDRIL_HEADLESS_MARIONETTE_PORT:-}"
+  [[ -n "$port" ]] || fail "running environment did not record a Marionette port; reset it with this updated helper"
+  [[ -n "$UPLOAD_FILE" ]] || fail "firefox-upload requires --upload-file <path>"
+  [[ -f "$UPLOAD_FILE" ]] || fail "upload file does not exist: $UPLOAD_FILE"
+  upload_abs="$(abspath "$UPLOAD_FILE")"
+
+  output_target="/dev/stdout"
+  if [[ -n "$HELPER_OUTPUT" ]]; then
+    mkdir -p "$(dirname "$HELPER_OUTPUT")"
+    output_target="$HELPER_OUTPUT"
+  fi
+
+  python3 - "$port" "$FILE_INPUT_SELECTOR" "$upload_abs" "$NAVIGATE_URL" >"$output_target" <<'PY'
+import json
+import os
+import socket
+import sys
+import time
+
+port = int(sys.argv[1])
+selector = sys.argv[2]
+upload_file = sys.argv[3]
+navigate_url = sys.argv[4]
+
+if not os.path.isfile(upload_file):
+    raise SystemExit(f"upload file not found: {upload_file}")
+
+class Marionette:
+    def __init__(self, port):
+        self.sock = socket.create_connection(("127.0.0.1", port), timeout=5)
+        self.sock.settimeout(20)
+        self.next_id = 0
+        self.hello = self.recv()
+
+    def close(self):
+        self.sock.close()
+
+    def recv(self):
+        length_bytes = bytearray()
+        while True:
+            chunk = self.sock.recv(1)
+            if not chunk:
+                raise EOFError("Marionette closed while reading frame length")
+            if chunk == b":":
+                break
+            length_bytes.extend(chunk)
+        length = int(length_bytes.decode("ascii"))
+        body = bytearray()
+        while len(body) < length:
+            chunk = self.sock.recv(length - len(body))
+            if not chunk:
+                raise EOFError("Marionette closed while reading frame body")
+            body.extend(chunk)
+        return json.loads(body.decode("utf-8"))
+
+    def send_raw(self, payload):
+        encoded = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        self.sock.sendall(str(len(encoded)).encode("ascii") + b":" + encoded)
+
+    def command(self, name, params):
+        self.next_id += 1
+        message_id = self.next_id
+        self.send_raw([0, message_id, name, params])
+        response = self.recv()
+        if not (isinstance(response, list) and len(response) == 4 and response[0] == 1 and response[1] == message_id):
+            raise RuntimeError(f"unexpected Marionette response to {name}: {response!r}")
+        error = response[2]
+        if error is not None:
+            raise RuntimeError(f"Marionette {name} failed: {error!r}")
+        return response[3]
+
+client = Marionette(port)
+try:
+    session = client.command("WebDriver:NewSession", {})
+    if navigate_url:
+        client.command("WebDriver:Navigate", {"url": navigate_url})
+        time.sleep(0.5)
+    found = client.command("WebDriver:FindElement", {"using": "css selector", "value": selector})
+    element_value = found.get("value", found)
+    element_id = (
+        element_value.get("element-6066-11e4-a52e-4f735466cecf")
+        or element_value.get("ELEMENT")
+    )
+    if not element_id:
+        raise RuntimeError(f"could not extract element id from {found!r}")
+    client.command(
+        "WebDriver:ElementSendKeys",
+        {"id": element_id, "text": upload_file, "value": list(upload_file)},
+    )
+    time.sleep(0.75)
+    state = client.command(
+        "WebDriver:ExecuteScript",
+        {
+            "script": """
+const input = document.querySelector(arguments[0]);
+return {
+  title: document.title,
+  url: location.href,
+  selector: arguments[0],
+  fileCount: input && input.files ? input.files.length : null,
+  fileName: input && input.files && input.files.length ? input.files[0].name : null,
+  bodyText: document.body ? document.body.innerText : null,
+  uploadConfirmed: document.body ? document.body.dataset.uploadConfirmed || null : null
+};
+""",
+            "args": [selector],
+            "newSandbox": True,
+            "sandbox": "default",
+            "line": 1,
+            "filename": "tendril-headless-firefox-upload",
+        },
+    )
+    value = state.get("value", state)
+    result = {
+        "status": "success",
+        "helper": "tendril-headless firefox-upload",
+        "transport": "firefox-marionette",
+        "marionette": {
+            "port": port,
+            "hello": client.hello,
+            "sessionId": session.get("sessionId"),
+        },
+        "request": {
+            "selector": selector,
+            "upload_file": upload_file,
+            "navigate_url": navigate_url or None,
+        },
+        "page": value,
+    }
+    print(json.dumps(result, indent=2, sort_keys=True))
+finally:
+    # Do not send WebDriver:DeleteSession here: for this direct Marionette
+    # attachment it can close Firefox before Tendril captures the verified page.
+    client.close()
+PY
+}
+
+run_firefox_navigate_helper() {
+  ensure_name_safe
+  state_alive || fail "environment '$NAME' is not running"
+  local browser_base port output_target
+  browser_base="$(basename "${TENDRIL_HEADLESS_BROWSER:-}")"
+  case "$browser_base" in
+    firefox|firefox-esr|.firefox-wrapper|firefox-bin) ;;
+    *) fail "Firefox Marionette navigation requires a Firefox headless environment, got browser=${TENDRIL_HEADLESS_BROWSER:-unknown}" ;;
+  esac
+  port="${TENDRIL_HEADLESS_MARIONETTE_PORT:-}"
+  [[ -n "$port" ]] || fail "running environment did not record a Marionette port"
+  [[ -n "$NAVIGATE_URL" ]] || fail "Firefox Marionette navigation requires NAVIGATE_URL"
+  output_target="/dev/stdout"
+  if [[ -n "$HELPER_OUTPUT" ]]; then
+    mkdir -p "$(dirname "$HELPER_OUTPUT")"
+    output_target="$HELPER_OUTPUT"
+  fi
+  python3 - "$port" "$NAVIGATE_URL" >"$output_target" <<'PY'
+import json
+import socket
+import sys
+import time
+
+port = int(sys.argv[1])
+url = sys.argv[2]
+
+def recv(sock):
+    length_bytes = bytearray()
+    while True:
+        chunk = sock.recv(1)
+        if not chunk:
+            raise EOFError("Marionette closed while reading frame length")
+        if chunk == b":":
+            break
+        length_bytes.extend(chunk)
+    length = int(length_bytes.decode("ascii"))
+    body = bytearray()
+    while len(body) < length:
+        chunk = sock.recv(length - len(body))
+        if not chunk:
+            raise EOFError("Marionette closed while reading frame body")
+        body.extend(chunk)
+    return json.loads(body.decode("utf-8"))
+
+def send(sock, payload):
+    encoded = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    sock.sendall(str(len(encoded)).encode("ascii") + b":" + encoded)
+
+def command(sock, message_id, name, params):
+    send(sock, [0, message_id, name, params])
+    response = recv(sock)
+    if response[2] is not None:
+        raise RuntimeError(f"Marionette {name} failed: {response[2]!r}")
+    return response[3]
+
+sock = socket.create_connection(("127.0.0.1", port), timeout=5)
+sock.settimeout(20)
+try:
+    hello = recv(sock)
+    session = command(sock, 1, "WebDriver:NewSession", {})
+    command(sock, 2, "WebDriver:Navigate", {"url": url})
+    time.sleep(0.75)
+    page = command(sock, 3, "WebDriver:ExecuteScript", {
+        "script": "return { title: document.title, url: location.href, bodyText: document.body ? document.body.innerText : null };",
+        "args": [],
+        "newSandbox": True,
+        "sandbox": "default",
+        "line": 1,
+        "filename": "tendril-headless-firefox-navigate",
+    })
+    print(json.dumps({
+        "status": "success",
+        "helper": "tendril-headless firefox-marionette-navigate",
+        "transport": "firefox-marionette",
+        "marionette": {"port": port, "hello": hello, "sessionId": session.get("sessionId")},
+        "request": {"navigate_url": url},
+        "page": page.get("value", page),
+    }, indent=2, sort_keys=True))
+finally:
+    sock.close()
+PY
+}
+
+run_file_upload_smoke() {
+  ensure_name_safe
+  if [[ -z "$BROWSER_BIN" ]]; then
+    BROWSER_BIN="firefox"
+  fi
+  local tendril_program
+  tendril_program="${TENDRIL_BIN%% *}"
+  [[ -x "$tendril_program" || "$(command -v "$tendril_program" 2>/dev/null || true)" ]] || fail "Tendril binary not found: $TENDRIL_BIN; pass --tendril-bin ./target/debug/tendril or --tendril-bin 'nix run .#tendril --'"
+
+  local artifact_dir
+  artifact_dir="$(resolve_artifact_dir)"
+  ensure_artifact_dir_safe "$artifact_dir"
+  mkdir -p "$artifact_dir/upload-source"
+
+  cat >"$artifact_dir/upload-source/upload-proof.txt" <<'EOF_PROOF'
+tendril-file-upload-control-ok
+EOF_PROOF
+  write_file_upload_smoke_page "$artifact_dir"
+  local upload_url
+  upload_url="file://$artifact_dir/file-upload-task.html"
+
+  local started_here="false"
+  if ! state_alive; then
+    start_env >/dev/null
+    started_here="true"
+  else
+    log "using existing environment '$NAME' on DISPLAY=${DISPLAY}"
+  fi
+  trap 'if [[ "${started_here:-false}" == "true" ]]; then stop_env; fi' EXIT
+
+  local dir list_json display_id window_id before_capture click_run after_click_list after_click_capture dismiss_run helper_json after_capture
+  dir="${TENDRIL_HEADLESS_RUNTIME_DIR:-$(runtime_dir)}"
+
+  log "waiting for Tendril to see a ${WIDTH}x${HEIGHT} Firefox window"
+  if ! list_json="$(wait_for_targets)"; then
+    diagnose_browser_log "$dir/logs/browser.log"
+    preserve_runtime_logs "$dir" "$artifact_dir"
+    fail "Tendril did not discover expected headless Firefox targets"
+  fi
+  printf '%s\n' "$list_json" >"$artifact_dir/${NAME}-fileupload-list-initial.json"
+
+  display_id="$(python3 -c '
+import json, sys
+width=int(sys.argv[1]); height=int(sys.argv[2]); payload=json.load(sys.stdin)
+for target in payload["data"]["targets"]:
+    bounds=target.get("bounds", {})
+    if target.get("kind") == "display" and bounds.get("width") == width and bounds.get("height") == height:
+        print(target["id"]); break
+else:
+    raise SystemExit(1)
+' "$WIDTH" "$HEIGHT" <<<"$list_json")"
+
+  window_id="$(python3 -c '
+import json, sys
+browser_pid=sys.argv[1]
+payload=json.load(sys.stdin)
+for target in payload["data"]["targets"]:
+    haystack=" ".join(str(target.get(k) or "") for k in ("name", "title", "app_name")).lower()
+    if target.get("kind") == "window" and ((browser_pid and str(target.get("process_id") or "") == browser_pid) or "firefox" in haystack):
+        print(target["id"]); break
+else:
+    raise SystemExit("no Firefox window found")
+' "${TENDRIL_HEADLESS_BROWSER_PID:-}" <<<"$list_json")"
+
+  log "navigating Firefox to file-upload smoke page through Marionette preflight"
+  NAVIGATE_URL="$upload_url" \
+    HELPER_OUTPUT="$artifact_dir/${NAME}-fileupload-marionette-navigate.json" \
+    run_firefox_navigate_helper
+
+  log "capturing upload form before native chooser click"
+  before_capture="$(run_tendril --json --window "$window_id" capture --max-width "$WIDTH" --max-height "$HEIGHT" -o "$artifact_dir/${NAME}-fileupload-before.png")"
+  printf '%s\n' "$before_capture" >"$artifact_dir/${NAME}-fileupload-before-capture.json"
+
+  log "clicking the native Firefox file input Browse control with Tendril"
+  click_run="$(run_tendril --json --window "$window_id" run 'lclick(180,305),wait(1000ms)')"
+  printf '%s\n' "$click_run" >"$artifact_dir/${NAME}-fileupload-native-click-run.json"
+
+  after_click_list="$(run_tendril --json list 2>"$artifact_dir/${NAME}-fileupload-list-after-native-click.err")"
+  printf '%s\n' "$after_click_list" >"$artifact_dir/${NAME}-fileupload-list-after-native-click.json"
+  after_click_capture="$(run_tendril --json --display "$display_id" capture --max-width "$WIDTH" --max-height "$HEIGHT" -o "$artifact_dir/${NAME}-fileupload-after-native-click-display.png")"
+  printf '%s\n' "$after_click_capture" >"$artifact_dir/${NAME}-fileupload-after-native-click-display-capture.json"
+
+  python3 - "$after_click_list" <<'PY'
+import json
+import sys
+payload = json.loads(sys.argv[1])
+windows = [t for t in payload.get("data", {}).get("targets", []) if t.get("kind") == "window"]
+dialogs = []
+for target in windows:
+    haystack = " ".join(str(target.get(k) or "") for k in ("name", "title", "app_name")).lower()
+    if any(token in haystack for token in ("open file", "file chooser", "choose file", "picker")):
+        dialogs.append(target)
+if dialogs:
+    raise SystemExit(f"unexpected discoverable native chooser target(s): {dialogs!r}")
+PY
+
+  log "dismissing any browser-modal chooser state before helper upload"
+  dismiss_run="$(run_tendril --json --window "$window_id" run 'Escape,wait(500ms)' || true)"
+  printf '%s\n' "$dismiss_run" >"$artifact_dir/${NAME}-fileupload-dismiss-native-run.json"
+
+  log "uploading proof file through Firefox Marionette helper"
+  UPLOAD_FILE="$artifact_dir/upload-source/upload-proof.txt" \
+    FILE_INPUT_SELECTOR='input[type="file"]' \
+    NAVIGATE_URL="$upload_url" \
+    HELPER_OUTPUT="$artifact_dir/${NAME}-fileupload-helper.json" \
+    run_firefox_upload_helper
+  helper_json="$(cat "$artifact_dir/${NAME}-fileupload-helper.json")"
+  python3 -c '
+import json, sys
+payload=json.loads(sys.argv[1])
+assert payload["status"] == "success"
+page = payload["page"]
+assert page["fileCount"] == 1
+assert page["fileName"] == "upload-proof.txt"
+body = page.get("bodyText") or ""
+assert "Uploaded file confirmed" in body
+assert "tendril-file-upload-control-ok" in body
+' "$helper_json"
+
+  log "capturing verified uploaded page through Tendril"
+  after_capture="$(run_tendril --json --window "$window_id" capture --max-width "$WIDTH" --max-height "$HEIGHT" -o "$artifact_dir/${NAME}-fileupload-after-helper.png")"
+  printf '%s\n' "$after_capture" >"$artifact_dir/${NAME}-fileupload-after-helper-capture.json"
+
+  cat >"$artifact_dir/${NAME}-fileupload-manifest.txt" <<EOF_MANIFEST
+Tendril headless Firefox file-upload smoke passed.
+name=$NAME
+display=$DISPLAY
+browser=${TENDRIL_HEADLESS_BROWSER:-}
+browser_window=$window_id
+marionette_port=${TENDRIL_HEADLESS_MARIONETTE_PORT:-}
+resolution=${WIDTH}x${HEIGHT}x${DEPTH}
+runtime_dir=$dir
+upload_url=$upload_url
+proof_file=$artifact_dir/upload-source/upload-proof.txt
+native_chooser_result=no separate chooser target discovered after Tendril click; upload completed via Firefox Marionette helper.
+artifacts=$artifact_dir
+EOF_MANIFEST
+  git_add_artifacts "$artifact_dir"
+
+  log "file-upload smoke passed; artifacts are under $artifact_dir"
+  if [[ "$started_here" == "true" ]]; then
+    stop_env
+    trap - EXIT
+  fi
+}
+
 parse_args "$@"
 case "$COMMAND" in
   start) start_env ;;
@@ -898,5 +1460,7 @@ case "$COMMAND" in
   reset) stop_env; start_env ;;
   stop) stop_env ;;
   smoke) run_smoke ;;
+  firefox-upload) run_firefox_upload_helper ;;
+  file-upload-smoke) run_file_upload_smoke ;;
   *) fail "unsupported command: $COMMAND" ;;
 esac

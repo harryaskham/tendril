@@ -1,0 +1,21 @@
+{
+  "helper": "tendril-headless firefox-marionette-navigate",
+  "marionette": {
+    "hello": {
+      "applicationType": "gecko",
+      "marionetteProtocol": 3
+    },
+    "port": 62090,
+    "sessionId": "a3e79922-8046-4071-b890-6045d70e97e1"
+  },
+  "page": {
+    "bodyText": "Tendril File Upload Task\n\nChoose the proof file. The page prints the selected file name and contents.\n\nUpload proof file\nWaiting for upload.",
+    "title": "Tendril File Upload Task",
+    "url": "file:///home/harry/.cacophony/agents/tendril/75cubwc5c7dl16qt/checkout/summaries/75cubwc5c7dl16qt/bd-9881b7-fileupload-smoke/file-upload-task.html"
+  },
+  "request": {
+    "navigate_url": "file:///home/harry/.cacophony/agents/tendril/75cubwc5c7dl16qt/checkout/summaries/75cubwc5c7dl16qt/bd-9881b7-fileupload-smoke/file-upload-task.html"
+  },
+  "status": "success",
+  "transport": "firefox-marionette"
+}

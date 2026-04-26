@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tendril File Upload Task</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      box-sizing: border-box;
+      padding: 64px 84px;
+      background: #111827;
+      color: #f9fafb;
+      font: 28px/1.45 system-ui, sans-serif;
+    }
+    main { max-width: 1280px; }
+    h1 { margin: 0 0 20px; font-size: 52px; }
+    .upload-box {
+      margin-top: 32px;
+      padding: 32px;
+      border: 4px solid #38bdf8;
+      border-radius: 24px;
+      background: #0f172a;
+    }
+    input[type=file] {
+      display: block;
+      width: 900px;
+      max-width: 100%;
+      padding: 18px;
+      border: 3px solid #facc15;
+      border-radius: 14px;
+      background: #fff8dc;
+      color: #111827;
+      font: 30px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    #status {
+      margin-top: 32px;
+      white-space: pre-wrap;
+      padding: 24px;
+      min-height: 180px;
+      border-left: 12px solid #22c55e;
+      background: rgba(34, 197, 94, 0.16);
+      font: 28px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Tendril File Upload Task</h1>
+    <p>Choose the proof file. The page prints the selected file name and contents.</p>
+    <section class="upload-box">
+      <label for="upload-input">Upload proof file</label>
+      <input id="upload-input" type="file">
+    </section>
+    <pre id="status">Waiting for upload.</pre>
+  </main>
+  <script>
+    const input = document.getElementById('upload-input');
+    const status = document.getElementById('status');
+    input.addEventListener('change', async () => {
+      if (!input.files.length) {
+        status.textContent = 'No file selected.';
+        return;
+      }
+      const file = input.files[0];
+      const text = await file.text();
+      status.textContent = `Uploaded file confirmed\nname=${file.name}\ncontents=${text}`;
+      document.body.dataset.uploadConfirmed = text;
+    });
+  </script>
+</body>
+</html>

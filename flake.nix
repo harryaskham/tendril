@@ -88,6 +88,7 @@
           bash
           chromium
           coreutils
+          firefox
           openbox
           python3
           xdpyinfo
