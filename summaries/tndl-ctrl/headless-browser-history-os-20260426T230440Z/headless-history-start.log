@@ -1,0 +1,15 @@
+copying path '/nix/store/gay80fqbpm2wakbsyd4in44gx0cwx3h5-source' from 'https://cache.nixos.org'...
+this derivation will be built:
+  /nix/store/wknbwxccv0anbr95a7l3r7xsh8z2ja35-tendril-0.0.1.drv
+building '/nix/store/wknbwxccv0anbr95a7l3r7xsh8z2ja35-tendril-0.0.1.drv'...
+[tendril-headless] starting Xvfb :90 at 1920x1080x24
+[tendril-headless] starting window manager: openbox
+[tendril-headless] starting browser: /nix/store/7vnya051q0xr2mdwxp48sh70xzim4fpa-firefox-149.0/bin/firefox
+[tendril-headless] started environment 'tndl-ctrl-history-20260426T230440Z'; logs are under /run/user/1000/tendril-headless/tndl-ctrl-history-20260426T230440Z/logs
+export DISPLAY=:90
+export XDG_SESSION_TYPE=x11
+export TENDRIL_HEADLESS_NAME=tndl-ctrl-history-20260426T230440Z
+export TENDRIL_HEADLESS_RUNTIME_DIR=/run/user/1000/tendril-headless/tndl-ctrl-history-20260426T230440Z
+export TENDRIL_HEADLESS_WIDTH=1920
+export TENDRIL_HEADLESS_HEIGHT=1080
+export TENDRIL_HEADLESS_MARIONETTE_PORT=62090

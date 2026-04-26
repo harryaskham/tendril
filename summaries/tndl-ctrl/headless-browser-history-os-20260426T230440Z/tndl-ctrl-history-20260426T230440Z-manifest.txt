@@ -1,0 +1,9 @@
+Tendril browser history plus OS workflow passed.
+name=tndl-ctrl-history-20260426T230440Z
+browser_window=0x600004
+xterm_window=0x40000c
+page_one=file:///home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-history-os-20260426T230440Z/history-one.html
+history_sequence=page one -> click link to page two -> Alt Left back to page one -> Alt Right forward to page two
+xterm_verification=browser-history-os-verified
+workflow=Use Tendril to navigate Firefox to a local page, click a link, use Alt+Left and Alt+Right browser history shortcuts, verify window titles after each step, capture each browser state, then drive XTerm to verify local page files.
+artifacts=/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-history-os-20260426T230440Z
