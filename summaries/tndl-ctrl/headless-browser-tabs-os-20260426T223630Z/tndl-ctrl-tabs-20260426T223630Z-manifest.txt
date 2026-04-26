@@ -1,0 +1,9 @@
+Tendril multi-tab browser plus OS workflow passed.
+name=tndl-ctrl-tabs-20260426T223630Z
+browser_window=0x600004
+xterm_window=0x40000c
+tab_one=file:///home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-tabs-os-20260426T223630Z/tab-one.html
+tab_two=file:///home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-tabs-os-20260426T223630Z/tab-two.html
+xterm_verification=browser-tabs-os-verified
+workflow=Use Tendril to open a local page, create a second Firefox tab with Ctrl+T, navigate it, switch tabs with Ctrl+1/Ctrl+2, close a tab with Ctrl+W, capture each browser state, then drive XTerm to verify local page files.
+artifacts=/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-tabs-os-20260426T223630Z
