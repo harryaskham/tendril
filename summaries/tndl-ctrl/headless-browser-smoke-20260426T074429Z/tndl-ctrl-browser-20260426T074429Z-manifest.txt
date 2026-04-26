@@ -1,0 +1,8 @@
+Tendril headless browser smoke passed.
+name=tndl-ctrl-browser-20260426T074429Z
+display=:90
+browser=/home/harry/.nix-profile/bin/firefox
+browser_window=0x600016
+resolution=1920x1080x24
+runtime_dir=/run/user/1000/tendril-headless/tndl-ctrl-browser-20260426T074429Z
+artifacts=/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-smoke-20260426T074429Z

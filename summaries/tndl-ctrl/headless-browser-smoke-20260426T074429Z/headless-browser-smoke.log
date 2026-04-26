@@ -1,0 +1,49 @@
+this derivation will be built:
+  /nix/store/qq625c98bkvh014jlcfd9jlp99np06lz-tendril-0.0.1.drv
+building '/nix/store/qq625c98bkvh014jlcfd9jlp99np06lz-tendril-0.0.1.drv'...
+[tendril-headless] starting Xvfb :90 at 1920x1080x24
+[tendril-headless] starting window manager: openbox
+[tendril-headless] starting browser: /nix/store/20ra63h4njcpr9v7vz34vhgrkm8g0icp-chromium-146.0.7680.177/bin/chromium
+/nix/store/m5chvx7y1y7kff4q9x9mcwwgr4iyp14p-tendril-0.0.1/bin/.tendril-headless-wrapped: line 366: 169322 Trace/breakpoint trap      (core dumped) browser_env "$display" "$dir" "$browser" "${chromium_args[@]}" > "$dir/logs/browser.log" 2>&1
+[tendril-headless] browser exited during startup: /nix/store/20ra63h4njcpr9v7vz34vhgrkm8g0icp-chromium-146.0.7680.177/bin/chromium (status 133); see /run/user/1000/tendril-headless/tndl-ctrl-browser-20260426T074429Z/logs/browser.log
+[tendril-headless] browser diagnostic excerpts from /run/user/1000/tendril-headless/tndl-ctrl-browser-20260426T074429Z/logs/browser.log:
+[tendril-headless]   [0426/084617.673018:ERROR:third_party/crashpad/crashpad/util/process/process_memory_range.cc:75] read out of range
+[tendril-headless]   [0426/084617.673628:ERROR:third_party/crashpad/crashpad/util/file/file_io_posix.cc:145] open /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq: No such file or directory (2)
+[tendril-headless]   [0426/084617.673642:ERROR:third_party/crashpad/crashpad/util/file/file_io_posix.cc:145] open /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq: No such file or directory (2)
+[tendril-headless] preserved failed browser attempt log: /run/user/1000/tendril-headless/tndl-ctrl-browser-20260426T074429Z/logs/browser-1-chromium.failed.log
+[tendril-headless] trying next browser candidate after /nix/store/20ra63h4njcpr9v7vz34vhgrkm8g0icp-chromium-146.0.7680.177/bin/chromium failed
+[tendril-headless] starting browser: /nix/store/20ra63h4njcpr9v7vz34vhgrkm8g0icp-chromium-146.0.7680.177/bin/chromium-browser
+/nix/store/m5chvx7y1y7kff4q9x9mcwwgr4iyp14p-tendril-0.0.1/bin/.tendril-headless-wrapped: line 366: 169395 Trace/breakpoint trap      (core dumped) browser_env "$display" "$dir" "$browser" "${chromium_args[@]}" > "$dir/logs/browser.log" 2>&1
+[tendril-headless] browser exited during startup: /nix/store/20ra63h4njcpr9v7vz34vhgrkm8g0icp-chromium-146.0.7680.177/bin/chromium-browser (status 133); see /run/user/1000/tendril-headless/tndl-ctrl-browser-20260426T074429Z/logs/browser.log
+[tendril-headless] browser diagnostic excerpts from /run/user/1000/tendril-headless/tndl-ctrl-browser-20260426T074429Z/logs/browser.log:
+[tendril-headless]   [0426/084618.839934:ERROR:third_party/crashpad/crashpad/util/process/process_memory_range.cc:75] read out of range
+[tendril-headless]   [0426/084618.840529:ERROR:third_party/crashpad/crashpad/util/file/file_io_posix.cc:145] open /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq: No such file or directory (2)
+[tendril-headless]   [0426/084618.840540:ERROR:third_party/crashpad/crashpad/util/file/file_io_posix.cc:145] open /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq: No such file or directory (2)
+[tendril-headless] preserved failed browser attempt log: /run/user/1000/tendril-headless/tndl-ctrl-browser-20260426T074429Z/logs/browser-2-chromium-browser.failed.log
+[tendril-headless] trying next browser candidate after /nix/store/20ra63h4njcpr9v7vz34vhgrkm8g0icp-chromium-146.0.7680.177/bin/chromium-browser failed
+[tendril-headless] starting browser: /home/harry/.nix-profile/bin/google-chrome-stable
+/nix/store/m5chvx7y1y7kff4q9x9mcwwgr4iyp14p-tendril-0.0.1/bin/.tendril-headless-wrapped: line 366: 169483 Trace/breakpoint trap      (core dumped) browser_env "$display" "$dir" "$browser" "${chromium_args[@]}" > "$dir/logs/browser.log" 2>&1
+[tendril-headless] browser exited during startup: /home/harry/.nix-profile/bin/google-chrome-stable (status 133); see /run/user/1000/tendril-headless/tndl-ctrl-browser-20260426T074429Z/logs/browser.log
+[tendril-headless] browser diagnostic excerpts from /run/user/1000/tendril-headless/tndl-ctrl-browser-20260426T074429Z/logs/browser.log:
+[tendril-headless]   [0426/084620.096195:ERROR:third_party/crashpad/crashpad/util/process/process_memory_range.cc:75] read out of range
+[tendril-headless]   [0426/084620.096805:ERROR:third_party/crashpad/crashpad/util/file/file_io_posix.cc:145] open /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq: No such file or directory (2)
+[tendril-headless]   [0426/084620.096819:ERROR:third_party/crashpad/crashpad/util/file/file_io_posix.cc:145] open /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq: No such file or directory (2)
+[tendril-headless] preserved failed browser attempt log: /run/user/1000/tendril-headless/tndl-ctrl-browser-20260426T074429Z/logs/browser-3-google-chrome-stable.failed.log
+[tendril-headless] trying next browser candidate after /home/harry/.nix-profile/bin/google-chrome-stable failed
+[tendril-headless] starting browser: /home/harry/.nix-profile/bin/google-chrome
+/nix/store/m5chvx7y1y7kff4q9x9mcwwgr4iyp14p-tendril-0.0.1/bin/.tendril-headless-wrapped: line 366: 169535 Trace/breakpoint trap      (core dumped) browser_env "$display" "$dir" "$browser" "${chromium_args[@]}" > "$dir/logs/browser.log" 2>&1
+[tendril-headless] browser exited during startup: /home/harry/.nix-profile/bin/google-chrome (status 133); see /run/user/1000/tendril-headless/tndl-ctrl-browser-20260426T074429Z/logs/browser.log
+[tendril-headless] browser diagnostic excerpts from /run/user/1000/tendril-headless/tndl-ctrl-browser-20260426T074429Z/logs/browser.log:
+[tendril-headless]   [0426/084620.531168:ERROR:third_party/crashpad/crashpad/util/process/process_memory_range.cc:75] read out of range
+[tendril-headless]   [0426/084620.531734:ERROR:third_party/crashpad/crashpad/util/file/file_io_posix.cc:145] open /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq: No such file or directory (2)
+[tendril-headless]   [0426/084620.531749:ERROR:third_party/crashpad/crashpad/util/file/file_io_posix.cc:145] open /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq: No such file or directory (2)
+[tendril-headless] preserved failed browser attempt log: /run/user/1000/tendril-headless/tndl-ctrl-browser-20260426T074429Z/logs/browser-4-google-chrome.failed.log
+[tendril-headless] trying next browser candidate after /home/harry/.nix-profile/bin/google-chrome failed
+[tendril-headless] starting browser: /home/harry/.nix-profile/bin/firefox
+[tendril-headless] started environment 'tndl-ctrl-browser-20260426T074429Z'; logs are under /run/user/1000/tendril-headless/tndl-ctrl-browser-20260426T074429Z/logs
+[tendril-headless] waiting for Tendril to see a 1920x1080 display and browser window
+[tendril-headless] capturing display 1 into /home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-smoke-20260426T074429Z
+[tendril-headless] running browser-visible input against window 0x600016
+[tendril-headless] capturing controlled browser window 0x600016 into /home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-smoke-20260426T074429Z
+[tendril-headless] smoke passed; artifacts: /home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-smoke-20260426T074429Z/tndl-ctrl-browser-20260426T074429Z-{list,capture,run,browser-after-capture}.json /home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-smoke-20260426T074429Z/tndl-ctrl-browser-20260426T074429Z-{display,browser-after}.png
+[tendril-headless] stopped environment 'tndl-ctrl-browser-20260426T074429Z' and removed /run/user/1000/tendril-headless/tndl-ctrl-browser-20260426T074429Z
