@@ -37,6 +37,10 @@ pub(crate) fn parse_input_definition(input: &str) -> Result<RunInputPayload, Ten
         }
     }
 
+    if let Some(error) = ambiguous_single_dsl_like_input_error(input) {
+        return Err(error);
+    }
+
     Ok(RunInputPayload::Text {
         text: input.to_owned(),
     })
@@ -379,6 +383,127 @@ fn looks_like_bare_key_sequence(input: &str) -> bool {
 
     let raw = &input[start..];
     raw == raw.trim() && parse_key_token(raw).is_some()
+}
+
+fn ambiguous_single_dsl_like_input_error(input: &str) -> Option<TendrilError> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() || trimmed.contains('(') || contains_top_level_comma(trimmed) {
+        return None;
+    }
+
+    if is_known_bare_key_token(trimmed) {
+        return Some(
+            dsl_error(
+                format!(
+                    "ambiguous run input `{trimmed}` looks like a DSL key token; refusing to type it as literal text"
+                ),
+                None,
+                Some(trimmed),
+                Some("parse"),
+            )
+            .with_detail_entry("hint", json!(bare_key_token_hint(trimmed)))
+            .with_detail_entry("ambiguous_token", json!(trimmed))
+            .with_detail_entry("ambiguity", json!("bare_key_token")),
+        );
+    }
+
+    if let Some((verb, hint)) = reserved_verb_without_parens_hint(trimmed) {
+        return Some(
+            dsl_error(
+                format!(
+                    "ambiguous run input `{trimmed}` looks like a DSL action missing parentheses; refusing to type it as literal text"
+                ),
+                None,
+                Some(trimmed),
+                Some("parse"),
+            )
+            .with_detail_entry("hint", json!(hint))
+            .with_detail_entry("verb", json!(verb))
+            .with_detail_entry("ambiguity", json!("reserved_verb_without_parens")),
+        );
+    }
+
+    None
+}
+
+fn is_known_bare_key_token(input: &str) -> bool {
+    let lower = input.trim().to_ascii_lowercase();
+    if matches!(
+        lower.as_str(),
+        "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12"
+    ) {
+        return true;
+    }
+
+    matches!(
+        lower.as_str(),
+        "enter"
+            | "return"
+            | "tab"
+            | "esc"
+            | "escape"
+            | "space"
+            | "backspace"
+            | "delete"
+            | "del"
+            | "left"
+            | "right"
+            | "up"
+            | "down"
+            | "home"
+            | "end"
+            | "pageup"
+            | "pagedown"
+            | "page-up"
+            | "page-down"
+            | "page_up"
+            | "page_down"
+            | "pgup"
+            | "pgdn"
+    )
+}
+
+fn bare_key_token_hint(token: &str) -> String {
+    let literal = serde_json::to_string(token).unwrap_or_else(|_| String::from("\"...\""));
+    format!(
+        "Use a DSL sequence containing a comma for key taps, for example `wait(1ms),{token}`. If you intended to type the literal text, use `send({literal})`."
+    )
+}
+
+fn reserved_verb_without_parens_hint(input: &str) -> Option<(&'static str, String)> {
+    let trimmed = input.trim();
+    let split_at = trimmed
+        .char_indices()
+        .find_map(|(index, character)| character.is_whitespace().then_some(index))?;
+    let verb = &trimmed[..split_at];
+    let rest = trimmed[split_at..].trim_start();
+    if !rest.starts_with('"') {
+        return None;
+    }
+
+    let canonical_verb = match verb.to_ascii_lowercase().as_str() {
+        "type" | "send" => "send",
+        "key" => "key",
+        "click" => "click",
+        "scroll" => "scroll",
+        _ => return None,
+    };
+
+    let quoted_hint = parse_quoted_string(rest, 0, input).ok().map_or_else(
+        || String::from("\"...\""),
+        |text| serde_json::to_string(&text).unwrap_or_else(|_| String::from("\"...\"")),
+    );
+    let hint = if canonical_verb == "send" {
+        format!(
+            "Use Tendril's canonical text action as `send({quoted_hint})`; for example `send({quoted_hint}),Return` when text should be followed by Return."
+        )
+    } else {
+        format!(
+            "Tendril DSL actions require parentheses. Use `send({quoted_hint})` for text, or rewrite the `{canonical_verb}` action with explicit Tendril DSL syntax."
+        )
+    };
+
+    Some((canonical_verb, hint))
 }
 
 fn split_top_level(input: &str) -> Result<Vec<&str>, TendrilError> {
@@ -1020,6 +1145,52 @@ mod tests {
                 text: "hello, world".to_owned()
             }
         );
+    }
+
+    #[test]
+    fn ambiguous_single_bare_key_tokens_are_rejected_with_hint() {
+        for token in ["Return", "tab", "Escape", "F12", "Up"] {
+            let error = parse_input_definition(token).expect_err("bare key token should fail");
+            assert_eq!(error.code(), "invalid_run_input");
+            let details = error.details().expect("details");
+            assert_eq!(details["stage"], "parse");
+            assert_eq!(details["ambiguity"], "bare_key_token");
+            assert_eq!(details["ambiguous_token"], token);
+            let hint = details["hint"].as_str().expect("hint should be a string");
+            assert!(
+                hint.contains("send(") && hint.contains("DSL sequence"),
+                "unexpected hint: {hint}"
+            );
+        }
+    }
+
+    #[test]
+    fn reserved_verb_with_quoted_argument_without_parens_is_rejected_with_hint() {
+        let error = parse_input_definition(r#"type "hi""#)
+            .expect_err("reserved verb missing parentheses should fail");
+        assert_eq!(error.code(), "invalid_run_input");
+        let details = error.details().expect("details");
+        assert_eq!(details["stage"], "parse");
+        assert_eq!(details["ambiguity"], "reserved_verb_without_parens");
+        assert_eq!(details["verb"], "send");
+        let hint = details["hint"].as_str().expect("hint should be a string");
+        assert!(
+            hint.contains(r#"send("hi")"#),
+            "hint should suggest canonical send syntax: {hint}"
+        );
+    }
+
+    #[test]
+    fn genuine_plain_text_payloads_still_parse_as_text() {
+        for text in ["hello world", "hello", "Return key", "type hi"] {
+            let payload = parse_input_definition(text).expect("text payload should parse");
+            assert_eq!(
+                payload,
+                RunInputPayload::Text {
+                    text: text.to_owned()
+                }
+            );
+        }
     }
 
     #[test]

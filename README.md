@@ -140,9 +140,16 @@ tendril --json --window <window-id> capture -o /tmp/screen.png
 # `run` waits on the host-local execution lock/queue by default.
 
 tendril --json --window <window-id> run 'send("hello")'
+tendril --json --window <window-id> run 'send("hello"),Return'
 tendril --json --window <window-id> run 'hold(ctrl),c,release(ctrl),wait(1s),send("done")'
 tendril --json --window <window-id> run --lock-timeout-ms 5000 'send("bounded wait")'
 tendril --json --window <window-id> run --no-lock 'send("advanced opt-out")'
+
+# Ambiguous command-looking single segments are rejected instead of typed literally.
+# Use send("...") for text and a comma-separated DSL sequence for key taps.
+
+tendril --json --window <window-id> run 'Return'      # invalid_run_input with hint
+tendril --json --window <window-id> run 'type "hi"'  # invalid_run_input with hint
 
 # Emit a reusable shell wrapper for a target (shell state, not Tendril state)
 

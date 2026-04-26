@@ -20,6 +20,19 @@ The current shared command model supports three payload shapes:
 
 The CLI accepts an `input_definition` argument and validates it into the shared typed run model used by the CLI and MCP tool surface.
 
+### Text vs DSL ambiguity guard
+
+A single argument without DSL metacharacters is normally treated as plain text. To avoid accidentally typing command-looking input into the focused window, Tendril rejects single bare segments that look like DSL mistakes instead of silently demoting them to text.
+
+Examples that now fail with `invalid_run_input` and a structured `hint`:
+
+```bash
+tendril --window <id> run 'Return'
+tendril --window <id> run 'type "hi"'
+```
+
+Use explicit DSL syntax for automation text, such as `send("hi")` or `send("hi"),Return`. Genuine text remains valid, for example `tendril --window <id> run 'hello world'` still types `hello world`.
+
 ## Supported action families
 
 The current model covers:
