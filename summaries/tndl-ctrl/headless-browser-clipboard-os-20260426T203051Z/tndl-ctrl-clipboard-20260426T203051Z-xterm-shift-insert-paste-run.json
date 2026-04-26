@@ -1,0 +1,32 @@
+{
+  "status": "error",
+  "meta": {
+    "schema_version": 1,
+    "command": "run"
+  },
+  "error": {
+    "category": "execution_failure",
+    "code": "unsupported_key",
+    "message": "execution failure: key `insert` is not supported by the X11 backend",
+    "details": {
+      "action": "key(insert)",
+      "action_index": 4,
+      "action_number": 5,
+      "execution_lock": {
+        "acquired": true,
+        "enabled": true,
+        "lock_path": "/tmp/nix-shell.q7tjIE/tendril-execution-lock-harry-_90",
+        "owner_pid": 1794732,
+        "queue_depth_at_join": 1,
+        "queue_position_at_join": 1,
+        "stale_locks_reaped": 0,
+        "stale_ms": 30000,
+        "stale_tickets_reaped": 0,
+        "timeout_ms": 60000,
+        "token": "1794732-1777235650805-1",
+        "wait_ms": 0
+      },
+      "stage": "dispatch"
+    }
+  }
+}

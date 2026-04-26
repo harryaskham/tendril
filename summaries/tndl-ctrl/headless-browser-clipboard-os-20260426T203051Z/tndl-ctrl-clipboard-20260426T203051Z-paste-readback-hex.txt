@@ -1,0 +1,2 @@
+--- summaries/tndl-ctrl/headless-browser-clipboard-os-20260426T203051Z/browser-clipboard-paste-primary.txt
+--- summaries/tndl-ctrl/headless-browser-clipboard-os-20260426T203051Z/browser-clipboard-paste-shift-insert.txt

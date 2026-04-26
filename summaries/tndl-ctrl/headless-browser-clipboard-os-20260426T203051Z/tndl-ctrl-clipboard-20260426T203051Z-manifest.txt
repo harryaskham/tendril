@@ -1,0 +1,9 @@
+Tendril browser-to-OS clipboard workflow failed_followup_required.
+name=tndl-ctrl-clipboard-20260426T203051Z
+browser_window=
+xterm_window=
+proof_text=browser-to-os-clipboard-control-ok
+primary_paste=''
+shift_insert_paste=''
+workflow=Copy proof text from Firefox textarea using Tendril, then paste it into XTerm using UI-only Tendril input.
+followup_beads=bd-3d830c,bd-e5457f
