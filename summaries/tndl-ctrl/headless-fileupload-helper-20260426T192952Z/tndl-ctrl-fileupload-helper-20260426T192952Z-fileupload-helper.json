@@ -1,0 +1,27 @@
+{
+  "helper": "tendril-headless firefox-upload",
+  "marionette": {
+    "hello": {
+      "applicationType": "gecko",
+      "marionetteProtocol": 3
+    },
+    "port": 62090,
+    "sessionId": "42b918dd-65f6-45b0-9eb2-adfaae2d357c"
+  },
+  "page": {
+    "bodyText": "Tendril File Upload Task\n\nChoose the proof file. The page prints the selected file name and contents.\n\nUpload proof file\nUploaded file confirmed\nname=upload-proof.txt\ncontents=tendril-file-upload-control-ok\n",
+    "fileCount": 1,
+    "fileName": "upload-proof.txt",
+    "selector": "input[type=\"file\"]",
+    "title": "Tendril File Upload Task",
+    "uploadConfirmed": "tendril-file-upload-control-ok\n",
+    "url": "file:///home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-fileupload-helper-20260426T192952Z/file-upload-task.html"
+  },
+  "request": {
+    "navigate_url": "file:///home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-fileupload-helper-20260426T192952Z/file-upload-task.html",
+    "selector": "input[type=\"file\"]",
+    "upload_file": "/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-fileupload-helper-20260426T192952Z/upload-source/upload-proof.txt"
+  },
+  "status": "success",
+  "transport": "firefox-marionette"
+}

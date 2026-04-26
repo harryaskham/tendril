@@ -1,0 +1,12 @@
+Tendril headless Firefox file-upload smoke passed.
+name=tndl-ctrl-fileupload-helper-20260426T192952Z
+display=:90
+browser=/nix/store/7vnya051q0xr2mdwxp48sh70xzim4fpa-firefox-149.0/bin/firefox
+browser_window=0x600004
+marionette_port=62090
+resolution=1920x1080x24
+runtime_dir=/run/user/1000/tendril-headless/tndl-ctrl-fileupload-helper-20260426T192952Z
+upload_url=file:///home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-fileupload-helper-20260426T192952Z/file-upload-task.html
+proof_file=/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-fileupload-helper-20260426T192952Z/upload-source/upload-proof.txt
+native_chooser_result=no separate chooser target discovered after Tendril click; upload completed via Firefox Marionette helper.
+artifacts=/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-fileupload-helper-20260426T192952Z
