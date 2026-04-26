@@ -1,0 +1,13 @@
+Tendril headless Firefox clipboard smoke passed.
+name=tndl-ctrl-clipboard-post-20260426T222100Z
+display=:90
+browser=/nix/store/7vnya051q0xr2mdwxp48sh70xzim4fpa-firefox-149.0/bin/firefox
+browser_window=0x600004
+marionette_port=62090
+resolution=1920x1080x24
+runtime_dir=/run/user/1000/tendril-headless/tndl-ctrl-clipboard-post-20260426T222100Z
+clipboard_url=file:///home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-clipboard-postlanding-20260426T222100Z/clipboard-task.html
+browser_to_os_proof=browser-to-os-clipboard-control-ok
+os_to_browser_proof=os-to-browser-clipboard-control-ok
+workflow=Firefox textarea Ctrl+C -> tendril clipboard get; tendril clipboard set -> Firefox Ctrl+V -> Firefox textarea Ctrl+C -> tendril clipboard get.
+artifacts=/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-clipboard-postlanding-20260426T222100Z

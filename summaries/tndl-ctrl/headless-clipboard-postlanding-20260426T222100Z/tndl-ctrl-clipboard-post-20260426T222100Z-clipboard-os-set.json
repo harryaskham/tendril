@@ -1,0 +1,22 @@
+{
+  "data": {
+    "adapter": {
+      "audio_backend": "pipe_wire",
+      "platform": "linux",
+      "session": "x11",
+      "stateless": true
+    },
+    "notes": [
+      "Owned X11 clipboard selection as helper window 0x800000; serving requests for 4000ms."
+    ],
+    "selection": "clipboard",
+    "serve_ms": 4000,
+    "served_requests": 3,
+    "text_len": 34
+  },
+  "meta": {
+    "command": "clipboard",
+    "schema_version": 1
+  },
+  "status": "success"
+}

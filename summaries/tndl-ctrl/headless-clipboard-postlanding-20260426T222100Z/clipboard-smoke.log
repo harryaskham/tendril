@@ -1,0 +1,16 @@
+this derivation will be built:
+  /nix/store/bfbrskch6bfbgylf2kz45s9hpn4k66a4-tendril-0.0.1.drv
+building '/nix/store/bfbrskch6bfbgylf2kz45s9hpn4k66a4-tendril-0.0.1.drv'...
+[tendril-headless] starting Xvfb :90 at 1920x1080x24
+[tendril-headless] starting window manager: openbox
+[tendril-headless] starting browser: /nix/store/7vnya051q0xr2mdwxp48sh70xzim4fpa-firefox-149.0/bin/firefox
+[tendril-headless] started environment 'tndl-ctrl-clipboard-post-20260426T222100Z'; logs are under /run/user/1000/tendril-headless/tndl-ctrl-clipboard-post-20260426T222100Z/logs
+[tendril-headless] waiting for Tendril to see a 1920x1080 Firefox window
+[tendril-headless] navigating Firefox to clipboard smoke page through Marionette preflight
+[tendril-headless] capturing clipboard page before copy
+[tendril-headless] copying Firefox textarea text through Tendril keyboard input
+[tendril-headless] serving OS clipboard text and pasting it back into Firefox
+[tendril-headless] copying Firefox paste target back to OS clipboard for verification
+[tendril-headless] capturing verified clipboard page through Tendril
+[tendril-headless] clipboard smoke passed; artifacts are under /home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-clipboard-postlanding-20260426T222100Z
+[tendril-headless] stopped environment 'tndl-ctrl-clipboard-post-20260426T222100Z' and removed /run/user/1000/tendril-headless/tndl-ctrl-clipboard-post-20260426T222100Z
