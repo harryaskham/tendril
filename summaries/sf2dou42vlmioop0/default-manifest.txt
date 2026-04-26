@@ -1,0 +1,8 @@
+Tendril headless browser smoke passed.
+name=default
+display=:90
+browser=chromium
+browser_window=0x600003
+resolution=1920x1080x24
+runtime_dir=/run/user/1000/tendril-headless/default
+artifacts=/home/harry/.cacophony/agents/tendril/sf2dou42vlmioop0/checkout/summaries/sf2dou42vlmioop0

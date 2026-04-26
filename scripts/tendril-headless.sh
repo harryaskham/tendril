@@ -194,6 +194,101 @@ require_programs() {
   have python3 || fail "python3 is required for the smoke helper and JSON extraction"
 }
 
+write_browser_smoke_page() {
+  local dir="$1"
+  cat >"$dir/browser-smoke.html" <<'EOF_HTML'
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tendril Smoke Browser</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: #172a45;
+      color: #f8fbff;
+      font: 32px/1.4 system-ui, sans-serif;
+    }
+    main {
+      width: min(1200px, calc(100vw - 160px));
+      padding: 56px;
+      border: 4px solid #67e8f9;
+      border-radius: 32px;
+      background: #071222;
+    }
+    h1 { margin: 0 0 24px; font-size: 56px; }
+    label { display: grid; gap: 16px; font-weight: 700; }
+    input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 24px 28px;
+      border: 3px solid #facc15;
+      border-radius: 18px;
+      background: #fff8dc;
+      color: #111827;
+      font: 36px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    #status {
+      margin: 28px 0 0;
+      padding: 20px 24px;
+      border-left: 10px solid #22c55e;
+      background: rgba(34, 197, 94, 0.16);
+      font-weight: 800;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Tendril Smoke Browser</h1>
+    <label for="smoke-input">
+      Browser-controlled input target
+      <input id="smoke-input" autofocus value="" placeholder="waiting for Tendril input">
+    </label>
+    <p id="status">Waiting for Tendril browser control.</p>
+  </main>
+  <script>
+    const input = document.getElementById('smoke-input');
+    const status = document.getElementById('status');
+    function mark(prefix) {
+      status.textContent = `${prefix}: ${input.value || '(empty)'}`;
+      document.body.dataset.tendrilSmokeValue = input.value;
+    }
+    input.addEventListener('input', () => mark('Tendril input visible in browser'));
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        mark('Tendril browser control confirmed');
+      }
+    });
+    window.addEventListener('load', () => {
+      input.focus();
+      setTimeout(() => input.focus(), 250);
+      setTimeout(() => input.focus(), 1000);
+    });
+  </script>
+</body>
+</html>
+EOF_HTML
+}
+
+browser_env() {
+  local display="$1" dir="$2"
+  shift 2
+  env -u WAYLAND_DISPLAY \
+    DISPLAY="$display" \
+    XDG_SESSION_TYPE=x11 \
+    GDK_BACKEND=x11 \
+    QT_QPA_PLATFORM=xcb \
+    MOZ_ENABLE_WAYLAND=0 \
+    ELECTRON_OZONE_PLATFORM_HINT=x11 \
+    HOME="$dir/home" \
+    TMPDIR="$dir/tmp" \
+    "$@"
+}
+
 choose_browser() {
   if [[ -n "$BROWSER_BIN" ]]; then
     command -v "$BROWSER_BIN" >/dev/null 2>&1 || [[ -x "$BROWSER_BIN" ]] || fail "browser not found or not executable: $BROWSER_BIN"
@@ -352,23 +447,29 @@ start_env() {
     terminal_pid="$!"
   fi
 
+  local smoke_page smoke_url
+  write_browser_smoke_page "$dir"
+  smoke_page="$dir/browser-smoke.html"
+  smoke_url="file://${smoke_page}"
+
   browser_pid=""
   log "starting browser: $browser"
   case "$(basename "$browser")" in
     firefox|firefox-esr)
       mkdir -p "$dir/browser-profile/firefox"
-      DISPLAY="$display" HOME="$dir/home" TMPDIR="$dir/tmp" "$browser" \
+      browser_env "$display" "$dir" "$browser" \
         --no-remote \
         --new-instance \
         --profile "$dir/browser-profile/firefox" \
         --width "$WIDTH" \
         --height "$HEIGHT" \
-        about:blank \
+        "$smoke_url" \
         >"$dir/logs/browser.log" 2>&1 &
       browser_pid="$!"
       ;;
     *)
       local -a chromium_args=(
+        --ozone-platform=x11
         --user-data-dir="$dir/browser-profile/chromium"
         --no-first-run
         --no-default-browser-check
@@ -382,12 +483,12 @@ start_env() {
         --disable-sync
         --window-size="${WIDTH},${HEIGHT}"
         --start-maximized
-        about:blank
+        --app="$smoke_url"
       )
       if [[ "$BROWSER_RENDERER_LIMIT" -gt 0 ]]; then
         chromium_args=(--renderer-process-limit="$BROWSER_RENDERER_LIMIT" "${chromium_args[@]}")
       fi
-      DISPLAY="$display" HOME="$dir/home" TMPDIR="$dir/tmp" "$browser" \
+      browser_env "$display" "$dir" "$browser" \
         "${chromium_args[@]}" \
         >"$dir/logs/browser.log" 2>&1 &
       browser_pid="$!"
@@ -484,19 +585,30 @@ git_add_artifacts() {
 }
 
 wait_for_targets() {
-  local list_json attempt
-  for attempt in $(seq 1 80); do
+  local list_json attempt browser_pid
+  browser_pid="${TENDRIL_HEADLESS_BROWSER_PID:-}"
+  for attempt in $(seq 1 120); do
     if list_json="$(run_tendril --json list 2>/dev/null)"; then
       if python3 -c '
 import json, sys
 width=int(sys.argv[1])
 height=int(sys.argv[2])
+browser_pid=sys.argv[3]
 payload=json.load(sys.stdin)
 targets=payload.get("data",{}).get("targets",[])
 has_display=any(t.get("kind")=="display" and t.get("bounds",{}).get("width")==width and t.get("bounds",{}).get("height")==height for t in targets)
-has_window=any(t.get("kind")=="window" for t in targets)
-sys.exit(0 if has_display and has_window else 1)
-' "$WIDTH" "$HEIGHT" <<<"$list_json"; then
+
+def is_browser(target):
+    if target.get("kind") != "window":
+        return False
+    if browser_pid and str(target.get("process_id") or "") == browser_pid:
+        return True
+    haystack=" ".join(str(target.get(k) or "") for k in ("name", "title", "app_name")).lower()
+    return any(token in haystack for token in ("chrom", "chrome", "firefox", "browser", "tendril smoke browser"))
+
+has_browser=any(is_browser(t) for t in targets)
+sys.exit(0 if has_display and has_browser else 1)
+' "$WIDTH" "$HEIGHT" "$browser_pid" <<<"$list_json"; then
         printf '%s' "$list_json"
         return 0
       fi
@@ -526,13 +638,16 @@ run_smoke() {
   fi
   trap 'if [[ "${started_here:-false}" == "true" ]]; then stop_env; fi' EXIT
 
-  local dir list_json display_id window_id capture_json run_json
+  local dir list_json display_id window_id capture_json run_json browser_capture_json
   dir="${TENDRIL_HEADLESS_RUNTIME_DIR:-$(runtime_dir)}"
 
   log "waiting for Tendril to see a ${WIDTH}x${HEIGHT} display and browser window"
   if ! list_json="$(wait_for_targets)"; then
-    [[ "$started_here" == "true" ]] && stop_env || true
-    fail "Tendril did not discover expected headless targets; inspect logs under $dir/logs"
+    if [[ "$started_here" == "true" ]]; then
+      stop_env || true
+      trap - EXIT
+    fi
+    fail "Tendril did not discover expected headless targets; rerun with --keep-runtime to inspect logs under $dir/logs"
   fi
   printf '%s\n' "$list_json" >"$artifact_dir/${NAME}-list.json"
 
@@ -552,17 +667,26 @@ else:
 
   window_id="$(python3 -c '
 import json, sys
+browser_pid=sys.argv[1]
 payload=json.load(sys.stdin)
-windows=[t for t in payload["data"]["targets"] if t.get("kind") == "window"]
-# Prefer a browser window, but any mapped window can prove input routing.
-for target in windows:
+
+def is_browser(target):
+    if target.get("kind") != "window":
+        return False
+    if browser_pid and str(target.get("process_id") or "") == browser_pid:
+        return True
     haystack=" ".join(str(target.get(k) or "") for k in ("name", "title", "app_name")).lower()
-    if any(token in haystack for token in ("chrom", "firefox", "browser")):
+    return any(token in haystack for token in ("chrom", "chrome", "firefox", "browser", "tendril smoke browser"))
+
+for target in payload["data"]["targets"]:
+    if is_browser(target):
         print(target["id"])
         break
 else:
-    print(windows[0]["id"])
-' <<<"$list_json")"
+    windows=[t for t in payload["data"]["targets"] if t.get("kind") == "window"]
+    summaries=[{"id": t.get("id"), "app_name": t.get("app_name"), "name": t.get("name"), "title": t.get("title")} for t in windows]
+    raise SystemExit(f"no browser window discovered; discovered windows: {summaries!r}")
+' "${TENDRIL_HEADLESS_BROWSER_PID:-}" <<<"$list_json")"
 
   log "capturing display $display_id into $artifact_dir"
   capture_json="$(run_tendril --json --display "$display_id" capture --max-width "$WIDTH" --max-height "$HEIGHT" -o "$artifact_dir/${NAME}-display.png")"
@@ -577,28 +701,41 @@ assert payload["data"]["output_bounds"]["width"] == width
 assert payload["data"]["output_bounds"]["height"] == height
 ' "$WIDTH" "$HEIGHT" <<<"$capture_json"
 
-  log "running input against window $window_id"
-  run_json="$(run_tendril --json --window "$window_id" run 'hold(ctrl),l,release(ctrl),send("tendril headless smoke"),return')"
+  log "running browser-visible input against window $window_id"
+  run_json="$(run_tendril --json --window "$window_id" run 'send("tendril browser control confirmed"),Return,wait(500ms)')"
   printf '%s\n' "$run_json" >"$artifact_dir/${NAME}-run.json"
   python3 -c '
 import json, sys
 payload=json.load(sys.stdin)
 assert payload["status"] == "success"
-assert payload["data"]["action_count"] == 5
+assert payload["data"]["action_count"] >= 2
 assert payload["data"]["focus_required"] is True
 ' <<<"$run_json"
 
+  log "capturing controlled browser window $window_id into $artifact_dir"
+  browser_capture_json="$(run_tendril --json --window "$window_id" capture --max-width "$WIDTH" --max-height "$HEIGHT" -o "$artifact_dir/${NAME}-browser-after.png")"
+  printf '%s\n' "$browser_capture_json" >"$artifact_dir/${NAME}-browser-after-capture.json"
+  python3 -c '
+import json, sys
+payload=json.load(sys.stdin)
+assert payload["status"] == "success"
+assert payload["data"].get("output_bounds", {}).get("width", 0) > 0
+assert payload["data"].get("output_bounds", {}).get("height", 0) > 0
+' <<<"$browser_capture_json"
+
   cat >"$artifact_dir/${NAME}-manifest.txt" <<EOF_MANIFEST
-Tendril headless smoke passed.
+Tendril headless browser smoke passed.
 name=$NAME
 display=$DISPLAY
+browser=${TENDRIL_HEADLESS_BROWSER:-}
+browser_window=$window_id
 resolution=${WIDTH}x${HEIGHT}x${DEPTH}
 runtime_dir=$dir
 artifacts=$artifact_dir
 EOF_MANIFEST
   git_add_artifacts "$artifact_dir"
 
-  log "smoke passed; artifacts: $artifact_dir/${NAME}-{list,capture,run}.json $artifact_dir/${NAME}-display.png"
+  log "smoke passed; artifacts: $artifact_dir/${NAME}-{list,capture,run,browser-after-capture}.json $artifact_dir/${NAME}-{display,browser-after}.png"
   if [[ "$started_here" == "true" ]]; then
     stop_env
     trap - EXIT

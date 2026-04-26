@@ -1,0 +1,18 @@
+warning: Git tree '/home/harry/.cacophony/agents/tendril/sf2dou42vlmioop0/checkout' is dirty
+copying path '/nix/store/gay80fqbpm2wakbsyd4in44gx0cwx3h5-source' from 'https://cache.nixos.org'...
+this derivation will be built:
+  /nix/store/vdnbf246kb7l7605cj2cfqp37x32wihm-tendril-0.0.1.drv
+building '/nix/store/vdnbf246kb7l7605cj2cfqp37x32wihm-tendril-0.0.1.drv'...
+[tendril-headless] starting Xvfb :90 at 1920x1080x24
+[tendril-headless] starting window manager: openbox
+[tendril-headless] starting browser: chromium
+[tendril-headless] started environment 'default'; logs are under /run/user/1000/tendril-headless/default/logs
+[tendril-headless] waiting for Tendril to see a 1920x1080 display and browser window
+[tendril-headless] capturing display 1 into /home/harry/.cacophony/agents/tendril/sf2dou42vlmioop0/checkout/summaries/sf2dou42vlmioop0
+warning: Git tree '/home/harry/.cacophony/agents/tendril/sf2dou42vlmioop0/checkout' is dirty
+[tendril-headless] running browser-visible input against window 0x600003
+warning: Git tree '/home/harry/.cacophony/agents/tendril/sf2dou42vlmioop0/checkout' is dirty
+[tendril-headless] capturing controlled browser window 0x600003 into /home/harry/.cacophony/agents/tendril/sf2dou42vlmioop0/checkout/summaries/sf2dou42vlmioop0
+warning: Git tree '/home/harry/.cacophony/agents/tendril/sf2dou42vlmioop0/checkout' is dirty
+[tendril-headless] smoke passed; artifacts: /home/harry/.cacophony/agents/tendril/sf2dou42vlmioop0/checkout/summaries/sf2dou42vlmioop0/default-{list,capture,run,browser-after-capture}.json /home/harry/.cacophony/agents/tendril/sf2dou42vlmioop0/checkout/summaries/sf2dou42vlmioop0/default-{display,browser-after}.png
+[tendril-headless] stopped environment 'default' and removed /run/user/1000/tendril-headless/default

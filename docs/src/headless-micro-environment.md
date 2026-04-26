@@ -20,7 +20,9 @@ prompts.
 - Lightweight window manager when available (`openbox`, `fluxbox`,
   `matchbox-window-manager`, or `twm`).
 - Browser when available (`chromium`, `chromium-browser`, `google-chrome`, or
-  `firefox`) plus basic shell utilities.
+  `firefox`) plus basic shell utilities. Chromium-based browsers are forced onto
+  the X11 Ozone backend so a host Wayland session cannot steal the browser away
+  from the Xvfb display.
 - Resource guardrails for the default Chromium path: fixed-size Xvfb screen,
   disabled background/sync/extension work, and a renderer process cap of 2
   (`--browser-renderers <n>` to tune, `0` to omit).
@@ -63,14 +65,18 @@ scripts/tendril-headless.sh \
 What the smoke does:
 
 1. Starts or reuses an isolated Xvfb desktop.
-2. Waits until `tendril --json list` sees a 1920x1080 display and a browser
-   window.
-3. Captures the display with explicit `--max-width 1920 --max-height 1080`.
-4. Runs a browser-focused input sequence:
-   `hold(ctrl),l,release(ctrl),send("tendril headless smoke"),return`.
-5. Writes artifacts under `summaries/<agent-id>/` and runs `git add` for that
+2. Opens a local `Tendril Smoke Browser` page in the browser.
+3. Waits until `tendril --json list` sees both the 1920x1080 display and a
+   browser window. A shell, window manager helper, or any other non-browser
+   window is not accepted as proof of browser control.
+4. Captures the display with explicit `--max-width 1920 --max-height 1080`.
+5. Runs browser-visible input against the discovered browser window:
+   `send("tendril browser control confirmed"),Return,wait(500ms)`.
+6. Captures the controlled browser window after input so the artifact visibly
+   shows the typed value and confirmation banner.
+7. Writes artifacts under `summaries/<agent-id>/` and runs `git add` for that
    directory unless `--no-git-add-artifacts` is set.
-6. Stops the sandbox when the smoke command started it.
+8. Stops the sandbox when the smoke command started it.
 
 Expected artifacts:
 
@@ -79,12 +85,15 @@ summaries/<agent-id>/smoke-list.json
 summaries/<agent-id>/smoke-capture.json
 summaries/<agent-id>/smoke-run.json
 summaries/<agent-id>/smoke-display.png
+summaries/<agent-id>/smoke-browser-after.png
+summaries/<agent-id>/smoke-browser-after-capture.json
 summaries/<agent-id>/smoke-manifest.txt
 ```
 
-The `.png` is deliberately in `summaries/` rather than `/tmp`; Cacophony summary
-collectors and `/tmp/watch-captures.sh` can then surface the capture to the
-operator.
+The `.png` files are deliberately in `summaries/` rather than `/tmp`;
+Cacophony summary collectors and `/tmp/watch-captures.sh` can then surface the
+captures to the operator. The display capture proves the isolated desktop is
+reachable; the browser-after capture is the proof of in-browser control.
 
 ## Manual lifecycle
 

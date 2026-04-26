@@ -109,8 +109,11 @@ scripts/tendril-headless.sh --name smoke --tendril-bin ./target/debug/tendril sm
 ```
 
 Smoke captures are written under `summaries/$CACOPHONY_AGENT/` by default so
-Cacophony summaries and `/tmp/watch-captures.sh` can surface them. The Nix
-package also exposes the helper as `nix run .#tendril-headless -- smoke`.
+Cacophony summaries and `/tmp/watch-captures.sh` can surface them. The smoke
+path requires a discovered browser window and writes a browser-after capture
+showing Tendril-controlled input; XTerm or window-manager helper windows are not
+accepted as browser-control proof. The Nix package also exposes the helper as
+`nix run .#tendril-headless -- smoke`.
 
 Examples:
 
