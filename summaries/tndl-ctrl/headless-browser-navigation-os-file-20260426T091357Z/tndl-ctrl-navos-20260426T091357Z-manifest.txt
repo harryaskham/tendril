@@ -1,0 +1,7 @@
+Tendril browser navigation and isolated OS file command validation passed.
+name=tndl-ctrl-navos-20260426T091357Z
+display=:90
+display_id=1
+browser_window=0x600016
+xterm_window=0x40000c
+scenario=browser address-bar navigation plus terminal file creation/cat
