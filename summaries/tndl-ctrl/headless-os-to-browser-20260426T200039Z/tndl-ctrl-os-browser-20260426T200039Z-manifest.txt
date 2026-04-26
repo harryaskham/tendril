@@ -1,0 +1,10 @@
+Tendril OS-to-browser workflow passed.
+name=tndl-ctrl-os-browser-20260426T200039Z
+browser_window=0x600004
+xterm_window=0x40000c
+browser_title=Tendril Smoke Browser — Mozilla Firefox
+xterm_title=Tendril Headless Shell
+proof_file=/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-os-to-browser-20260426T200039Z/os-authored-proof.txt
+proof_text=os-to-browser-control-ok
+workflow=Use Tendril to control XTerm and create a proof file, then control Firefox to open the OS-authored file and capture it.
+artifacts=/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-os-to-browser-20260426T200039Z

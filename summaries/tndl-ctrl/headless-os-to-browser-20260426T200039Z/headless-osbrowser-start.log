@@ -1,0 +1,22 @@
+copying path '/nix/store/gay80fqbpm2wakbsyd4in44gx0cwx3h5-source' from 'https://cache.nixos.org'...
+this derivation will be built:
+  /nix/store/pzs43cc76mqg1v995pc1pp7kydnlkria-tendril-0.0.1.drv
+these 3 paths will be fetched (99.56 MiB download, 411.07 MiB unpacked):
+  /nix/store/7vnya051q0xr2mdwxp48sh70xzim4fpa-firefox-149.0
+  /nix/store/9x3wwqphl7z0s1blx4gyaw091sy8lh4d-firefox-unwrapped-149.0
+  /nix/store/zmzn3b4xlpmbsg2da769bii2b3b4m1g0-onnxruntime-1.24.4
+copying path '/nix/store/zmzn3b4xlpmbsg2da769bii2b3b4m1g0-onnxruntime-1.24.4' from 'https://cache.nixos.org'...
+copying path '/nix/store/9x3wwqphl7z0s1blx4gyaw091sy8lh4d-firefox-unwrapped-149.0' from 'https://cache.nixos.org'...
+copying path '/nix/store/7vnya051q0xr2mdwxp48sh70xzim4fpa-firefox-149.0' from 'https://cache.nixos.org'...
+building '/nix/store/pzs43cc76mqg1v995pc1pp7kydnlkria-tendril-0.0.1.drv'...
+[tendril-headless] starting Xvfb :90 at 1920x1080x24
+[tendril-headless] starting window manager: openbox
+[tendril-headless] starting browser: /nix/store/7vnya051q0xr2mdwxp48sh70xzim4fpa-firefox-149.0/bin/firefox
+[tendril-headless] started environment 'tndl-ctrl-os-browser-20260426T200039Z'; logs are under /run/user/1000/tendril-headless/tndl-ctrl-os-browser-20260426T200039Z/logs
+export DISPLAY=:90
+export XDG_SESSION_TYPE=x11
+export TENDRIL_HEADLESS_NAME=tndl-ctrl-os-browser-20260426T200039Z
+export TENDRIL_HEADLESS_RUNTIME_DIR=/run/user/1000/tendril-headless/tndl-ctrl-os-browser-20260426T200039Z
+export TENDRIL_HEADLESS_WIDTH=1920
+export TENDRIL_HEADLESS_HEIGHT=1080
+export TENDRIL_HEADLESS_MARIONETTE_PORT=62090
