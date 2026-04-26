@@ -8,8 +8,9 @@ use crate::model::{
     RunOutput, TargetSelector,
 };
 use crate::platform::{
-    CaptureTargetKind, InputRequest as PlatformInputRequest, PlatformAdapter,
-    TargetDescriptor as PlatformTargetDescriptor, TargetDiscoveryRequest,
+    AdapterInfo, CaptureTargetKind, DesktopSession, InputRequest as PlatformInputRequest,
+    PlatformAdapter, PlatformKind, TargetDescriptor as PlatformTargetDescriptor,
+    TargetDiscoveryRequest,
 };
 
 const RELIABILITY_DELAY_MS: u64 = 20;
@@ -96,8 +97,10 @@ pub(crate) fn execute_run(
     adapter.input_support().map_err(TendrilError::from)?;
     ensure_input_supported(&target)?;
 
+    let adapter_info = adapter.info();
     let (text, actions) = normalize_payload(&input.payload);
     validate_actions_for_target(&target, &actions)?;
+    reject_unsafe_browser_navigation_chord(&adapter_info, &target, &actions)?;
 
     let outcome = adapter.execute_input(&PlatformInputRequest {
         target_id: target.id.clone(),
@@ -112,7 +115,7 @@ pub(crate) fn execute_run(
     })?;
 
     Ok(RunOutput {
-        adapter: adapter.info(),
+        adapter: adapter_info,
         target: input.target.clone(),
         focus_required: outcome.focus_required,
         focus_transferred: outcome.focus_transferred,
@@ -211,6 +214,150 @@ fn resolve_target(
                 input.target.id(),
             )
         })
+}
+
+fn reject_unsafe_browser_navigation_chord(
+    adapter_info: &AdapterInfo,
+    target: &PlatformTargetDescriptor,
+    actions: &[InputAction],
+) -> Result<(), TendrilError> {
+    if adapter_info.platform != PlatformKind::Linux
+        || adapter_info.session != DesktopSession::X11
+        || target.kind != CaptureTargetKind::Window
+        || !looks_like_browser_target(target)
+    {
+        return Ok(());
+    }
+
+    let Some((send_action_index, navigation_text)) = vulnerable_ctrl_l_navigation(actions) else {
+        return Ok(());
+    };
+
+    Err(TendrilError::validation(format!(
+        "refusing X11 browser navigation through Ctrl+L followed by URL text `{}` because synthetic browser-chrome shortcuts can stay in the focused page control (observed with Firefox page inputs); use capture -> click the visible address bar -> Ctrl+A -> send URL -> Return -> recapture/verify instead",
+        summarize_navigation_text(navigation_text)
+    ))
+    .with_code("invalid_run_input")
+    .with_field("input_definition")
+    .with_detail_entry("stage", json!("browser_navigation_preflight"))
+    .with_detail_entry("pattern", json!("x11_browser_ctrl_l_url_send"))
+    .with_detail_entry("target_id", json!(target.id))
+    .with_detail_entry("target_name", json!(target.name))
+    .with_detail_entry("target_app_name", json!(target.app_name))
+    .with_detail_entry("target_title", json!(target.title))
+    .with_detail_entry("action_index", json!(send_action_index))
+    .with_detail_entry("url_preview", json!(summarize_navigation_text(navigation_text)))
+    .with_detail_entry(
+        "remediation",
+        json!("Do not rely on Ctrl+L/Cmd+L for browser navigation on X11 Firefox when a page input may already be focused. Capture the browser, click the visible address bar coordinates, run hold(ctrl),a,release(ctrl),send(\"URL\"),Return, then recapture and verify the page changed before continuing."),
+    ))
+}
+
+fn looks_like_browser_target(target: &PlatformTargetDescriptor) -> bool {
+    [
+        target.name.as_str(),
+        target.title.as_deref().unwrap_or_default(),
+        target.app_name.as_deref().unwrap_or_default(),
+    ]
+    .into_iter()
+    .map(str::to_ascii_lowercase)
+    .any(|value| {
+        [
+            "firefox",
+            "mozilla",
+            "chromium",
+            "chrome",
+            "google-chrome",
+            "browser",
+            "brave",
+            "edge",
+        ]
+        .into_iter()
+        .any(|token| value.contains(token))
+    })
+}
+
+fn vulnerable_ctrl_l_navigation(actions: &[InputAction]) -> Option<(usize, &str)> {
+    let significant_actions = actions
+        .iter()
+        .enumerate()
+        .filter(|(_, action)| !matches!(action, InputAction::Wait { .. }))
+        .collect::<Vec<_>>();
+    if significant_actions.len() < 3 {
+        return None;
+    }
+
+    for start in 0..=significant_actions.len() - 3 {
+        let (_, first) = significant_actions[start];
+        let (_, second) = significant_actions[start + 1];
+        let (_, third) = significant_actions[start + 2];
+        if !(is_ctrl_hold(first) && is_key(second, "l") && is_ctrl_release(third)) {
+            continue;
+        }
+
+        let mut pending_url_send = None;
+        for (action_index, action) in significant_actions.iter().skip(start + 3).copied() {
+            match action {
+                InputAction::Click { .. } | InputAction::Drag { .. } => break,
+                InputAction::Send { text } if looks_like_navigation_text(text) => {
+                    pending_url_send = Some((action_index, text.as_str()));
+                }
+                _ if is_return_key(action) => {
+                    if let Some((send_index, navigation_text)) = pending_url_send {
+                        return Some((send_index, navigation_text));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    None
+}
+
+fn is_ctrl_hold(action: &InputAction) -> bool {
+    matches!(
+        action,
+        InputAction::Hold {
+            modifier: ModifierKey::Ctrl
+        }
+    )
+}
+
+fn is_ctrl_release(action: &InputAction) -> bool {
+    matches!(
+        action,
+        InputAction::Release {
+            modifier: ModifierKey::Ctrl
+        }
+    )
+}
+
+fn is_key(action: &InputAction, expected: &str) -> bool {
+    matches!(action, InputAction::KeyTap { key } if key.eq_ignore_ascii_case(expected))
+}
+
+fn is_return_key(action: &InputAction) -> bool {
+    matches!(action, InputAction::KeyTap { key } if matches!(key.as_str(), "return" | "enter"))
+}
+
+fn looks_like_navigation_text(text: &str) -> bool {
+    let trimmed = text.trim().to_ascii_lowercase();
+    trimmed.contains("://")
+        || trimmed.starts_with("about:")
+        || trimmed.starts_with("chrome:")
+        || trimmed.starts_with("edge:")
+        || trimmed.starts_with("localhost:")
+        || trimmed.starts_with("127.0.0.1:")
+}
+
+fn summarize_navigation_text(text: &str) -> String {
+    const MAX_PREVIEW_CHARS: usize = 96;
+    let mut preview = text.chars().take(MAX_PREVIEW_CHARS).collect::<String>();
+    if text.chars().count() > MAX_PREVIEW_CHARS {
+        preview.push('…');
+    }
+    preview
 }
 
 fn ensure_input_supported(target: &PlatformTargetDescriptor) -> Result<(), TendrilError> {
@@ -1024,13 +1171,103 @@ fn scaled_coordinate(value: i32, numerator: u32, denominator: u32) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_dsl_sequence, parse_input_definition, relative_point_to_absolute,
-        remap_output_point_to_source,
+        parse_dsl_sequence, parse_input_definition, reject_unsafe_browser_navigation_chord,
+        relative_point_to_absolute, remap_output_point_to_source,
     };
     use crate::model::{
-        CoordinateTransform, InputAction, ModifierKey, MouseButton, RunInputPayload,
+        Bounds, CoordinateTransform, InputAction, ModifierKey, MouseButton, RunInputPayload,
+        ScaleFactor,
+    };
+    use crate::platform::{
+        AdapterInfo, AudioBackend, CaptureTargetKind, DesktopSession, PlatformKind,
+        TargetDescriptor,
     };
     use proptest::prelude::*;
+
+    #[test]
+    fn x11_browser_ctrl_l_url_navigation_is_rejected_with_remediation() {
+        let actions = parse_dsl_sequence(
+            r#"hold(ctrl),l,release(ctrl),send("file:///tmp/mouse-buttons-task.html"),Return,wait(1000ms),lclick(70,150)"#,
+        )
+        .expect("dsl should parse");
+        let error = reject_unsafe_browser_navigation_chord(
+            &x11_adapter_info(),
+            &browser_target(
+                "0x600016",
+                "firefox",
+                Some("Tendril Smoke Browser — Mozilla Firefox"),
+            ),
+            &actions,
+        )
+        .expect_err("unsafe browser navigation chord should be rejected");
+
+        assert_eq!(error.code(), "invalid_run_input");
+        let details = error.details().expect("details");
+        assert_eq!(details["stage"], "browser_navigation_preflight");
+        assert_eq!(details["pattern"], "x11_browser_ctrl_l_url_send");
+        assert_eq!(details["action_index"], 3);
+        let remediation = details["remediation"].as_str().expect("remediation");
+        assert!(
+            remediation.contains("click the visible address bar")
+                && remediation.contains("recapture and verify"),
+            "unexpected remediation: {remediation}"
+        );
+
+        let ctrl_a_after_ctrl_l = parse_dsl_sequence(
+            r#"hold(ctrl),l,release(ctrl),hold(ctrl),a,release(ctrl),send("https://example.com"),Return"#,
+        )
+        .expect("dsl should parse");
+        reject_unsafe_browser_navigation_chord(
+            &x11_adapter_info(),
+            &browser_target("0x600016", "firefox", Some("Mozilla Firefox")),
+            &ctrl_a_after_ctrl_l,
+        )
+        .expect_err("Ctrl+A after an unsafe Ctrl+L should still be rejected before URL text");
+    }
+
+    #[test]
+    fn x11_browser_ctrl_l_non_url_and_click_address_bar_patterns_are_allowed() {
+        let browser = browser_target("0x600016", "firefox", Some("Mozilla Firefox"));
+
+        let non_navigation =
+            parse_dsl_sequence(r#"hold(ctrl),l,release(ctrl),send("literal search text"),Return"#)
+                .expect("dsl should parse");
+        reject_unsafe_browser_navigation_chord(&x11_adapter_info(), &browser, &non_navigation)
+            .expect("non-URL text should not trigger the browser navigation guard");
+
+        let click_address_bar = parse_dsl_sequence(
+            r#"lclick(220,60),hold(ctrl),a,release(ctrl),send("file:///tmp/mouse-buttons-task.html"),Return"#,
+        )
+        .expect("dsl should parse");
+        reject_unsafe_browser_navigation_chord(&x11_adapter_info(), &browser, &click_address_bar)
+            .expect("capture-click-address-bar navigation pattern should remain valid");
+    }
+
+    #[test]
+    fn ctrl_l_url_sequence_remains_valid_for_non_browser_or_non_x11_targets() {
+        let actions =
+            parse_dsl_sequence(r#"hold(ctrl),l,release(ctrl),send("https://example.com"),Return"#)
+                .expect("dsl should parse");
+        reject_unsafe_browser_navigation_chord(
+            &x11_adapter_info(),
+            &browser_target("window-1", "FixtureApp", Some("Fixture Window")),
+            &actions,
+        )
+        .expect("non-browser targets should not trigger the browser navigation guard");
+
+        let wayland_info = AdapterInfo {
+            platform: PlatformKind::Linux,
+            session: DesktopSession::Wayland,
+            audio_backend: Some(AudioBackend::PipeWire),
+            stateless: true,
+        };
+        reject_unsafe_browser_navigation_chord(
+            &wayland_info,
+            &browser_target("0x600016", "firefox", Some("Mozilla Firefox")),
+            &actions,
+        )
+        .expect("the guard is scoped to the known Linux/X11 failure mode");
+    }
 
     #[test]
     fn parser_accepts_initial_action_set() {
@@ -1273,6 +1510,39 @@ mod tests {
         };
 
         assert_eq!(relative_point_to_absolute(&bounds, 10, 20), (60, 100));
+    }
+
+    fn x11_adapter_info() -> AdapterInfo {
+        AdapterInfo {
+            platform: PlatformKind::Linux,
+            session: DesktopSession::X11,
+            audio_backend: Some(AudioBackend::PipeWire),
+            stateless: true,
+        }
+    }
+
+    fn browser_target(id: &str, app_name: &str, title: Option<&str>) -> TargetDescriptor {
+        TargetDescriptor {
+            id: id.to_owned(),
+            title: title.map(str::to_owned),
+            kind: CaptureTargetKind::Window,
+            name: app_name.to_owned(),
+            bounds: Bounds {
+                x: 0,
+                y: 0,
+                width: 1920,
+                height: 1080,
+            },
+            scale_factor: ScaleFactor {
+                numerator: 1,
+                denominator: 1,
+            },
+            capture_supported: true,
+            input_supported: true,
+            app_name: Some(app_name.to_owned()),
+            process_id: Some(4242),
+            diagnostics: Vec::new(),
+        }
     }
 
     proptest! {

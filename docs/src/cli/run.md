@@ -33,6 +33,33 @@ tendril --window <id> run 'type "hi"'
 
 Use explicit DSL syntax for automation text, such as `send("hi")` or `send("hi"),Return`. Genuine text remains valid, for example `tendril --window <id> run 'hello world'` still types `hello world`.
 
+### Browser navigation guard on Linux/X11
+
+On Linux/X11, Tendril can focus the browser's top-level window, but the browser still decides how synthetic XTEST key chords interact with its current internal focus. Firefox can keep focus inside an existing page input, so a sequence like this may report successful dispatch while typing the URL into the page instead of navigating:
+
+```bash
+# Rejected for X11 browser window targets when the text looks like a URL.
+tendril --window <browser-id> run \
+  'hold(ctrl),l,release(ctrl),send("file:///tmp/task.html"),Return'
+```
+
+Tendril rejects that known-unsafe browser-navigation shape with `invalid_run_input` and a remediation hint instead of silently typing URL text into the page. Use a capture-act-verify pattern that targets the visible browser chrome:
+
+1. Capture the browser and identify the address bar coordinates in source-space.
+2. Click the visible address bar.
+3. Select existing address text, type the URL, and press Return.
+4. Recapture and verify the page/title changed before sending page clicks.
+
+```bash
+tendril --window <browser-id> capture -o browser-before.png
+# Convert capture-space to source-space if the capture was scaled.
+tendril --window <browser-id> run \
+  'lclick(<address_bar_x>,<address_bar_y>),hold(ctrl),a,release(ctrl),send("file:///tmp/task.html"),Return,wait(1000ms)'
+tendril --window <browser-id> capture -o browser-after.png
+```
+
+This keeps normal text input and page shortcuts available while preventing the specific Ctrl+L URL-send failure mode observed on X11 Firefox.
+
 ## Supported action families
 
 The current model covers:

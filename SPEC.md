@@ -107,6 +107,7 @@ The initial CLI surface will include:
 - If the agent derived coordinates from a scaled capture, Tendril must expose the scale math needed to translate them correctly.
 - The runtime must inject small delays where required for reliability, or prefer native accessibility/input APIs when that is more robust.
 - The implementation should avoid stealing focus where possible, but correctness and supported platform capabilities take precedence. Where focus is required, the command result must say so.
+- Browser chrome shortcuts are not a semantic navigation guarantee. On Linux/X11 browser window targets, Tendril must not silently accept the known-unsafe `hold(ctrl),l,release(ctrl),send("URL"),Return` navigation pattern when the text looks like a URL; it must fail with structured remediation instructing agents to capture, click the visible address bar, type/select there, and recapture/verify before page interaction.
 
 #### Audio capture
 

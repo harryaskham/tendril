@@ -141,9 +141,16 @@ for target in targets:
         print(target["id"])
         break
 ')
+# Capture first and choose the visible address bar coordinates in source-space.
+# In the default 1920x1080 headless browser, the bar is near the top chrome;
+# adjust from your capture instead of relying on a fixed page coordinate.
+tendril --json --window "$window_id" capture -o "summaries/${CACOPHONY_AGENT:-manual}/browser-before-nav.png"
 tendril --json --window "$window_id" run \
-  'hold(ctrl),l,release(ctrl),send("https://example.com"),return'
+  'lclick(<address_bar_x>,<address_bar_y>),hold(ctrl),a,release(ctrl),send("https://example.com"),Return,wait(1000ms)'
+tendril --json --window "$window_id" capture -o "summaries/${CACOPHONY_AGENT:-manual}/browser-after-nav.png"
 ```
+
+Do not use `hold(ctrl),l,release(ctrl),send("URL"),Return` as the browser-navigation preflight on Linux/X11. Firefox can leave focus inside an existing page input even though Tendril successfully dispatched the chord, causing the URL to be typed into the page. Click the visible address bar and recapture/verify the page changed before continuing.
 
 Reset or stop the environment:
 

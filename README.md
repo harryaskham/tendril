@@ -154,6 +154,13 @@ tendril --json --window <window-id> run --no-lock 'send("advanced opt-out")'
 tendril --json --window <window-id> run 'Return'      # invalid_run_input with hint
 tendril --json --window <window-id> run 'type "hi"'  # invalid_run_input with hint
 
+# On Linux/X11 browser windows, avoid Ctrl+L URL navigation: Firefox can keep
+# focus inside a page input. Capture, click the visible address bar, type, then
+# recapture/verify instead.
+
+tendril --json --window <browser-id> run \
+  'lclick(<address_bar_x>,<address_bar_y>),hold(ctrl),a,release(ctrl),send("https://example.com"),Return,wait(1000ms)'
+
 # Emit a reusable shell wrapper for a target (shell state, not Tendril state)
 
 eval "$(tendril --window <window-id> alias --name desk)"
