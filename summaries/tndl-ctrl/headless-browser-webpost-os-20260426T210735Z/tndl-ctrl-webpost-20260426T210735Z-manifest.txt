@@ -1,0 +1,10 @@
+Tendril browser-to-OS webpost workflow passed.
+name=tndl-ctrl-webpost-20260426T210735Z
+browser_window=0x600004
+xterm_window=0x40000c
+url=http://127.0.0.1:42879/
+server_submission=agent browser posted to os server ok
+xterm_verification=webpost-os-verified
+workflow=Use Tendril to control Firefox and submit a form to a local OS HTTP server; the server writes a file, then Tendril controls XTerm to verify the OS-side file.
+notes=Second attempt used corrected visible input and button coordinates after first attempt missed the form.
+artifacts=/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-webpost-os-20260426T210735Z
