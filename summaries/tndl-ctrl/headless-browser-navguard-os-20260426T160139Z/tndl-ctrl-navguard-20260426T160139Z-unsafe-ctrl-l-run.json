@@ -1,0 +1,38 @@
+{
+  "status": "error",
+  "meta": {
+    "schema_version": 1,
+    "command": "run"
+  },
+  "error": {
+    "category": "validation",
+    "code": "invalid_run_input",
+    "message": "validation error: refusing X11 browser navigation through Ctrl+L followed by URL text `file:///home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-…` because synthetic browser-chrome shortcuts can stay in the focused page control (observed with Firefox page inputs); use capture -> click the visible address bar -> Ctrl+A -> send URL -> Return -> recapture/verify instead",
+    "details": {
+      "action_index": 3,
+      "execution_lock": {
+        "acquired": true,
+        "enabled": true,
+        "lock_path": "/tmp/nix-shell.RrzWFA/tendril-execution-lock-harry-wayland-1",
+        "owner_pid": 3551620,
+        "queue_depth_at_join": 1,
+        "queue_position_at_join": 1,
+        "stale_locks_reaped": 0,
+        "stale_ms": 30000,
+        "stale_tickets_reaped": 0,
+        "timeout_ms": 60000,
+        "token": "3551620-1777219466302-1",
+        "wait_ms": 0
+      },
+      "field": "input_definition",
+      "pattern": "x11_browser_ctrl_l_url_send",
+      "remediation": "Do not rely on Ctrl+L/Cmd+L for browser navigation on X11 Firefox when a page input may already be focused. Capture the browser, click the visible address bar coordinates, run hold(ctrl),a,release(ctrl),send(\"URL\"),Return, then recapture and verify the page changed before continuing.",
+      "stage": "browser_navigation_preflight",
+      "target_app_name": "firefox",
+      "target_id": "0x600016",
+      "target_name": "firefox",
+      "target_title": "Tendril Smoke Browser — Mozilla Firefox",
+      "url_preview": "file:///home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-…"
+    }
+  }
+}
