@@ -1,0 +1,12 @@
+Tendril below-the-fold/browser and OS-command validation produced mixed results.
+name=tndl-ctrl-scroll-20260426T101949Z
+display=:90
+display_id=1
+browser_window=0x600016
+xterm_window=0x40000c
+page_url=file:///home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-scroll-browser-os-20260426T101949Z/scroll-task.html
+os_controlled_file=/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-scroll-browser-os-20260426T101949Z/os-scroll-dir/result.txt
+scenario=browser location navigation, End key scroll, click/type/submit below the fold, terminal mkdir/ls/cat
+observed_browser=Run returned success and scrolled to the lower panel, but the after-capture still showed the original input value and waiting result. This appears to be a brittle test-coordinate mistake rather than a confirmed Tendril input-delivery failure.
+observed_xterm=Terminal command side effect succeeded and result.txt contains scroll-and-os-control-ok, but the window capture artifact for XTerm is a solid black image despite capture JSON status success.
+follow_up=File a Tendril bead for the black-success XTerm window capture because a successful capture should not silently return an unusable black artifact when a target is covered/restored.

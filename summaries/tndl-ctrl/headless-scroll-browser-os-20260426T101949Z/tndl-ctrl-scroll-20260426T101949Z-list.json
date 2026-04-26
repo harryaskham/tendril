@@ -1,0 +1,103 @@
+{
+  "data": {
+    "adapter": {
+      "audio_backend": "pipe_wire",
+      "platform": "linux",
+      "session": "x11",
+      "stateless": true
+    },
+    "permissions": [
+      {
+        "permission": "screen_capture",
+        "state": "not_required",
+        "suggested_action": null,
+        "summary": "Linux desktop capture typically relies on session capabilities rather than OS privacy prompts."
+      },
+      {
+        "permission": "accessibility",
+        "state": "not_required",
+        "suggested_action": null,
+        "summary": "Linux input control generally depends on session support instead of a centralized permission prompt."
+      },
+      {
+        "permission": "microphone",
+        "state": "not_required",
+        "suggested_action": null,
+        "summary": "Audio device access is usually mediated by the active audio stack and user session."
+      }
+    ],
+    "targets": [
+      {
+        "bounds": {
+          "height": 1080,
+          "width": 1920,
+          "x": 0,
+          "y": 0
+        },
+        "capabilities": {
+          "audio": false,
+          "capture": true,
+          "input": true
+        },
+        "id": "1",
+        "kind": "display",
+        "name": "screen",
+        "scale_factor": {
+          "denominator": 1,
+          "numerator": 1
+        }
+      },
+      {
+        "app_name": "firefox",
+        "bounds": {
+          "height": 1080,
+          "width": 1920,
+          "x": 0,
+          "y": 0
+        },
+        "capabilities": {
+          "audio": false,
+          "capture": true,
+          "input": true
+        },
+        "id": "0x600016",
+        "kind": "window",
+        "name": "firefox",
+        "process_id": 1006467,
+        "scale_factor": {
+          "denominator": 1,
+          "numerator": 1
+        },
+        "title": "Tendril Smoke Browser — Mozilla Firefox"
+      },
+      {
+        "app_name": "XTerm",
+        "bounds": {
+          "height": 316,
+          "width": 604,
+          "x": 41,
+          "y": 102
+        },
+        "capabilities": {
+          "audio": false,
+          "capture": true,
+          "input": true
+        },
+        "id": "0x40000c",
+        "kind": "window",
+        "name": "XTerm",
+        "process_id": 1005859,
+        "scale_factor": {
+          "denominator": 1,
+          "numerator": 1
+        },
+        "title": "Tendril Headless Shell"
+      }
+    ]
+  },
+  "meta": {
+    "command": "list",
+    "schema_version": 1
+  },
+  "status": "success"
+}

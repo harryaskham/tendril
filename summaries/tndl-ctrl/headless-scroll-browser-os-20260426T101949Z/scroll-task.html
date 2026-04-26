@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Tendril Scroll Task</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; background: #fbfcff; color: #12223a; min-height: 2300px; }
+    header { padding: 36px 48px; background: #e8f2ff; border-bottom: 3px solid #7ab6ff; }
+    h1 { font-size: 44px; margin: 0; }
+    .spacer { height: 1280px; padding: 60px 48px; font-size: 28px; }
+    .panel { position: absolute; top: 1760px; left: 70px; width: 1150px; padding: 32px; border: 4px solid #5635d8; border-radius: 14px; background: #f4f0ff; }
+    label { display: block; font-size: 28px; font-weight: 800; margin-bottom: 14px; }
+    input { width: 760px; height: 54px; font-size: 28px; padding: 0 14px; border: 3px solid #5635d8; border-radius: 10px; }
+    button { margin-left: 20px; width: 260px; height: 60px; font-size: 24px; font-weight: 800; color: white; background: #4b2bbf; border: 0; border-radius: 10px; }
+    #result { margin-top: 28px; padding: 20px; min-height: 42px; color: white; background: #073b2c; border-left: 12px solid #19d978; font-size: 30px; font-weight: 900; }
+  </style>
+</head>
+<body>
+  <header><h1>Tendril Scroll Task</h1><p>Agent must navigate to the lower panel.</p></header>
+  <div class="spacer">This spacer forces a real browser scroll before the task controls are visible.</div>
+  <section class="panel">
+    <label for="bottomTask">Bottom-of-page browser task</label>
+    <input id="bottomTask" value="waiting below the fold">
+    <button id="submit" onclick="document.getElementById('result').textContent='Scrolled form submitted: ' + document.getElementById('bottomTask').value">Submit bottom task</button>
+    <div id="result">Waiting for scrolled browser automation</div>
+  </section>
+</body>
+</html>
