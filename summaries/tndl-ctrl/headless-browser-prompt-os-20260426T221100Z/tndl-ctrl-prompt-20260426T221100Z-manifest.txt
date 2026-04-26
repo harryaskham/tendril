@@ -1,0 +1,10 @@
+Tendril browser prompt plus OS workflow completed.
+name=tndl-ctrl-prompt-20260426T221100Z
+browser_window=0x600004
+xterm_window=0x40000c
+url=file:///home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-prompt-os-20260426T221100Z/prompt-task.html
+prompt_text=browser-prompt-control-ok
+xterm_verification=prompt-os-verified
+workflow=Use Tendril to navigate Firefox to a local prompt page, click a visible button that opens a browser prompt, type a prompt answer, accept it, capture the result page, then drive XTerm to verify an OS-side proof file.
+notes=This successful attempt used corrected visible button coordinates after an earlier missed-click attempt was discarded.
+artifacts=/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-prompt-os-20260426T221100Z

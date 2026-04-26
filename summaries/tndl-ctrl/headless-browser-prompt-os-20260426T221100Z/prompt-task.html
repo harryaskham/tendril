@@ -1,0 +1,13 @@
+<!doctype html><meta charset="utf-8"><title>Tendril Prompt Task</title>
+<style>body{font-family:sans-serif;font-size:28px;margin:40px} button{font-size:30px;padding:12px;margin-top:20px} #status{margin-top:30px;color:#064;font-weight:bold}</style>
+<h1>Tendril Prompt Task</h1>
+<p>Click the button, answer the browser prompt, then verify the page result.</p>
+<button id="openPrompt">Open browser prompt</button>
+<div id="status">Waiting for prompt answer.</div>
+<script>
+document.getElementById('openPrompt').addEventListener('click', () => {
+  const answer = window.prompt('Enter Tendril prompt proof text', '');
+  document.body.dataset.promptAnswer = answer || '';
+  document.getElementById('status').textContent = answer ? 'Prompt answered: ' + answer : 'Prompt cancelled or empty.';
+});
+</script>
