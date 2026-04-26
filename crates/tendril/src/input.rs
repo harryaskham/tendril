@@ -248,8 +248,12 @@ fn reject_unsafe_browser_navigation_chord(
     .with_detail_entry("action_index", json!(send_action_index))
     .with_detail_entry("url_preview", json!(summarize_navigation_text(navigation_text)))
     .with_detail_entry(
+        "navigation_text_preview",
+        json!(summarize_navigation_text(navigation_text)),
+    )
+    .with_detail_entry(
         "remediation",
-        json!("Do not rely on Ctrl+L/Cmd+L for browser navigation on X11 Firefox when a page input may already be focused. Capture the browser, click the visible address bar coordinates, run hold(ctrl),a,release(ctrl),send(\"URL\"),Return, then recapture and verify the page changed before continuing."),
+        json!("Do not rely on Ctrl+L/Cmd+L for browser navigation on X11 Firefox when a page input may already be focused. Capture the browser, click the visible address bar coordinates, run hold(ctrl),a,release(ctrl),send(\"URL_OR_PATH\"),Return, then recapture and verify the page changed before continuing."),
     ))
 }
 
@@ -356,7 +360,33 @@ fn looks_like_navigation_text(text: &str) -> bool {
 fn looks_like_absolute_filesystem_path(text: &str) -> bool {
     // Linux/X11 browsers accept absolute POSIX paths such as `/tmp/file.txt`
     // in the address bar and navigate to them as local filesystem targets.
+    is_absolute_unix_path(text)
+        || is_absolute_windows_drive_path(text)
+        || is_absolute_windows_unc_path(text)
+}
+
+fn is_absolute_unix_path(text: &str) -> bool {
     text.starts_with('/')
+}
+
+fn is_absolute_windows_drive_path(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && matches!(bytes[2], b'\\' | b'/')
+}
+
+fn is_absolute_windows_unc_path(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    if bytes.len() < 5 || !matches!(bytes[0], b'\\' | b'/') || !matches!(bytes[1], b'\\' | b'/') {
+        return false;
+    }
+
+    let mut components = text[2..]
+        .split(['\\', '/'])
+        .filter(|component| !component.is_empty());
+    components.next().is_some() && components.next().is_some()
 }
 
 fn summarize_navigation_text(text: &str) -> String {
@@ -1256,6 +1286,19 @@ mod tests {
             assert_eq!(details["action_index"], 3);
             assert_eq!(details["url_preview"], path);
         }
+
+        for path in [
+            r"C:\Users\agent\Desktop\upload-proof.txt",
+            "C:/Users/agent/Desktop/upload-proof.txt",
+            r"\\server\share\upload-proof.txt",
+        ] {
+            let actions = ctrl_l_send_return_actions(path);
+            assert!(
+                reject_unsafe_browser_navigation_chord(&x11_adapter_info(), &browser, &actions)
+                    .is_err(),
+                "absolute filesystem path `{path}` should be rejected"
+            );
+        }
     }
 
     #[test]
@@ -1265,19 +1308,39 @@ mod tests {
             " /Users/alice/upload-proof.txt "
         ));
         assert!(looks_like_navigation_text("file:///tmp/upload-proof.txt"));
+        assert!(looks_like_navigation_text(
+            r"C:\Users\agent\Desktop\upload-proof.txt"
+        ));
+        assert!(looks_like_navigation_text(
+            "C:/Users/agent/Desktop/upload-proof.txt"
+        ));
+        assert!(looks_like_navigation_text(
+            r"\\server\share\upload-proof.txt"
+        ));
         assert!(!looks_like_navigation_text("literal search text"));
         assert!(!looks_like_navigation_text("how to use /tmp on linux"));
+        assert!(!looks_like_navigation_text(
+            "relative/path/upload-proof.txt"
+        ));
+        assert!(!looks_like_navigation_text("~/upload-proof.txt"));
+        assert!(!looks_like_navigation_text("C: drive letter search"));
     }
 
     #[test]
     fn x11_browser_ctrl_l_non_url_and_click_address_bar_patterns_are_allowed() {
         let browser = browser_target("0x600016", "firefox", Some("Mozilla Firefox"));
 
-        let non_navigation =
-            parse_dsl_sequence(r#"hold(ctrl),l,release(ctrl),send("literal search text"),Return"#)
-                .expect("dsl should parse");
-        reject_unsafe_browser_navigation_chord(&x11_adapter_info(), &browser, &non_navigation)
-            .expect("non-URL text should not trigger the browser navigation guard");
+        for text in [
+            "literal search text",
+            "search for /home/harry/upload-proof.txt",
+            "relative/path/upload-proof.txt",
+            "~/upload-proof.txt",
+            "C: drive letter search",
+        ] {
+            let actions = ctrl_l_send_return_actions(text);
+            reject_unsafe_browser_navigation_chord(&x11_adapter_info(), &browser, &actions)
+                .unwrap_or_else(|_| panic!("non-navigation text `{text}` should remain allowed"));
+        }
 
         let click_address_bar = parse_dsl_sequence(
             r#"lclick(220,60),hold(ctrl),a,release(ctrl),send("file:///tmp/mouse-buttons-task.html"),Return"#,
@@ -1563,6 +1626,26 @@ mod tests {
             audio_backend: Some(AudioBackend::PipeWire),
             stateless: true,
         }
+    }
+
+    fn ctrl_l_send_return_actions(text: &str) -> Vec<InputAction> {
+        vec![
+            InputAction::Hold {
+                modifier: ModifierKey::Ctrl,
+            },
+            InputAction::KeyTap {
+                key: "l".to_owned(),
+            },
+            InputAction::Release {
+                modifier: ModifierKey::Ctrl,
+            },
+            InputAction::Send {
+                text: text.to_owned(),
+            },
+            InputAction::KeyTap {
+                key: "return".to_owned(),
+            },
+        ]
     }
 
     fn browser_target(id: &str, app_name: &str, title: Option<&str>) -> TargetDescriptor {
