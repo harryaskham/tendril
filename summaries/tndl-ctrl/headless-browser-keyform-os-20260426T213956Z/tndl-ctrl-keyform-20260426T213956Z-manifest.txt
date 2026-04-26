@@ -1,0 +1,9 @@
+Tendril keyboard-only browser form to OS workflow passed.
+name=tndl-ctrl-keyform-20260426T213956Z
+browser_window=0x600004
+xterm_window=0x40000c
+url=http://127.0.0.1:42275/
+server_submission=keyboard-first-proof|keyboard-second-proof
+xterm_verification=keyform-os-verified
+workflow=Use Tendril to control Firefox with one initial input click, Ctrl+A, Tab navigation, typed fields, and Enter submit; local OS server writes browser form values; Tendril controls XTerm to verify the server-side file.
+artifacts=/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-keyform-os-20260426T213956Z
