@@ -29,6 +29,7 @@ const KEY_RELEASE_EVENT: u8 = 3;
 const BUTTON_PRESS_EVENT: u8 = 4;
 const BUTTON_RELEASE_EVENT: u8 = 5;
 const MOTION_NOTIFY_EVENT: u8 = 6;
+const SOLID_BLACK_CHANNEL_THRESHOLD: u8 = 2;
 
 const XK_BACK_SPACE: u32 = 0xff08;
 const XK_TAB: u32 = 0xff09;
@@ -600,7 +601,7 @@ fn capture_window(
             format!("window `{target_id}` has zero-sized bounds"),
         ));
     }
-    capture_region(
+    let direct_capture = capture_region(
         context,
         connection,
         window,
@@ -609,7 +610,143 @@ fn capture_window(
         geometry.width,
         geometry.height,
         Some(connection.screen.root_visual),
-    )
+    )?;
+
+    let direct_is_black = capture_png_is_solid_black(&direct_capture).map_err(|error| {
+        PlatformAdapterError::adapter_failure(
+            AdapterOperation::Capture,
+            context.platform,
+            format!(
+                "failed to validate X11 window capture for `{target_id}` before returning it: {error}"
+            ),
+        )
+    })?;
+    if !direct_is_black {
+        return Ok(direct_capture);
+    }
+
+    capture_window_via_root_crop_after_raise(context, connection, target_id, window, &geometry)
+}
+
+fn capture_window_via_root_crop_after_raise(
+    context: &AdapterContext,
+    connection: &X11Connection,
+    target_id: &str,
+    window: Window,
+    geometry: &x11rb::protocol::xproto::GetGeometryReply,
+) -> Result<Vec<u8>, PlatformAdapterError> {
+    let restore_state = capture_x11_restore_state(connection).map_err(|error| {
+        PlatformAdapterError::adapter_failure(
+            AdapterOperation::Capture,
+            context.platform,
+            format!(
+                "X11 window capture for `{target_id}` returned a solid black image from the window drawable. Tendril would need to temporarily raise the target and capture a root-window crop, but it could not snapshot the current focus for restoration: {error}"
+            ),
+        )
+    })?;
+
+    activate_window(connection, window).map_err(|error| {
+        PlatformAdapterError::adapter_failure(
+            AdapterOperation::Capture,
+            context.platform,
+            format!(
+                "X11 window capture for `{target_id}` returned a solid black image from the window drawable. This usually means the target is obscured or lacks usable backing pixels, and Tendril could not raise it for a root-window crop fallback: {error}"
+            ),
+        )
+    })?;
+    std::thread::sleep(reliability_delay());
+
+    let fallback_result = capture_raised_window_from_root_crop(
+        context,
+        connection,
+        target_id,
+        window,
+        geometry.width,
+        geometry.height,
+    );
+    let restore_outcome = restore_x11_state_if_requested(connection, restore_state.as_ref());
+
+    match (fallback_result, restore_outcome.error) {
+        (Ok(image_bytes), None) => Ok(image_bytes),
+        (Ok(_), Some(restore_error)) => Err(PlatformAdapterError::adapter_failure(
+            AdapterOperation::Capture,
+            context.platform,
+            format!(
+                "X11 window capture for `{target_id}` recovered from a solid black window-drawable image by raising and root-cropping the target, but focus restoration failed afterwards: {restore_error}"
+            ),
+        )),
+        (Err(error), None) => Err(error),
+        (Err(error), Some(restore_error)) => Err(PlatformAdapterError::adapter_failure(
+            AdapterOperation::Capture,
+            context.platform,
+            format!(
+                "{error}; additionally, focus restoration failed after the fallback attempt: {restore_error}"
+            ),
+        )),
+    }
+}
+
+fn capture_raised_window_from_root_crop(
+    context: &AdapterContext,
+    connection: &X11Connection,
+    target_id: &str,
+    window: Window,
+    width: u16,
+    height: u16,
+) -> Result<Vec<u8>, PlatformAdapterError> {
+    let translated = connection
+        .conn
+        .translate_coordinates(window, connection.screen.root, 0, 0)
+        .map_err(|error| adapter_failure(context, AdapterOperation::Capture, error))?
+        .reply()
+        .map_err(|error| adapter_failure(context, AdapterOperation::Capture, error))?;
+
+    let image_bytes = capture_region(
+        context,
+        connection,
+        connection.screen.root,
+        translated.dst_x,
+        translated.dst_y,
+        width,
+        height,
+        Some(connection.screen.root_visual),
+    )?;
+
+    let fallback_is_black = capture_png_is_solid_black(&image_bytes).map_err(|error| {
+        PlatformAdapterError::adapter_failure(
+            AdapterOperation::Capture,
+            context.platform,
+            format!(
+                "failed to validate X11 root-crop fallback capture for `{target_id}` before returning it: {error}"
+            ),
+        )
+    })?;
+    if fallback_is_black {
+        return Err(PlatformAdapterError::adapter_failure(
+            AdapterOperation::Capture,
+            context.platform,
+            format!(
+                "X11 window capture for `{target_id}` returned a solid black image from the window drawable and the raise-plus-root-crop fallback was also solid black. The target may be minimized, outside the visible display, or otherwise unavailable to XGetImage; capture a visible display target or make the window visible before retrying."
+            ),
+        ));
+    }
+
+    Ok(image_bytes)
+}
+
+fn capture_png_is_solid_black(image_bytes: &[u8]) -> Result<bool, String> {
+    let decoded = image::load_from_memory(image_bytes)
+        .map_err(|error| format!("captured PNG could not be decoded: {error}"))?;
+    let rgba = decoded.to_rgba8();
+    if rgba.width() == 0 || rgba.height() == 0 {
+        return Ok(false);
+    }
+
+    Ok(rgba.pixels().all(|pixel| {
+        pixel[0] <= SOLID_BLACK_CHANNEL_THRESHOLD
+            && pixel[1] <= SOLID_BLACK_CHANNEL_THRESHOLD
+            && pixel[2] <= SOLID_BLACK_CHANNEL_THRESHOLD
+    }))
 }
 
 fn capture_display(
@@ -1501,7 +1638,14 @@ fn decode_class_name(bytes: &[u8]) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_class_name, decode_text_property, keysym_for_char, parse_window_id};
+    use std::io::Cursor;
+
+    use image::{DynamicImage, ImageBuffer, ImageFormat as RasterImageFormat, Rgba};
+
+    use super::{
+        capture_png_is_solid_black, decode_class_name, decode_text_property, keysym_for_char,
+        parse_window_id,
+    };
 
     #[test]
     fn parses_hex_window_ids() {
@@ -1530,5 +1674,45 @@ mod tests {
         assert_eq!(keysym_for_char('A'), u32::from('A'));
         assert_eq!(keysym_for_char('é'), u32::from('é'));
         assert_eq!(keysym_for_char('Ж'), 0x0100_0416);
+    }
+
+    #[test]
+    fn detects_solid_black_capture_pngs() {
+        assert!(
+            capture_png_is_solid_black(&sample_png_from_pixel(Rgba([0, 0, 0, 255])))
+                .expect("black png should decode")
+        );
+        assert!(
+            capture_png_is_solid_black(&sample_png_from_pixel(Rgba([2, 1, 0, 255])))
+                .expect("near-black png should decode")
+        );
+    }
+
+    #[test]
+    fn rejects_non_black_capture_pngs() {
+        assert!(
+            !capture_png_is_solid_black(&sample_png_from_pixel(Rgba([0, 0, 8, 255])))
+                .expect("blue-tinted png should decode")
+        );
+        assert!(!capture_png_is_solid_black(&sample_mixed_png()).expect("mixed png should decode"));
+    }
+
+    fn sample_png_from_pixel(pixel: Rgba<u8>) -> Vec<u8> {
+        let image = DynamicImage::ImageRgba8(ImageBuffer::from_pixel(3, 2, pixel));
+        encode_sample_png(&image)
+    }
+
+    fn sample_mixed_png() -> Vec<u8> {
+        let mut image = ImageBuffer::from_pixel(3, 2, Rgba([0, 0, 0, 255]));
+        image.put_pixel(1, 1, Rgba([255, 255, 255, 255]));
+        encode_sample_png(&DynamicImage::ImageRgba8(image))
+    }
+
+    fn encode_sample_png(image: &DynamicImage) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        image
+            .write_to(&mut Cursor::new(&mut bytes), RasterImageFormat::Png)
+            .expect("sample png should encode");
+        bytes
     }
 }

@@ -1,0 +1,9 @@
+{
+  "path": "summaries/uvfkzhulrpybr84v/bd-1f08f8-x11-black-capture-20260426T110459Z/xterm-after-fixed.png",
+  "width": 512,
+  "height": 268,
+  "pixels": 137216,
+  "non_black_pixels_threshold_gt_2": 136857,
+  "non_black_ratio": 0.997383687033582,
+  "solid_black_threshold_le_2": false
+}
