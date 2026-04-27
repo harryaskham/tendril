@@ -1,0 +1,9 @@
+Tendril post-landing dropdown plus OS workflow passed.
+name=tndl-ctrl-select-post-20260427T014020Z
+browser_window=0x600004
+xterm_window=0x40000c
+url=http://127.0.0.1:37353/
+select_choice=beta
+xterm_verification=select-os-verified
+workflow=After bd-765fa3, use Tendril to capture Firefox without the previous XTerm occluder, choose Beta from a dropdown, submit to a local OS HTTP server, capture the browser result, then drive XTerm to verify the OS-side saved choice.
+artifacts=/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-select-postlanding-20260427T014020Z
