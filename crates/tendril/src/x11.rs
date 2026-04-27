@@ -1192,6 +1192,9 @@ fn dispatch_action(
             Some(action_index),
             Some(label),
         ),
+        InputAction::PointerMove { x, y } => {
+            pointer_move(connection, request, *x, *y, Some(action_index), Some(label))
+        }
         InputAction::DoubleClick { x, y } => {
             double_click_button(connection, request, *x, *y, Some(action_index), Some(label))
         }
@@ -1215,6 +1218,21 @@ fn dispatch_action(
             Some(label),
         ),
     }
+}
+
+fn pointer_move(
+    connection: &X11Connection,
+    request: &InputRequest,
+    x: i32,
+    y: i32,
+    action_index: Option<usize>,
+    action: Option<&str>,
+) -> Result<(), TendrilError> {
+    let (absolute_x, absolute_y) = absolute_point(request, x, y);
+    move_pointer(connection, absolute_x, absolute_y, action_index, action)?;
+    flush_x11_input(connection, action_index, action, "pointer move")?;
+    std::thread::sleep(reliability_delay());
+    Ok(())
 }
 
 fn scroll_wheel(
@@ -1693,6 +1711,7 @@ fn action_label(action: &InputAction) -> String {
         InputAction::Send { text } => format!("send({text:?})"),
         InputAction::Wait { duration_ms } => format!("wait({duration_ms}ms)"),
         InputAction::Click { button, x, y } => format!("{button:?}_click({x},{y})").to_lowercase(),
+        InputAction::PointerMove { x, y } => format!("move({x},{y})"),
         InputAction::DoubleClick { x, y } => format!("dblclick({x},{y})"),
         InputAction::Drag { x0, y0, x1, y1 } => format!("drag({x0},{y0},{x1},{y1})"),
         InputAction::Scroll { x, y, dy } => format!("scroll({x},{y},{dy})"),

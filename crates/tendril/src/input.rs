@@ -438,6 +438,9 @@ fn validate_actions_for_target(
             InputAction::Click { x, y, .. } => {
                 validate_relative_point(*x, *y, &target.bounds, action_index, "click")?;
             }
+            InputAction::PointerMove { x, y } => {
+                validate_relative_point(*x, *y, &target.bounds, action_index, "pointer_move")?;
+            }
             InputAction::DoubleClick { x, y } => {
                 validate_relative_point(*x, *y, &target.bounds, action_index, "double_click")?;
             }
@@ -888,6 +891,21 @@ fn parse_action_segment(segment: &str, action_index: usize) -> Result<InputActio
                     "rclick" => MouseButton::Right,
                     _ => MouseButton::Middle,
                 },
+                x: parse_i32(arguments[0], action_index, segment, "x")?,
+                y: parse_i32(arguments[1], action_index, segment, "y")?,
+            })
+        }
+        "move" | "hover" => {
+            let arguments = split_arguments(inner, action_index, segment)?;
+            if arguments.len() != 2 {
+                return Err(dsl_error(
+                    format!("`{name}` expects exactly two coordinates"),
+                    Some(action_index),
+                    Some(segment),
+                    Some("parse"),
+                ));
+            }
+            Ok(InputAction::PointerMove {
                 x: parse_i32(arguments[0], action_index, segment, "x")?,
                 y: parse_i32(arguments[1], action_index, segment, "y")?,
             })
@@ -1448,11 +1466,11 @@ mod tests {
     #[test]
     fn parser_accepts_initial_action_set() {
         let actions = parse_dsl_sequence(
-            r#"hold(ctrl),c,release(ctrl),wait(1.5s),send("abc"),lclick(10,20),rclick(30,40),mclick(50,60),dblclick(70,80),doubleclick(90,100),drag(1,2,3,4),scroll(100,200,7),scroll(100,200,-3)"#,
+            r#"hold(ctrl),c,release(ctrl),wait(1.5s),send("abc"),lclick(10,20),rclick(30,40),mclick(50,60),move(70,80),hover(90,100),dblclick(110,120),doubleclick(130,140),drag(1,2,3,4),scroll(100,200,7),scroll(100,200,-3)"#,
         )
         .expect("dsl should parse");
 
-        assert_eq!(actions.len(), 13);
+        assert_eq!(actions.len(), 15);
         assert_eq!(
             actions[0],
             InputAction::Hold {
@@ -1502,10 +1520,12 @@ mod tests {
                 y: 60,
             }
         );
-        assert_eq!(actions[8], InputAction::DoubleClick { x: 70, y: 80 });
-        assert_eq!(actions[9], InputAction::DoubleClick { x: 90, y: 100 });
+        assert_eq!(actions[8], InputAction::PointerMove { x: 70, y: 80 });
+        assert_eq!(actions[9], InputAction::PointerMove { x: 90, y: 100 });
+        assert_eq!(actions[10], InputAction::DoubleClick { x: 110, y: 120 });
+        assert_eq!(actions[11], InputAction::DoubleClick { x: 130, y: 140 });
         assert_eq!(
-            actions[10],
+            actions[12],
             InputAction::Drag {
                 x0: 1,
                 y0: 2,
@@ -1514,7 +1534,7 @@ mod tests {
             }
         );
         assert_eq!(
-            actions[11],
+            actions[13],
             InputAction::Scroll {
                 x: 100,
                 y: 200,
@@ -1522,7 +1542,7 @@ mod tests {
             }
         );
         assert_eq!(
-            actions[12],
+            actions[14],
             InputAction::Scroll {
                 x: 100,
                 y: 200,
@@ -1572,6 +1592,9 @@ mod tests {
             ("hold(ctrl", "parse", None),
             (r#"send("hi") trailing"#, "parse", Some("action")),
             ("drag(1,2,3)", "parse", Some("action")),
+            ("move(10)", "parse", Some("action")),
+            ("hover(10,20,30)", "parse", Some("action")),
+            ("move(10,down)", "parse", Some("action")),
             ("dblclick(10)", "parse", Some("action")),
             ("doubleclick(10,20,30)", "parse", Some("action")),
             ("dblclick(10,down)", "parse", Some("action")),

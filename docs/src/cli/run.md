@@ -7,6 +7,7 @@ Use `tendril run` to send text or explicit input sequences to a selected target.
 ```bash
 tendril --window <id> run 'send("hello")'
 tendril --window <id> run 'hold(ctrl),c,release(ctrl),wait(250ms),send("done")'
+tendril --window <id> run 'hover(320,240),wait(250ms)'
 tendril --window <id> run 'dblclick(320,240),wait(250ms)'
 tendril --window <id> run 'scroll(220,420,8),wait(250ms)'
 tendril --window <id> run --no-restore-focus 'send("leave focus here")'
@@ -71,9 +72,12 @@ The current model covers:
 - `send("...")`,
 - timed waits,
 - left/right/middle clicks,
+- pointer-only moves/hover with `move(x,y)` or `hover(x,y)`,
 - left-button double-clicks,
 - drag gestures, and
 - wheel scrolls with `scroll(x,y,dy)`.
+
+`move(x,y)` and the alias `hover(x,y)` move the pointer to source-space coordinates `x,y` without pressing a mouse button. Use this for menu hover states, tooltips, map/canvas overlays, autohide UI, and other capture-act-verify workflows where a click would mutate state. Malformed pointer-move actions (wrong argument count or non-numeric coordinates) fail with structured `invalid_run_input` diagnostics naming the parse stage, action index, and offending action. The shared typed action-list model represents the same gesture as `{ "type": "pointer_move", "x": <number>, "y": <number> }`. Linux/X11 delivery uses XTEST motion events and preserves the normal focus transfer, focus restoration, pointer restoration, and execution-lock behavior used by other `run` actions; pass `--no-restore-focus` when a workflow intentionally needs the pointer to remain hovering for a later manual step or capture.
 
 `dblclick(x,y)` and the alias `doubleclick(x,y)` move the pointer to source-space coordinates `x,y` and dispatch a calibrated primary-button double-click. Malformed double-click actions (wrong argument count or non-numeric coordinates) fail with structured `invalid_run_input` diagnostics naming the parse stage, action index, and offending action. The shared typed action-list model represents the same gesture as `{ "type": "double_click", "x": <number>, "y": <number> }`. Linux/X11 delivery uses XTEST and preserves the normal focus transfer, focus restoration, pointer restoration, and execution-lock behavior used by other `run` actions.
 

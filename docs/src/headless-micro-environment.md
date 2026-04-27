@@ -207,6 +207,27 @@ Firefox focus transfer and that the page state reports
 `doubleClickObserved=true`, `doubleClickButton=0`, `doubleClickDetail >= 2`,
 and title `Tendril Double Click Hit`.
 
+## Firefox hover smoke test
+
+Use the focused hover smoke when validating Linux/X11 pointer-only motion into
+Firefox content. It records page-observed `mousemove`, `mouseover`, and CSS
+`:hover` state through Marionette and fails if Tendril reports a successful
+`run` envelope without the page changing state.
+
+```bash
+cargo build -p tendril
+scripts/tendril-headless.sh \
+  --name hover-smoke \
+  --browser firefox \
+  --tendril-bin ./target/debug/tendril \
+  --artifact-dir "summaries/${CACOPHONY_AGENT:-manual}/hover-smoke" \
+  hover-smoke
+```
+
+The smoke asserts that `hover(220,390),wait(900ms)` returns success with Firefox
+focus transfer and that the page state reports `hoverObserved=true`,
+`mouseMoveObserved=true`, `clickCount=0`, and title `Tendril Hover Hit`.
+
 ## Firefox nested scroll smoke test
 
 Use the focused scroll smoke when validating Linux/X11 wheel delivery into a

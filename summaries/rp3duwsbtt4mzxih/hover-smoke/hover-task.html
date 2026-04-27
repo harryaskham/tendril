@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tendril Hover Waiting</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #111827;
+      color: #e5e7eb;
+      font: 24px/1.35 system-ui, sans-serif;
+    }
+    main { padding: 48px 72px; }
+    h1 { margin: 0 0 16px; font-size: 42px; }
+    #status { margin: 0 0 12px; color: #fbbf24; font-weight: 700; }
+    #details { margin: 0 0 20px; color: #93c5fd; }
+    #target {
+      display: grid;
+      place-items: center;
+      margin-top: 40px;
+      width: 520px;
+      height: 360px;
+      border: 5px dashed #38bdf8;
+      border-radius: 18px;
+      background: #0f172a;
+      box-shadow: 0 0 0 6px rgba(56, 189, 248, 0.15);
+      user-select: none;
+      transition: background 120ms ease, border-color 120ms ease;
+    }
+    #target:hover {
+      border-color: #86efac;
+      background: #14532d;
+    }
+    #target span { color: #7dd3fc; font-size: 36px; font-weight: 800; }
+    #target:hover span { color: #bbf7d0; }
+    .ok { color: #86efac !important; }
+    .bad { color: #fca5a5 !important; }
+  </style>
+</head>
+<body data-hover-observed="false" data-mouse-move-observed="false" data-css-hover-observed="false" data-click-count="0">
+  <main>
+    <h1>Firefox hover target</h1>
+    <p id="status">Waiting for pointer-only hover.</p>
+    <p id="details">Move the pointer into the dashed target without clicking.</p>
+    <div id="target"><span>Hover target</span></div>
+  </main>
+  <script>
+    const target = document.getElementById('target');
+    const status = document.getElementById('status');
+    const details = document.getElementById('details');
+    let clickCount = 0;
+
+    function markHover(event) {
+      const rect = target.getBoundingClientRect();
+      const localX = Math.round(event.clientX - rect.left);
+      const localY = Math.round(event.clientY - rect.top);
+      document.body.dataset.hoverObserved = 'true';
+      document.body.dataset.mouseMoveObserved = event.type === 'mousemove' ? 'true' : document.body.dataset.mouseMoveObserved;
+      document.body.dataset.cssHoverObserved = target.matches(':hover') ? 'true' : document.body.dataset.cssHoverObserved;
+      document.body.dataset.hoverClient = `${Math.round(event.clientX)},${Math.round(event.clientY)}`;
+      document.body.dataset.hoverLocal = `${localX},${localY}`;
+      document.body.dataset.hoverEventType = event.type;
+      document.title = 'Tendril Hover Hit';
+      status.textContent = `Hover observed at ${localX},${localY}.`;
+      status.className = 'ok';
+      details.textContent = `event=${event.type} client=${Math.round(event.clientX)},${Math.round(event.clientY)} cssHover=${target.matches(':hover')}`;
+    }
+
+    target.addEventListener('mouseover', markHover);
+    target.addEventListener('mousemove', markHover);
+    target.addEventListener('click', (event) => {
+      clickCount += 1;
+      document.body.dataset.clickCount = String(clickCount);
+      document.body.dataset.lastClickButton = String(event.button);
+      status.textContent = `Unexpected click observed: button=${event.button}.`;
+      status.className = 'bad';
+    });
+  </script>
+</body>
+</html>

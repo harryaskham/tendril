@@ -2132,6 +2132,13 @@ fn dispatch_macos_action(
             let script = macos_mouse_jxa_script(*button, absolute_x, absolute_y, None);
             run_macos_osascript_jxa_for_input(&script, "dispatch", Some(action_index), Some(label))
         }
+        InputAction::PointerMove { .. } => Err(input_execution_error(
+            "unsupported_pointer_move_action",
+            "move(...) and hover(...) are currently implemented for Linux/X11 input delivery; this adapter does not yet support native pointer-only motion".to_owned(),
+            "dispatch",
+            Some(action_index),
+            Some(label),
+        )),
         InputAction::DoubleClick { .. } => Err(input_execution_error(
             "unsupported_double_click_action",
             "dblclick(...) is currently implemented for Linux/X11 input delivery; this adapter does not yet support native double-click injection".to_owned(),
@@ -2411,6 +2418,13 @@ fn dispatch_windows_action_with_runtime(
                 Some(label),
             )
         }
+        InputAction::PointerMove { .. } => Err(input_execution_error(
+            "unsupported_pointer_move_action",
+            "move(...) and hover(...) are currently implemented for Linux/X11 input delivery; this adapter does not yet support native pointer-only motion".to_owned(),
+            "dispatch",
+            Some(action_index),
+            Some(label),
+        )),
         InputAction::DoubleClick { .. } => Err(input_execution_error(
             "unsupported_double_click_action",
             "dblclick(...) is currently implemented for Linux/X11 input delivery; this Windows adapter does not yet support native double-click injection".to_owned(),

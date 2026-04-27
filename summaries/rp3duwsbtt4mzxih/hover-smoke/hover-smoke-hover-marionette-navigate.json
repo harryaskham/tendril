@@ -1,0 +1,21 @@
+{
+  "helper": "tendril-headless firefox-marionette-navigate",
+  "marionette": {
+    "hello": {
+      "applicationType": "gecko",
+      "marionetteProtocol": 3
+    },
+    "port": 62090,
+    "sessionId": "f5f6c4b6-89bf-4c25-a752-17eb65c067aa"
+  },
+  "page": {
+    "bodyText": "Firefox hover target\n\nWaiting for pointer-only hover.\n\nMove the pointer into the dashed target without clicking.\n\nHover target",
+    "title": "Tendril Hover Waiting",
+    "url": "file:///home/harry/.cacophony/agents/tendril/rp3duwsbtt4mzxih/checkout/summaries/rp3duwsbtt4mzxih/hover-smoke/hover-task.html"
+  },
+  "request": {
+    "navigate_url": "file:///home/harry/.cacophony/agents/tendril/rp3duwsbtt4mzxih/checkout/summaries/rp3duwsbtt4mzxih/hover-smoke/hover-task.html"
+  },
+  "status": "success",
+  "transport": "firefox-marionette"
+}

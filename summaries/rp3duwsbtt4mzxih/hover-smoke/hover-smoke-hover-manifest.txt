@@ -1,0 +1,13 @@
+Tendril headless Firefox hover smoke passed.
+name=hover-smoke
+display=:90
+display_target=1
+browser=/nix/store/7vnya051q0xr2mdwxp48sh70xzim4fpa-firefox-149.0/bin/firefox
+browser_window=0x600016
+marionette_port=62090
+resolution=1920x1080x24
+runtime_dir=/run/user/1000/tendril-headless/hover-smoke
+hover_url=file:///home/harry/.cacophony/agents/tendril/rp3duwsbtt4mzxih/checkout/summaries/rp3duwsbtt4mzxih/hover-smoke/hover-task.html
+gesture=hover(220,390),wait(900ms)
+assertion=Marionette page state reported hoverObserved=true, mouseMoveObserved=true, cssHoverObserved=true, clickCount=0, and title changed to Tendril Hover Hit.
+artifacts=/home/harry/.cacophony/agents/tendril/rp3duwsbtt4mzxih/checkout/summaries/rp3duwsbtt4mzxih/hover-smoke

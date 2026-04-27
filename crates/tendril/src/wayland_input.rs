@@ -251,6 +251,13 @@ fn dispatch_action(
                 Some(label),
             )
         }
+        InputAction::PointerMove { .. } => Err(input_execution_error(
+            "unsupported_pointer_move_action",
+            "move(...) and hover(...) are currently implemented for Linux/X11 input delivery; this Wayland adapter does not yet support native pointer-only motion".to_owned(),
+            "dispatch",
+            Some(action_index),
+            Some(label),
+        )),
         InputAction::DoubleClick { .. } => Err(input_execution_error(
             "unsupported_double_click_action",
             "dblclick(...) is currently implemented for Linux/X11 input delivery; this Wayland adapter does not yet support native double-click injection".to_owned(),
@@ -550,6 +557,7 @@ fn request_has_pointer(request: &InputRequest) -> bool {
         matches!(
             action,
             InputAction::Click { .. }
+                | InputAction::PointerMove { .. }
                 | InputAction::DoubleClick { .. }
                 | InputAction::Drag { .. }
                 | InputAction::Scroll { .. }

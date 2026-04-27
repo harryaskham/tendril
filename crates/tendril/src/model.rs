@@ -309,6 +309,14 @@ pub enum InputAction {
         x: i32,
         y: i32,
     },
+    /// Move the pointer to source-space coordinates without pressing a button.
+    ///
+    /// This is exposed in the DSL as `move(x,y)` and `hover(x,y)` and
+    /// serializes in the shared typed model as `type: "pointer_move"`.
+    PointerMove {
+        x: i32,
+        y: i32,
+    },
     /// Double-click the primary/left mouse button at source-space coordinates.
     ///
     /// This is exposed in the DSL as `dblclick(x,y)` and `doubleclick(x,y)` and
@@ -681,6 +689,19 @@ mod tests {
             .expect_err("text payload should be validated");
 
         assert_eq!(error.code(), "invalid_run_input");
+    }
+
+    #[test]
+    fn pointer_move_action_round_trips_through_shared_model() {
+        let json = serde_json::to_value(InputAction::PointerMove { x: 10, y: 20 })
+            .expect("pointer-move action should serialize");
+        assert_eq!(json["type"], "pointer_move");
+        assert_eq!(json["x"], 10);
+        assert_eq!(json["y"], 20);
+
+        let decoded: InputAction = serde_json::from_value(json)
+            .expect("pointer-move action should deserialize through shared model");
+        assert_eq!(decoded, InputAction::PointerMove { x: 10, y: 20 });
     }
 
     #[test]

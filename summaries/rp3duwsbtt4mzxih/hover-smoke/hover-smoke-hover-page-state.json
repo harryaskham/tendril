@@ -1,0 +1,28 @@
+{
+  "helper": "tendril-headless firefox-hover-state",
+  "marionette": {
+    "hello": {
+      "applicationType": "gecko",
+      "marionetteProtocol": 3
+    },
+    "port": 62090,
+    "sessionId": "aa015f34-8f8d-41aa-b30e-12cf26054e60"
+  },
+  "page": {
+    "currentlyHovering": true,
+    "dataset": {
+      "clickCount": "0",
+      "cssHoverObserved": "true",
+      "hoverClient": "208,287",
+      "hoverEventType": "mousemove",
+      "hoverLocal": "136,50",
+      "hoverObserved": "true",
+      "mouseMoveObserved": "true"
+    },
+    "details": "event=mousemove client=208,287 cssHover=true",
+    "status": "Hover observed at 136,50.",
+    "title": "Tendril Hover Hit"
+  },
+  "status": "success",
+  "transport": "firefox-marionette"
+}
