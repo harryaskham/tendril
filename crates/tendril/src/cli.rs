@@ -134,7 +134,7 @@ pub struct RunCommand {
     #[arg(long = "lock-path")]
     pub lock_path: Option<PathBuf>,
 
-    /// Text or DSL input definition, e.g. `send("hi")`, `lclick(10,20)`, or `scroll(10,20,3)`.
+    /// Text or DSL input definition, e.g. `send("hi")`, `lclick(10,20)`, `dblclick(10,20)`, or `scroll(10,20,3)`.
     pub input_definition: Option<String>,
 
     /// Restore the window/app focus that was active before the run, when the

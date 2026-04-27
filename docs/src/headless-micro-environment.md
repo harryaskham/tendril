@@ -185,6 +185,28 @@ Firefox focus transfer and that the page state reports
 `contextMenuObserved=true`, `contextMenuButton=2`, and title
 `Tendril Context Menu Hit`.
 
+## Firefox double-click smoke test
+
+Use the focused double-click smoke when validating Linux/X11 primary-button
+double-click delivery into Firefox content. It records the page-observed DOM
+`dblclick` event through Marionette and fails if Tendril only reports a
+successful `run` envelope without the page changing state.
+
+```bash
+cargo build -p tendril
+scripts/tendril-headless.sh \
+  --name doubleclick-smoke \
+  --browser firefox \
+  --tendril-bin ./target/debug/tendril \
+  --artifact-dir "summaries/${CACOPHONY_AGENT:-manual}/doubleclick-smoke" \
+  doubleclick-smoke
+```
+
+The smoke asserts that `dblclick(220,390),wait(900ms)` returns success with
+Firefox focus transfer and that the page state reports
+`doubleClickObserved=true`, `doubleClickButton=0`, `doubleClickDetail >= 2`,
+and title `Tendril Double Click Hit`.
+
 ## Firefox nested scroll smoke test
 
 Use the focused scroll smoke when validating Linux/X11 wheel delivery into a

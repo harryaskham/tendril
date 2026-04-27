@@ -251,6 +251,13 @@ fn dispatch_action(
                 Some(label),
             )
         }
+        InputAction::DoubleClick { .. } => Err(input_execution_error(
+            "unsupported_double_click_action",
+            "dblclick(...) is currently implemented for Linux/X11 input delivery; this Wayland adapter does not yet support native double-click injection".to_owned(),
+            "dispatch",
+            Some(action_index),
+            Some(label),
+        )),
         InputAction::Drag { x0, y0, x1, y1 } => {
             let (start_x, start_y) = relative_point_to_absolute(&request.bounds, *x0, *y0);
             let (end_x, end_y) = relative_point_to_absolute(&request.bounds, *x1, *y1);
@@ -542,7 +549,10 @@ fn request_has_pointer(request: &InputRequest) -> bool {
     request.actions.iter().any(|action| {
         matches!(
             action,
-            InputAction::Click { .. } | InputAction::Drag { .. } | InputAction::Scroll { .. }
+            InputAction::Click { .. }
+                | InputAction::DoubleClick { .. }
+                | InputAction::Drag { .. }
+                | InputAction::Scroll { .. }
         )
     })
 }

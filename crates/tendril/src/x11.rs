@@ -33,6 +33,7 @@ const X11_WHEEL_UP_BUTTON: u8 = 4;
 const X11_WHEEL_DOWN_BUTTON: u8 = 5;
 const SOLID_BLACK_CHANNEL_THRESHOLD: u8 = 2;
 const DRAG_BUTTON_HOLD_DELAY_MS: u64 = 120;
+const DOUBLE_CLICK_INTERVAL_MS: u64 = 80;
 const DRAG_MOTION_STEP_PX: u64 = 16;
 const DRAG_MIN_STEPS: u64 = 6;
 const DRAG_MAX_STEPS: u64 = 96;
@@ -1191,6 +1192,9 @@ fn dispatch_action(
             Some(action_index),
             Some(label),
         ),
+        InputAction::DoubleClick { x, y } => {
+            double_click_button(connection, request, *x, *y, Some(action_index), Some(label))
+        }
         InputAction::Drag { x0, y0, x1, y1 } => drag_mouse(
             connection,
             request,
@@ -1265,9 +1269,59 @@ fn click_button(
     flush_x11_input(connection, action_index, action, "click pointer move")?;
     std::thread::sleep(reliability_delay());
 
+    click_button_at_current_pointer(connection, button, action_index, action, "click")
+}
+
+fn double_click_button(
+    connection: &X11Connection,
+    request: &InputRequest,
+    x: i32,
+    y: i32,
+    action_index: Option<usize>,
+    action: Option<&str>,
+) -> Result<(), TendrilError> {
+    let (absolute_x, absolute_y) = absolute_point(request, x, y);
+    move_pointer(connection, absolute_x, absolute_y, action_index, action)?;
+    flush_x11_input(
+        connection,
+        action_index,
+        action,
+        "double-click pointer move",
+    )?;
+    std::thread::sleep(reliability_delay());
+
+    click_button_at_current_pointer(
+        connection,
+        MouseButton::Left,
+        action_index,
+        action,
+        "double-click first click",
+    )?;
+    std::thread::sleep(std::time::Duration::from_millis(DOUBLE_CLICK_INTERVAL_MS));
+    click_button_at_current_pointer(
+        connection,
+        MouseButton::Left,
+        action_index,
+        action,
+        "double-click second click",
+    )
+}
+
+fn click_button_at_current_pointer(
+    connection: &X11Connection,
+    button: MouseButton,
+    action_index: Option<usize>,
+    action: Option<&str>,
+    context: &str,
+) -> Result<(), TendrilError> {
     let button = mouse_button_number(button);
     fake_button_event(connection, BUTTON_PRESS_EVENT, button, action_index, action)?;
-    flush_x11_input(connection, action_index, action, "click button press")?;
+    flush_x11_input(
+        connection,
+        action_index,
+        action,
+        &format!("{context} button press"),
+    )?;
     std::thread::sleep(reliability_delay());
 
     fake_button_event(
@@ -1277,7 +1331,12 @@ fn click_button(
         action_index,
         action,
     )?;
-    flush_x11_input(connection, action_index, action, "click button release")
+    flush_x11_input(
+        connection,
+        action_index,
+        action,
+        &format!("{context} button release"),
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1634,6 +1693,7 @@ fn action_label(action: &InputAction) -> String {
         InputAction::Send { text } => format!("send({text:?})"),
         InputAction::Wait { duration_ms } => format!("wait({duration_ms}ms)"),
         InputAction::Click { button, x, y } => format!("{button:?}_click({x},{y})").to_lowercase(),
+        InputAction::DoubleClick { x, y } => format!("dblclick({x},{y})"),
         InputAction::Drag { x0, y0, x1, y1 } => format!("drag({x0},{y0},{x1},{y1})"),
         InputAction::Scroll { x, y, dy } => format!("scroll({x},{y},{dy})"),
     }

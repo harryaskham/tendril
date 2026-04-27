@@ -2132,6 +2132,13 @@ fn dispatch_macos_action(
             let script = macos_mouse_jxa_script(*button, absolute_x, absolute_y, None);
             run_macos_osascript_jxa_for_input(&script, "dispatch", Some(action_index), Some(label))
         }
+        InputAction::DoubleClick { .. } => Err(input_execution_error(
+            "unsupported_double_click_action",
+            "dblclick(...) is currently implemented for Linux/X11 input delivery; this adapter does not yet support native double-click injection".to_owned(),
+            "dispatch",
+            Some(action_index),
+            Some(label),
+        )),
         InputAction::Drag { x0, y0, x1, y1 } => {
             let (start_x, start_y) = relative_point_to_absolute(&request.bounds, *x0, *y0);
             let (end_x, end_y) = relative_point_to_absolute(&request.bounds, *x1, *y1);
@@ -2404,6 +2411,13 @@ fn dispatch_windows_action_with_runtime(
                 Some(label),
             )
         }
+        InputAction::DoubleClick { .. } => Err(input_execution_error(
+            "unsupported_double_click_action",
+            "dblclick(...) is currently implemented for Linux/X11 input delivery; this Windows adapter does not yet support native double-click injection".to_owned(),
+            "dispatch",
+            Some(action_index),
+            Some(label),
+        )),
         InputAction::Drag { x0, y0, x1, y1 } => {
             let (start_x, start_y) = relative_point_to_absolute(&request.bounds, *x0, *y0);
             let (end_x, end_y) = relative_point_to_absolute(&request.bounds, *x1, *y1);

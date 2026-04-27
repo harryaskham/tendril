@@ -1,0 +1,21 @@
+{
+  "helper": "tendril-headless firefox-marionette-navigate",
+  "marionette": {
+    "hello": {
+      "applicationType": "gecko",
+      "marionetteProtocol": 3
+    },
+    "port": 62090,
+    "sessionId": "f6f93c4c-a3a2-43ee-8d19-c342c3661031"
+  },
+  "page": {
+    "bodyText": "Firefox double-click target\n\nWaiting for double-click event.\n\nDouble-click inside the dashed target.\n\nDouble-click target",
+    "title": "Tendril Double Click Waiting",
+    "url": "file:///home/harry/.cacophony/agents/tendril/i2kx084hkesnzpsz/checkout/summaries/i2kx084hkesnzpsz/bd-cc7d4f-doubleclick/doubleclick-task.html"
+  },
+  "request": {
+    "navigate_url": "file:///home/harry/.cacophony/agents/tendril/i2kx084hkesnzpsz/checkout/summaries/i2kx084hkesnzpsz/bd-cc7d4f-doubleclick/doubleclick-task.html"
+  },
+  "status": "success",
+  "transport": "firefox-marionette"
+}

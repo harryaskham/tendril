@@ -102,6 +102,7 @@ The initial CLI surface will include:
   - `send("...")`,
   - `wait(<duration>)`,
   - `lclick(x,y)`, `rclick(x,y)`, `mclick(x,y)`,
+  - `dblclick(x,y)` / `doubleclick(x,y)` for a primary-button double-click,
   - `drag(x0,y0,x1,y1)`,
   - `scroll(x,y,dy)` with positive `dy` scrolling down and negative `dy` scrolling up under the pointer.
 - Coordinates are relative to the target’s top-left origin in source-space.

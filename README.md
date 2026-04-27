@@ -147,6 +147,7 @@ tendril --json --window <window-id> capture -o /tmp/screen.png
 tendril --json --window <window-id> run 'send("hello")'
 tendril --json --window <window-id> run 'send("hello"),Return'
 tendril --json --window <window-id> run 'hold(ctrl),c,release(ctrl),wait(1s),send("done")'
+tendril --json --window <window-id> run 'dblclick(320,240),wait(250ms)'
 tendril --json --window <window-id> run 'scroll(220,420,8),wait(250ms)'
 tendril --json --window <window-id> run --lock-timeout-ms 5000 'send("bounded wait")'
 tendril --json --window <window-id> run --no-lock 'send("advanced opt-out")'
