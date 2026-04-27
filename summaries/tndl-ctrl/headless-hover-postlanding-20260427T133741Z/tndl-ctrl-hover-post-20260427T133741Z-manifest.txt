@@ -1,0 +1,4 @@
+artifact_dir=summaries/tndl-ctrl/headless-hover-postlanding-20260427T133741Z
+status=passed
+bead=bd-2e2407
+validation=controller post-landing hover-smoke

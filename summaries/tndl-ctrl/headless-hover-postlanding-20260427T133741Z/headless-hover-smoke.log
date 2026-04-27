@@ -1,0 +1,12 @@
+[tendril-headless] starting Xvfb :90 at 1920x1080x24
+[tendril-headless] starting window manager: openbox
+[tendril-headless] starting browser: /home/harry/.nix-profile/bin/firefox
+[tendril-headless] started environment 'tndl-ctrl-hover-post-20260427T133741Z'; logs are under /run/user/1000/tendril-headless/tndl-ctrl-hover-post-20260427T133741Z/logs
+[tendril-headless] waiting for Tendril to see a 1920x1080 Firefox window
+[tendril-headless] navigating Firefox to hover smoke page through Marionette preflight
+[tendril-headless] capturing hover page before Tendril pointer move
+[tendril-headless] moving the pointer over the Firefox page target with Tendril
+[tendril-headless] reading page-observed hover state through Marionette
+[tendril-headless] capturing hover page after page-observed pointer move
+[tendril-headless] hover smoke passed; artifacts are under /home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-hover-postlanding-20260427T133741Z
+[tendril-headless] stopped environment 'tndl-ctrl-hover-post-20260427T133741Z' and removed /run/user/1000/tendril-headless/tndl-ctrl-hover-post-20260427T133741Z
