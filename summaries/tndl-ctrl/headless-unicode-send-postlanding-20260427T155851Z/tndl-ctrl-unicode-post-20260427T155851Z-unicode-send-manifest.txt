@@ -1,0 +1,12 @@
+Tendril headless Firefox Unicode send smoke passed.
+name=tndl-ctrl-unicode-post-20260427T155851Z
+display=:90
+browser=/home/harry/.nix-profile/bin/firefox
+browser_window=0x600004
+marionette_port=62090
+resolution=1920x1080x24
+runtime_dir=/run/user/1000/tendril-headless/tndl-ctrl-unicode-post-20260427T155851Z
+unicode_url=file:///home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-unicode-send-postlanding-20260427T155851Z/unicode-send-task.html
+unicode_proof=Café π — emoji ✓ quoted text
+workflow=Tendril send(...) typed non-ASCII proof text into Firefox via X11 clipboard fallback, clicked Submit, and Marionette read back the exact UTF-8 field value.
+artifacts=/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-unicode-send-postlanding-20260427T155851Z

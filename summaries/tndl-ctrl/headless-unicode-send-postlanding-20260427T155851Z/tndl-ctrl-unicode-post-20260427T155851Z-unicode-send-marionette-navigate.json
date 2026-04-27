@@ -1,0 +1,21 @@
+{
+  "helper": "tendril-headless firefox-marionette-navigate",
+  "marionette": {
+    "hello": {
+      "applicationType": "gecko",
+      "marionetteProtocol": 3
+    },
+    "port": 62090,
+    "sessionId": "5946937e-7883-45af-8316-a54e87e3daed"
+  },
+  "page": {
+    "bodyText": "Tendril Unicode Send Task\n\nType the proof string into this UTF-8 field with Tendril send(...).\n\nUnicode input\nSubmit\n\nWaiting for Unicode input.",
+    "title": "Tendril Unicode Send Task",
+    "url": "file:///home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-unicode-send-postlanding-20260427T155851Z/unicode-send-task.html"
+  },
+  "request": {
+    "navigate_url": "file:///home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-unicode-send-postlanding-20260427T155851Z/unicode-send-task.html"
+  },
+  "status": "success",
+  "transport": "firefox-marionette"
+}

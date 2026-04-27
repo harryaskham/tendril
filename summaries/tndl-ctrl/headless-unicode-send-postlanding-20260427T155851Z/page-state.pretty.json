@@ -1,0 +1,14 @@
+{
+    "expected": "Caf\u00e9 \u03c0 \u2014 emoji \u2713 quoted text",
+    "filename": "tendril-headless-firefox-unicode-send-state",
+    "helper": "tendril-headless firefox-unicode-send-state",
+    "ok": true,
+    "state": {
+        "status": "unicode-send-browser-ok",
+        "submitted": "Caf\u00e9 \u03c0 \u2014 emoji \u2713 quoted text",
+        "title": "Tendril Unicode Send Task",
+        "unicodeOk": "true",
+        "value": "Caf\u00e9 \u03c0 \u2014 emoji \u2713 quoted text"
+    },
+    "transport": "firefox-marionette"
+}

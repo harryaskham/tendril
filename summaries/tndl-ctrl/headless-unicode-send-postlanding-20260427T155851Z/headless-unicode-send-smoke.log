@@ -1,0 +1,12 @@
+[tendril-headless] starting Xvfb :90 at 1920x1080x24
+[tendril-headless] starting window manager: openbox
+[tendril-headless] starting browser: /home/harry/.nix-profile/bin/firefox
+[tendril-headless] started environment 'tndl-ctrl-unicode-post-20260427T155851Z'; logs are under /run/user/1000/tendril-headless/tndl-ctrl-unicode-post-20260427T155851Z/logs
+[tendril-headless] waiting for Tendril to see a 1920x1080 Firefox window
+[tendril-headless] navigating Firefox to Unicode send smoke page through Marionette preflight
+[tendril-headless] capturing Unicode send page before input
+[tendril-headless] typing Unicode proof text through Tendril send(...)
+[tendril-headless] reading Firefox page state through Marionette for exact Unicode assertion
+[tendril-headless] capturing verified Unicode send page through Tendril
+[tendril-headless] Unicode send smoke passed; artifacts are under /home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-unicode-send-postlanding-20260427T155851Z
+[tendril-headless] stopped environment 'tndl-ctrl-unicode-post-20260427T155851Z' and removed /run/user/1000/tendril-headless/tndl-ctrl-unicode-post-20260427T155851Z

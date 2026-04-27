@@ -1,0 +1,4 @@
+artifact_dir=summaries/tndl-ctrl/headless-unicode-send-postlanding-20260427T155851Z
+status=passed
+bead=bd-175c58
+validation=controller post-landing unicode-send-smoke
