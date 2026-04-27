@@ -1,0 +1,11 @@
+Tendril headless keyboard-access browser + OS workflow validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-keyboard-20260427T094929Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-keyboard-access-os-20260427T094929Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a local form with Alt-D, fill and submit it using Tab/Space/Return from the autofocus field, verify Firefox title/status via list/capture, then drive XTerm to create an OS proof file.
+browser_proof=Tendril Keyboard Access Submitted
+os_proof=keyboard-access-os-verified
