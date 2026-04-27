@@ -1,0 +1,12 @@
+Tendril headless Firefox emoji/non-ASCII text entry + OS workflow validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-emoji-20260427T161254Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-emoji-text-os-20260427T161254Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a local page, type proof text containing an actual emoji plus accented and symbolic characters with Tendril send(...), submit and verify browser title, then drive XTerm to create an OS proof file.
+browser_proof=Tendril Emoji Text Submitted
+text_proof=Emoji 😀 Café π — ✓
+os_proof=emoji-browser-os-verified
