@@ -1,0 +1,9 @@
+Tendril post-landing Firefox contextmenu plus OS workflow passed.
+name=tndl-ctrl-context-post-20260427T070821Z
+validated_after=bd-e853e0
+browser_window=0x600004
+xterm_window=0x40000c
+url=file:///home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-contextmenu-postlanding-20260427T070821Z/contextmenu-post-task.html
+xterm_verification=contextmenu-postlanding-verified
+workflow=After bd-ec6439 and bd-e853e0 landed, use Tendril to navigate Firefox to a local contextmenu page, deliver right-click inside content, verify page title/list changed to Tendril Context Post Hit, capture before/after, and drive XTerm to verify the local task file.
+artifacts=/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-contextmenu-postlanding-20260427T070821Z

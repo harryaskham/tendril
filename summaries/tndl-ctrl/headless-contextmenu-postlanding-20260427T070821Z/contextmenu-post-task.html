@@ -1,0 +1,22 @@
+<!doctype html><meta charset="utf-8"><title>Tendril Context Post Waiting</title>
+<style>body{font-family:sans-serif;font-size:30px;margin:40px} #target{border:4px dashed #333;background:#f7fbff;width:900px;height:360px;padding:30px;margin-top:20px} #status{color:#064;font-weight:bold;margin-top:25px}</style>
+<h1>Tendril Context Menu Post-Landing Task</h1>
+<div id="target">Right-click target zone</div>
+<div id="status">Waiting for context menu event.</div>
+<script>
+const target=document.getElementById('target');
+const status=document.getElementById('status');
+target.addEventListener('contextmenu', ev => {
+  ev.preventDefault();
+  const r=target.getBoundingClientRect();
+  const x=Math.round(ev.clientX-r.left), y=Math.round(ev.clientY-r.top);
+  document.body.dataset.contextDone='true';
+  document.body.dataset.contextX=String(x);
+  document.body.dataset.contextY=String(y);
+  document.title='Tendril Context Post Hit';
+  status.textContent=`Context menu event confirmed at ${x}, ${y}`;
+  target.textContent='context-menu-postlanding-ok';
+  target.style.borderColor='#064';
+  target.style.background='#e9fff0';
+});
+</script>
