@@ -1,0 +1,1 @@
+send("printf \"%s\\n\" \"Terminal 😀 Café π — ✓\" > \"/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-xterm-unicode-command-os-20260427T180056Z/xterm-unicode-proof.txt\""),Return,wait(900ms)

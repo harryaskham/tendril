@@ -1,0 +1,36 @@
+{
+  "status": "error",
+  "meta": {
+    "schema_version": 1,
+    "command": "run"
+  },
+  "error": {
+    "category": "execution_failure",
+    "code": "clipboard_paste_unserved",
+    "message": "execution failure: X11 clipboard paste fallback dispatched Ctrl+V but no application requested Tendril's clipboard text",
+    "details": {
+      "action": "send(\"printf \\\"%s\\\\n\\\" \\\"Terminal 😀 Café π — ✓\\\" > \\\"/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-xterm-unicode-command-os-20260427T180056Z/xterm-unicode-proof.txt\\\"\")",
+      "action_index": 0,
+      "action_number": 1,
+      "execution_lock": {
+        "acquired": true,
+        "enabled": true,
+        "lock_path": "/tmp/nix-shell.q7tjIE/tendril-execution-lock-harry-_90",
+        "owner_pid": 559709,
+        "queue_depth_at_join": 1,
+        "queue_position_at_join": 1,
+        "stale_locks_reaped": 0,
+        "stale_ms": 30000,
+        "stale_tickets_reaped": 0,
+        "timeout_ms": 60000,
+        "token": "559709-1777312861664-1",
+        "wait_ms": 0
+      },
+      "fallback": "x11_clipboard_paste",
+      "selection": "clipboard",
+      "stage": "dispatch",
+      "suggested_action": "Capture the target to verify focus is in an editable control, then retry send(...) or use tendril clipboard set plus an explicit paste shortcut.",
+      "text_len": 219
+    }
+  }
+}

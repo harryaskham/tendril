@@ -1,0 +1,9 @@
+Tendril headless XTerm Unicode shell command workflow validation.
+status=run_failed
+bead=bd-5583cd
+name=tndl-ctrl-xtermunicode-20260427T180056Z
+artifact_dir=summaries/tndl-ctrl/headless-xterm-unicode-command-os-20260427T180056Z
+xterm_window=0x40000c
+display_id=1
+workflow=Use Tendril send(...) to enter a shell command containing emoji, accented text, Greek pi, em dash and checkmark into XTerm, execute it, and verify the generated proof file contains the exact Unicode text.
+expected_text=Terminal 😀 Café π — ✓
