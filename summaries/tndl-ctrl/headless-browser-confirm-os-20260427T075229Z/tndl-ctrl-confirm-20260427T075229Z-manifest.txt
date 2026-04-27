@@ -1,0 +1,9 @@
+Tendril Firefox confirm-dialog plus OS workflow passed.
+name=tndl-ctrl-confirm-20260427T075229Z
+browser_window=0x600004
+xterm_window=0x40000c
+url=file:///home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-confirm-os-20260427T075229Z/confirm-task.html
+xterm_verification=confirm-dialog-os-verified
+workflow=Use Tendril to navigate Firefox to a local confirm-dialog page, click a button and accept the confirm with Return, click another button and cancel the confirm with Escape, verify title/list state and screenshots, then drive XTerm to verify the local task file.
+notes=First attempt used a y coordinate just above the button and was discarded as operator error; this run uses button-centered coordinates.
+artifacts=/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-confirm-os-20260427T075229Z

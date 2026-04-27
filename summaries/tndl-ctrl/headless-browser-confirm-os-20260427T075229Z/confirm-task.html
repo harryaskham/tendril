@@ -1,0 +1,21 @@
+<!doctype html><meta charset="utf-8"><title>Tendril Confirm Waiting</title>
+<style>body{font-family:sans-serif;font-size:30px;margin:40px} button{font-size:28px;padding:18px 26px;margin:16px 20px 16px 0} #status{color:#064;font-weight:bold;margin-top:25px}.box{border:3px solid #333;background:#f7fbff;padding:25px;width:900px}</style>
+<h1>Tendril Confirm Dialog Task</h1>
+<div class="box">
+<button id="accept">Open confirm then accept</button>
+<button id="cancel">Open confirm then cancel</button>
+<div id="status">Waiting for confirm actions.</div>
+</div>
+<script>
+const status=document.getElementById('status');
+document.getElementById('accept').addEventListener('click', () => {
+  const ok=confirm('Tendril confirm accept?');
+  if (ok) { document.body.dataset.accepted='true'; document.title='Tendril Confirm Accepted'; status.textContent='confirm-accept-ok'; }
+  else { status.textContent='confirm accept unexpectedly canceled'; }
+});
+document.getElementById('cancel').addEventListener('click', () => {
+  const ok=confirm('Tendril confirm cancel?');
+  if (!ok) { document.body.dataset.canceled='true'; document.title='Tendril Confirm Canceled'; status.textContent='confirm-cancel-ok'; }
+  else { status.textContent='confirm cancel unexpectedly accepted'; }
+});
+</script>
