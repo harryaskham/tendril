@@ -1,0 +1,10 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Tendril FindPage Waiting</title>
+<style>body{font-family:sans-serif;margin:48px;font-size:24px;line-height:1.5}.box{border:4px solid #333;padding:20px;width:980px}#status{margin-top:24px;border:3px solid #333;padding:16px;min-height:40px}</style></head><body>
+<h1>Tendril find-in-page task</h1><p>Use browser find to select the unique token in the paragraph.</p>
+<div class="box"><p>Alpha text surrounds the unique token <strong>needle-beta</strong> and continues with omega text for search verification.</p></div>
+<div id="status">waiting</div>
+<script>
+function checkSelection(){ const selected=String(window.getSelection()); document.body.dataset.selected=selected; document.getElementById('status').textContent='selected='+JSON.stringify(selected); if(selected==='needle-beta'){ document.title='Tendril FindPage Submitted'; document.getElementById('status').textContent='findpage-browser-ok'; }}
+document.addEventListener('selectionchange', checkSelection);
+setInterval(checkSelection, 200);
+</script></body></html>

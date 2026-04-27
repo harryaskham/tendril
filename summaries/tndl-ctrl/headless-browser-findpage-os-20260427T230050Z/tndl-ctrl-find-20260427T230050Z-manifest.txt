@@ -1,0 +1,11 @@
+Tendril headless Firefox find-in-page + OS workflow validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-find-20260427T230050Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-findpage-os-20260427T230050Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a local page, use Ctrl+F to open browser find, type a unique in-page token, close find with Escape, verify page script observed selection of the token and updated title, then drive XTerm to create an ASCII OS proof file.
+browser_proof=Tendril FindPage Submitted
+os_proof=findpage-browser-os-verified
