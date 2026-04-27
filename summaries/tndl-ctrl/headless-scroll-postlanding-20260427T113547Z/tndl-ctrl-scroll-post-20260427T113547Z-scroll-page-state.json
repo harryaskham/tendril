@@ -1,0 +1,23 @@
+{
+  "helper": "tendril-headless firefox-scroll-state",
+  "marionette": {
+    "hello": {
+      "applicationType": "gecko",
+      "marionetteProtocol": 3
+    },
+    "port": 62090,
+    "sessionId": "9dd926f4-5e57-4852-b4b4-2092d484c642"
+  },
+  "page": {
+    "dataset": {
+      "scrollObserved": "true",
+      "scrollTop": "648"
+    },
+    "details": "Nested scroll pane moved to 648px.",
+    "scrollTop": 648,
+    "status": "Scroll observed: scrollTop=648.",
+    "title": "Tendril Scroll Hit"
+  },
+  "status": "success",
+  "transport": "firefox-marionette"
+}

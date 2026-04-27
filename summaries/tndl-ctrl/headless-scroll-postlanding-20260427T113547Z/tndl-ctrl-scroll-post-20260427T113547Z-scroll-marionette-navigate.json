@@ -1,0 +1,21 @@
+{
+  "helper": "tendril-headless firefox-marionette-navigate",
+  "marionette": {
+    "hello": {
+      "applicationType": "gecko",
+      "marionetteProtocol": 3
+    },
+    "port": 62090,
+    "sessionId": "496128e4-518a-490d-964b-313601cd2ba0"
+  },
+  "page": {
+    "bodyText": "Firefox nested scroll target\n\nWaiting for Tendril wheel scroll.\n\nWheel over the bordered scroll pane.\n\nTop of nested scroll pane\nMiddle section one\nMiddle section two\nBottom proof section\nScroll target footer",
+    "title": "Tendril Scroll Waiting",
+    "url": "file:///home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-scroll-postlanding-20260427T113547Z/scroll-task.html"
+  },
+  "request": {
+    "navigate_url": "file:///home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-scroll-postlanding-20260427T113547Z/scroll-task.html"
+  },
+  "status": "success",
+  "transport": "firefox-marionette"
+}

@@ -1,0 +1,5 @@
+Tendril post-landing Firefox nested scroll smoke validation.
+status=passed
+bead=bd-121fda
+artifact_dir=summaries/tndl-ctrl/headless-scroll-postlanding-20260427T113547Z
+workflow=Run the new scroll-smoke on current main after bd-121fda closed, proving the Tendril scroll DSL / X11 wheel path changes a nested Firefox scroll region.

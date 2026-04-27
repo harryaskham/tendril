@@ -1,0 +1,12 @@
+[tendril-headless] starting Xvfb :90 at 1920x1080x24
+[tendril-headless] starting window manager: openbox
+[tendril-headless] starting browser: /home/harry/.nix-profile/bin/firefox
+[tendril-headless] started environment 'tndl-ctrl-scroll-post-20260427T113547Z'; logs are under /run/user/1000/tendril-headless/tndl-ctrl-scroll-post-20260427T113547Z/logs
+[tendril-headless] waiting for Tendril to see a 1920x1080 Firefox window
+[tendril-headless] navigating Firefox to nested scroll smoke page through Marionette preflight
+[tendril-headless] capturing scroll page before Tendril wheel input
+[tendril-headless] scrolling the nested Firefox pane with Tendril wheel input
+[tendril-headless] reading page-observed scroll state through Marionette
+[tendril-headless] capturing scroll page after page-observed wheel input
+[tendril-headless] scroll smoke passed; artifacts are under /home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-scroll-postlanding-20260427T113547Z
+[tendril-headless] stopped environment 'tndl-ctrl-scroll-post-20260427T113547Z' and removed /run/user/1000/tendril-headless/tndl-ctrl-scroll-post-20260427T113547Z

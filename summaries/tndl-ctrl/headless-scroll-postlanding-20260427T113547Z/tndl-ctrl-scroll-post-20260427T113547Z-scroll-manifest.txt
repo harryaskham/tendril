@@ -1,0 +1,13 @@
+Tendril headless Firefox nested scroll smoke passed.
+name=tndl-ctrl-scroll-post-20260427T113547Z
+display=:90
+display_target=1
+browser=/home/harry/.nix-profile/bin/firefox
+browser_window=0x600004
+marionette_port=62090
+resolution=1920x1080x24
+runtime_dir=/run/user/1000/tendril-headless/tndl-ctrl-scroll-post-20260427T113547Z
+scroll_url=file:///home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-scroll-postlanding-20260427T113547Z/scroll-task.html
+gesture=scroll(220,420,8),wait(900ms)
+assertion=Marionette page state reported scrollObserved=true and nested scrollTop > 0.
+artifacts=/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-scroll-postlanding-20260427T113547Z

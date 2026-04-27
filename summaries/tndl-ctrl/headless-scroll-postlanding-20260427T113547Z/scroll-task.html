@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tendril Scroll Waiting</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #111827;
+      color: #e5e7eb;
+      font: 24px/1.35 system-ui, sans-serif;
+      overflow: hidden;
+    }
+    main { padding: 48px 72px; }
+    h1 { margin: 0 0 16px; font-size: 42px; }
+    #status { margin: 0 0 12px; color: #fbbf24; font-weight: 700; }
+    #details { margin: 0 0 20px; color: #93c5fd; }
+    #scroller {
+      margin-top: 40px;
+      width: 1000px;
+      height: 360px;
+      overflow: auto;
+      border: 5px solid #38bdf8;
+      border-radius: 18px;
+      background: #0f172a;
+      box-shadow: 0 0 0 6px rgba(56, 189, 248, 0.15);
+    }
+    .item {
+      display: grid;
+      place-items: center;
+      height: 180px;
+      margin: 18px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #1e3a8a, #312e81);
+      color: #dbeafe;
+      font-size: 34px;
+      font-weight: 800;
+    }
+    .ok { color: #86efac !important; }
+  </style>
+</head>
+<body data-scroll-top="0" data-scroll-observed="false">
+  <main>
+    <h1>Firefox nested scroll target</h1>
+    <p id="status">Waiting for Tendril wheel scroll.</p>
+    <p id="details">Wheel over the bordered scroll pane.</p>
+    <div id="scroller" tabindex="0" aria-label="Nested scroll pane">
+      <div class="item">Top of nested scroll pane</div>
+      <div class="item">Middle section one</div>
+      <div class="item">Middle section two</div>
+      <div class="item">Bottom proof section</div>
+      <div class="item">Scroll target footer</div>
+    </div>
+  </main>
+  <script>
+    const scroller = document.getElementById('scroller');
+    const status = document.getElementById('status');
+    const details = document.getElementById('details');
+
+    function updateState() {
+      const top = Math.round(scroller.scrollTop);
+      document.body.dataset.scrollTop = String(top);
+      document.body.dataset.scrollObserved = top > 0 ? 'true' : 'false';
+      if (top > 0) {
+        document.title = 'Tendril Scroll Hit';
+        status.textContent = `Scroll observed: scrollTop=${top}.`;
+        status.className = 'ok';
+        details.textContent = `Nested scroll pane moved to ${top}px.`;
+      }
+    }
+
+    scroller.addEventListener('scroll', updateState, { passive: true });
+    updateState();
+  </script>
+</body>
+</html>
