@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tendril Unicode Send Task</title>
+  <style>
+    body { font-family: sans-serif; margin: 32px; background: #111827; color: #f9fafb; }
+    input { display: block; width: 820px; margin: 16px 0 24px; padding: 10px; font: 22px sans-serif; }
+    button { font: 20px sans-serif; padding: 10px 18px; }
+    .ok { color: #86efac; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <h1>Tendril Unicode Send Task</h1>
+  <p>Type the proof string into this UTF-8 field with Tendril send(...).</p>
+  <label for="unicode-input">Unicode input</label>
+  <input id="unicode-input" autocomplete="off" spellcheck="false">
+  <button id="submit" type="button">Submit</button>
+  <p id="status">Waiting for Unicode input.</p>
+  <script>
+    const expected = 'Café π — emoji ✓ quoted text';
+    const input = document.getElementById('unicode-input');
+    const status = document.getElementById('status');
+    document.getElementById('submit').addEventListener('click', () => {
+      document.body.dataset.submittedValue = input.value;
+      document.body.dataset.unicodeOk = String(input.value === expected);
+      status.textContent = input.value === expected ? 'unicode-send-browser-ok' : 'unicode-send-browser-mismatch';
+      status.className = input.value === expected ? 'ok' : '';
+    });
+  </script>
+</body>
+</html>

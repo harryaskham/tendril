@@ -12,6 +12,24 @@ pub const DEFAULT_CLIPBOARD_SERVE_MS: u64 = 5_000;
 #[cfg(target_os = "linux")]
 const CLIPBOARD_POLL_INTERVAL: Duration = Duration::from_millis(20);
 
+type ClipboardServeResult = Result<(usize, Vec<String>), TendrilError>;
+
+pub(crate) struct X11ClipboardServeHandle {
+    join: std::thread::JoinHandle<ClipboardServeResult>,
+}
+
+impl X11ClipboardServeHandle {
+    pub(crate) fn join(self) -> ClipboardServeResult {
+        self.join.join().map_err(|_| {
+            TendrilError::execution_failure(
+                "clipboard_serve_failed",
+                "X11 clipboard owner thread panicked while serving paste data",
+                None,
+            )
+        })?
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ClipboardSelection {
@@ -139,6 +157,28 @@ pub fn execute_clipboard_set(
     })
 }
 
+#[cfg(target_os = "linux")]
+pub(crate) fn serve_x11_clipboard_in_background(
+    selection: ClipboardSelection,
+    text: &str,
+    serve_for: Duration,
+) -> Result<X11ClipboardServeHandle, TendrilError> {
+    x11_impl::set_selection_in_background(selection, text, serve_for)
+}
+
+#[cfg(not(target_os = "linux"))]
+pub(crate) fn serve_x11_clipboard_in_background(
+    selection: ClipboardSelection,
+    _text: &str,
+    _serve_for: Duration,
+) -> Result<X11ClipboardServeHandle, TendrilError> {
+    Err(TendrilError::unsupported_capability(
+        "clipboard_not_supported",
+        "X11 clipboard support is only compiled on Linux",
+        Some(json!({ "selection": selection.as_str() })),
+    ))
+}
+
 #[must_use]
 pub fn render_clipboard_get_human(output: &ClipboardGetOutput) -> String {
     let notes = if output.notes.is_empty() {
@@ -240,6 +280,8 @@ mod x11_impl {
     use super::{CLIPBOARD_POLL_INTERVAL, ClipboardSelection};
     use crate::error::TendrilError;
     use serde_json::json;
+    use std::sync::mpsc;
+    use std::thread;
     use std::time::{Duration, Instant};
     use x11rb::CURRENT_TIME;
     use x11rb::atom_manager;
@@ -546,6 +588,62 @@ mod x11_impl {
         text: &str,
         serve_for: Duration,
     ) -> Result<(usize, Vec<String>), TendrilError> {
+        let owned = own_selection(selection, serve_for)?;
+        serve_owned_selection(owned, text, serve_for)
+    }
+
+    pub fn set_selection_in_background(
+        selection: ClipboardSelection,
+        text: &str,
+        serve_for: Duration,
+    ) -> Result<super::X11ClipboardServeHandle, TendrilError> {
+        let (ready_tx, ready_rx) = mpsc::channel();
+        let text = text.to_owned();
+        let join = thread::spawn(move || {
+            let owned = match own_selection(selection, serve_for) {
+                Ok(owned) => owned,
+                Err(error) => {
+                    let _ = ready_tx.send(Err(error));
+                    return Ok((0, Vec::new()));
+                }
+            };
+            if ready_tx.send(Ok(())).is_err() {
+                return serve_owned_selection(owned, &text, serve_for);
+            }
+            serve_owned_selection(owned, &text, serve_for)
+        });
+
+        match ready_rx.recv() {
+            Ok(Ok(())) => Ok(super::X11ClipboardServeHandle { join }),
+            Ok(Err(error)) => {
+                let _ = join.join();
+                Err(error)
+            }
+            Err(error) => {
+                let _ = join.join();
+                Err(TendrilError::execution_failure(
+                    "clipboard_serve_failed",
+                    format!(
+                        "X11 clipboard owner thread exited before reporting readiness: {error}"
+                    ),
+                    None,
+                ))
+            }
+        }
+    }
+
+    struct OwnedSelection {
+        x11: X11ClipboardConnection,
+        selection: ClipboardSelection,
+        selection_atom: Atom,
+        window: Window,
+        notes: Vec<String>,
+    }
+
+    fn own_selection(
+        selection: ClipboardSelection,
+        serve_for: Duration,
+    ) -> Result<OwnedSelection, TendrilError> {
         let x11 = X11ClipboardConnection::connect()?;
         let selection_atom = x11.selection_atom(selection);
         let window = x11.create_helper_window()?;
@@ -588,6 +686,28 @@ mod x11_impl {
                 "serve_ms=0 releases the selection when this process exits; consumers must request before exit for a persistent paste.".to_owned(),
             );
         }
+
+        Ok(OwnedSelection {
+            x11,
+            selection,
+            selection_atom,
+            window,
+            notes,
+        })
+    }
+
+    fn serve_owned_selection(
+        owned: OwnedSelection,
+        text: &str,
+        serve_for: Duration,
+    ) -> Result<(usize, Vec<String>), TendrilError> {
+        let OwnedSelection {
+            x11,
+            selection,
+            selection_atom,
+            window,
+            mut notes,
+        } = owned;
         let deadline = Instant::now() + serve_for;
         let mut served_requests = 0;
         while Instant::now() < deadline {
@@ -601,7 +721,7 @@ mod x11_impl {
                 match event {
                     Event::SelectionRequest(request) => {
                         if request.owner == window && request.selection == selection_atom {
-                            serve_selection_request(&x11, &request, text)?;
+                            serve_selection_request(&x11, selection, &request, text)?;
                             served_requests += 1;
                         }
                     }
@@ -625,6 +745,7 @@ mod x11_impl {
 
     fn serve_selection_request(
         x11: &X11ClipboardConnection,
+        selection: ClipboardSelection,
         request: &SelectionRequestEvent,
         text: &str,
     ) -> Result<(), TendrilError> {
@@ -650,13 +771,7 @@ mod x11_impl {
                     AtomEnum::ATOM,
                     &targets,
                 )
-                .map_err(|error| {
-                    clipboard_error(
-                        "clipboard_serve_failed",
-                        ClipboardSelection::Clipboard,
-                        error,
-                    )
-                })?;
+                .map_err(|error| clipboard_error("clipboard_serve_failed", selection, error))?;
         } else if request.target == x11.atoms.UTF8_STRING || request.target == x11.atoms.TEXT {
             x11.conn
                 .change_property8(
@@ -666,13 +781,7 @@ mod x11_impl {
                     x11.atoms.UTF8_STRING,
                     text.as_bytes(),
                 )
-                .map_err(|error| {
-                    clipboard_error(
-                        "clipboard_serve_failed",
-                        ClipboardSelection::Clipboard,
-                        error,
-                    )
-                })?;
+                .map_err(|error| clipboard_error("clipboard_serve_failed", selection, error))?;
         } else if request.target == u32::from(AtomEnum::STRING) {
             x11.conn
                 .change_property8(
@@ -682,13 +791,7 @@ mod x11_impl {
                     AtomEnum::STRING,
                     text.as_bytes(),
                 )
-                .map_err(|error| {
-                    clipboard_error(
-                        "clipboard_serve_failed",
-                        ClipboardSelection::Clipboard,
-                        error,
-                    )
-                })?;
+                .map_err(|error| clipboard_error("clipboard_serve_failed", selection, error))?;
         } else {
             response_property = AtomEnum::NONE.into();
         }
@@ -704,13 +807,7 @@ mod x11_impl {
         };
         x11.conn
             .send_event(false, request.requestor, EventMask::NO_EVENT, notify)
-            .map_err(|error| {
-                clipboard_error(
-                    "clipboard_serve_notify_failed",
-                    ClipboardSelection::Clipboard,
-                    error,
-                )
-            })?;
+            .map_err(|error| clipboard_error("clipboard_serve_notify_failed", selection, error))?;
         x11.conn.flush().map_err(|error| {
             TendrilError::execution_failure(
                 "clipboard_x11_flush_failed",

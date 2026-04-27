@@ -36,6 +36,12 @@ tendril --window <id> run 'type "hi"'
 
 Use explicit DSL syntax for automation text, such as `send("hi")` or `send("hi"),Return`. Genuine text remains valid, for example `tendril --window <id> run 'hello world'` still types `hello world`.
 
+### Unicode text on Linux/X11
+
+Linux/X11 key synthesis is limited by the active keyboard map: XTEST can only press keycodes that the X server maps to the requested character. ASCII text continues to use direct key events. When `send("...")` encounters text such as `Café π — emoji ✓ quoted text` that is not present in the keyboard map, Tendril falls back to a transient X11 `CLIPBOARD` owner and dispatches Ctrl+V into the focused control.
+
+The fallback is intentionally short-lived and visible in JSON `notes`: Tendril replaces the current `CLIPBOARD` owner only for the paste serve window, serves the UTF-8 text to the requesting application, and releases ownership before `run` returns. If no application requests the clipboard data, `run` fails with `clipboard_paste_unserved` instead of silently claiming success. Release explicit held modifiers before a Unicode `send(...)`; the fallback does not run while a DSL `hold(...)` modifier is still active.
+
 ### Browser navigation guard on Linux/X11
 
 On Linux/X11, Tendril can focus the browser's top-level window, but the browser still decides how synthetic XTEST key chords interact with its current internal focus. Firefox can keep focus inside an existing page input, so a sequence like this may report successful dispatch while typing the URL into the page instead of navigating:

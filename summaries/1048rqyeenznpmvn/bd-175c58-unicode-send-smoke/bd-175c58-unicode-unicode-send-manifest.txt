@@ -1,0 +1,12 @@
+Tendril headless Firefox Unicode send smoke passed.
+name=bd-175c58-unicode
+display=:90
+browser=/nix/store/7vnya051q0xr2mdwxp48sh70xzim4fpa-firefox-149.0/bin/firefox
+browser_window=0x600016
+marionette_port=62090
+resolution=1920x1080x24
+runtime_dir=/run/user/1000/tendril-headless/bd-175c58-unicode
+unicode_url=file:///home/harry/.cacophony/agents/tendril/1048rqyeenznpmvn/checkout/summaries/1048rqyeenznpmvn/bd-175c58-unicode-send-smoke/unicode-send-task.html
+unicode_proof=Café π — emoji ✓ quoted text
+workflow=Tendril send(...) typed non-ASCII proof text into Firefox via X11 clipboard fallback, clicked Submit, and Marionette read back the exact UTF-8 field value.
+artifacts=/home/harry/.cacophony/agents/tendril/1048rqyeenznpmvn/checkout/summaries/1048rqyeenznpmvn/bd-175c58-unicode-send-smoke

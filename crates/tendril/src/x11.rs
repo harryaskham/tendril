@@ -15,6 +15,7 @@ use x11rb::protocol::xproto::{
 use x11rb::protocol::xtest;
 use x11rb::protocol::xtest::ConnectionExt as _;
 
+use crate::clipboard::{ClipboardSelection, serve_x11_clipboard_in_background};
 use crate::error::TendrilError;
 use crate::input::reliability_delay;
 use crate::model::{Bounds, FocusSnapshot, InputAction, ModifierKey, MouseButton, ScaleFactor};
@@ -37,6 +38,7 @@ const DOUBLE_CLICK_INTERVAL_MS: u64 = 80;
 const DRAG_MOTION_STEP_PX: u64 = 16;
 const DRAG_MIN_STEPS: u64 = 6;
 const DRAG_MAX_STEPS: u64 = 96;
+const X11_UNICODE_PASTE_SERVE_MS: u64 = 1_500;
 
 const XK_BACK_SPACE: u32 = 0xff08;
 const XK_TAB: u32 = 0xff09;
@@ -101,7 +103,7 @@ pub(crate) fn execute_input(
 
     ensure_xtest_available(&connection, platform)?;
 
-    let run_state = prepare_x11_input_state(&connection, request)?;
+    let mut run_state = prepare_x11_input_state(&connection, request)?;
     let keyboard_map = KeyboardMap::load(&connection).map_err(|error| {
         input_execution_error(
             "keyboard_mapping_failed",
@@ -113,7 +115,7 @@ pub(crate) fn execute_input(
     let mut held_modifiers = HashSet::new();
 
     if let Some(text) = &request.text {
-        type_text(
+        let dispatch_notes = type_text(
             &connection,
             &keyboard_map,
             text,
@@ -121,11 +123,14 @@ pub(crate) fn execute_input(
             Some(0),
             Some("text"),
         )?;
+        run_state.notes.extend(dispatch_notes);
         flush_x11_input(&connection, Some(0), Some("text"), "text events")?;
         return Ok(run_state.finish(&connection, request, 1));
     }
 
-    dispatch_x11_actions(&connection, &keyboard_map, request, &mut held_modifiers)?;
+    let dispatch_notes =
+        dispatch_x11_actions(&connection, &keyboard_map, request, &mut held_modifiers)?;
+    run_state.notes.extend(dispatch_notes);
     Ok(run_state.finish(&connection, request, request.actions.len()))
 }
 
@@ -326,7 +331,8 @@ fn dispatch_x11_actions(
     keyboard_map: &KeyboardMap,
     request: &InputRequest,
     held_modifiers: &mut HashSet<ModifierKey>,
-) -> Result<(), TendrilError> {
+) -> Result<Vec<String>, TendrilError> {
+    let mut notes = Vec::new();
     for (action_index, action) in request.actions.iter().enumerate() {
         let label = action_label(action);
         dispatch_action(
@@ -337,13 +343,14 @@ fn dispatch_x11_actions(
             action_index,
             &label,
             held_modifiers,
+            &mut notes,
         )?;
         if !matches!(action, InputAction::Wait { .. }) {
             flush_x11_input(connection, Some(action_index), Some(&label), "input events")?;
             std::thread::sleep(reliability_delay());
         }
     }
-    Ok(())
+    Ok(notes)
 }
 
 fn flush_x11_input(
@@ -1092,7 +1099,7 @@ fn encode_png(
     Ok(bytes)
 }
 
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn dispatch_action(
     connection: &X11Connection,
     keyboard_map: &KeyboardMap,
@@ -1101,6 +1108,7 @@ fn dispatch_action(
     action_index: usize,
     label: &str,
     held_modifiers: &mut HashSet<ModifierKey>,
+    notes: &mut Vec<String>,
 ) -> Result<(), TendrilError> {
     match action {
         InputAction::KeyTap { key } => {
@@ -1171,14 +1179,18 @@ fn dispatch_action(
             held_modifiers.remove(modifier);
             Ok(())
         }
-        InputAction::Send { text } => type_text(
-            connection,
-            keyboard_map,
-            text,
-            held_modifiers,
-            Some(action_index),
-            Some(label),
-        ),
+        InputAction::Send { text } => {
+            let dispatch_notes = type_text(
+                connection,
+                keyboard_map,
+                text,
+                held_modifiers,
+                Some(action_index),
+                Some(label),
+            )?;
+            notes.extend(dispatch_notes);
+            Ok(())
+        }
         InputAction::Wait { duration_ms } => {
             std::thread::sleep(std::time::Duration::from_millis(*duration_ms));
             Ok(())
@@ -1516,7 +1528,32 @@ fn type_text(
     held_modifiers: &HashSet<ModifierKey>,
     action_index: Option<usize>,
     action: Option<&str>,
-) -> Result<(), TendrilError> {
+) -> Result<Vec<String>, TendrilError> {
+    if let Some(character) = first_unmapped_text_character(keyboard_map, text) {
+        if !held_modifiers.is_empty() {
+            return Err(input_execution_error(
+                "character_not_mapped",
+                format!("character `{character}` is not available in the active X11 keyboard map and clipboard paste fallback cannot run while modifiers are held"),
+                action_index,
+                action,
+            )
+            .with_detail_entry("fallback", serde_json::json!("x11_clipboard_paste"))
+            .with_detail_entry("fallback_available", serde_json::json!(false))
+            .with_detail_entry(
+                "suggested_action",
+                serde_json::json!("Release held modifiers before send(...) when entering non-ASCII text on X11, or paste with an explicit clipboard workflow."),
+            ));
+        }
+        return paste_text_via_x11_clipboard(
+            connection,
+            keyboard_map,
+            text,
+            character,
+            action_index,
+            action,
+        );
+    }
+
     for character in text.chars() {
         let stroke = keyboard_map.stroke_for_char(character).ok_or_else(|| {
             input_execution_error(
@@ -1535,7 +1572,140 @@ fn type_text(
             action,
         )?;
     }
-    Ok(())
+    Ok(Vec::new())
+}
+
+fn first_unmapped_text_character(keyboard_map: &KeyboardMap, text: &str) -> Option<char> {
+    text.chars()
+        .find(|character| keyboard_map.stroke_for_char(*character).is_none())
+}
+
+fn paste_text_via_x11_clipboard(
+    connection: &X11Connection,
+    keyboard_map: &KeyboardMap,
+    text: &str,
+    unmapped_character: char,
+    action_index: Option<usize>,
+    action: Option<&str>,
+) -> Result<Vec<String>, TendrilError> {
+    let owner = serve_x11_clipboard_in_background(
+        ClipboardSelection::Clipboard,
+        text,
+        std::time::Duration::from_millis(X11_UNICODE_PASTE_SERVE_MS),
+    )
+    .map_err(|error| {
+        error
+            .with_detail_entry("fallback", serde_json::json!("x11_clipboard_paste"))
+            .with_detail_entry("action", serde_json::json!(action))
+    })?;
+
+    let paste_result =
+        send_x11_clipboard_paste_shortcut(connection, keyboard_map, action_index, action);
+    let serve_result = owner.join();
+    if let Err(error) = paste_result {
+        let _ = serve_result;
+        return Err(error);
+    }
+    let (served_requests, mut notes) = serve_result.map_err(|error| {
+        error
+            .with_detail_entry("fallback", serde_json::json!("x11_clipboard_paste"))
+            .with_detail_entry("action", serde_json::json!(action))
+    })?;
+
+    if served_requests == 0 {
+        return Err(input_execution_error(
+            "clipboard_paste_unserved",
+            "X11 clipboard paste fallback dispatched Ctrl+V but no application requested Tendril's clipboard text",
+            action_index,
+            action,
+        )
+        .with_detail_entry("fallback", serde_json::json!("x11_clipboard_paste"))
+        .with_detail_entry("selection", serde_json::json!("clipboard"))
+        .with_detail_entry("text_len", serde_json::json!(text.len()))
+        .with_detail_entry(
+            "suggested_action",
+            serde_json::json!("Capture the target to verify focus is in an editable control, then retry send(...) or use tendril clipboard set plus an explicit paste shortcut."),
+        ));
+    }
+
+    notes.insert(
+        0,
+        format!(
+            "X11 send(...) used a transient CLIPBOARD paste fallback because character `{unmapped_character}` is not present in the active keyboard map; the previous CLIPBOARD owner is replaced during the {X11_UNICODE_PASTE_SERVE_MS}ms serve window and Tendril releases ownership before returning."
+        ),
+    );
+    notes.push(format!(
+        "X11 clipboard paste fallback served {served_requests} selection request(s) for {} bytes of UTF-8 text.",
+        text.len()
+    ));
+    Ok(notes)
+}
+
+fn send_x11_clipboard_paste_shortcut(
+    connection: &X11Connection,
+    keyboard_map: &KeyboardMap,
+    action_index: Option<usize>,
+    action: Option<&str>,
+) -> Result<(), TendrilError> {
+    let ctrl = keyboard_map
+        .modifier_stroke(ModifierKey::Ctrl)
+        .ok_or_else(|| {
+            input_execution_error(
+                "modifier_not_mapped",
+                "ctrl is not available in the active X11 keyboard map for clipboard paste fallback",
+                action_index,
+                action,
+            )
+        })?;
+    let v = keyboard_map.stroke_for_char('v').ok_or_else(|| {
+        input_execution_error(
+            "paste_key_not_mapped",
+            "key `v` is not available in the active X11 keyboard map for clipboard paste fallback",
+            action_index,
+            action,
+        )
+    })?;
+    if v.shift {
+        return Err(input_execution_error(
+            "paste_key_not_mapped",
+            "key `v` requires shift in the active X11 keyboard map; clipboard paste fallback requires an unshifted Ctrl+V chord",
+            action_index,
+            action,
+        ));
+    }
+
+    fake_key_event(
+        connection,
+        KEY_PRESS_EVENT,
+        ctrl.keycode,
+        action_index,
+        action,
+    )?;
+    let paste_result = (|| {
+        fake_key_event(connection, KEY_PRESS_EVENT, v.keycode, action_index, action)?;
+        fake_key_event(
+            connection,
+            KEY_RELEASE_EVENT,
+            v.keycode,
+            action_index,
+            action,
+        )
+    })();
+    let release_result = fake_key_event(
+        connection,
+        KEY_RELEASE_EVENT,
+        ctrl.keycode,
+        action_index,
+        action,
+    );
+    paste_result?;
+    release_result?;
+    flush_x11_input(
+        connection,
+        action_index,
+        action,
+        "clipboard paste key events",
+    )
 }
 
 fn send_key_stroke(
@@ -2021,8 +2191,8 @@ mod tests {
     use super::{
         DRAG_MIN_STEPS, KeyStroke, KeyboardMap, X11OccludingWindow, X11WindowBounds,
         X11WindowCaptureFallbackReason, XK_INSERT, capture_png_is_solid_black, decode_class_name,
-        decode_text_property, drag_motion_points, key_name_to_keysym, keysym_for_char,
-        parse_window_id, windows_overlap,
+        decode_text_property, drag_motion_points, first_unmapped_text_character,
+        key_name_to_keysym, keysym_for_char, parse_window_id, windows_overlap,
     };
 
     #[test]
@@ -2052,6 +2222,35 @@ mod tests {
         assert_eq!(keysym_for_char('A'), u32::from('A'));
         assert_eq!(keysym_for_char('é'), u32::from('é'));
         assert_eq!(keysym_for_char('Ж'), 0x0100_0416);
+    }
+
+    #[test]
+    fn detects_first_unmapped_character_for_x11_clipboard_fallback() {
+        let keyboard_map = KeyboardMap {
+            min_keycode: 10,
+            max_keycode: 15,
+            keysyms_per_keycode: 2,
+            keysyms: vec![
+                u32::from('C'),
+                0,
+                u32::from('a'),
+                0,
+                u32::from('f'),
+                0,
+                u32::from('e'),
+                0,
+                u32::from(' '),
+                0,
+                u32::from('x'),
+                0,
+            ],
+        };
+
+        assert_eq!(first_unmapped_text_character(&keyboard_map, "Cafe"), None);
+        assert_eq!(
+            first_unmapped_text_character(&keyboard_map, "Café π"),
+            Some('é')
+        );
     }
 
     #[test]

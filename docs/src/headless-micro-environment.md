@@ -103,6 +103,28 @@ Cacophony summary collectors and `/tmp/watch-captures.sh` can then surface the
 captures to the operator. The display capture proves the isolated desktop is
 reachable; the browser-after capture is the proof of in-browser control.
 
+## Unicode `send(...)` smoke test
+
+The Firefox Unicode smoke proves that Linux/X11 `send(...)` can enter ordinary
+non-ASCII UTF-8 text even when the active X11 keyboard map cannot synthesize the
+characters directly through XTEST:
+
+```bash
+cargo build -p tendril
+scripts/tendril-headless.sh \
+  --browser firefox \
+  --tendril-bin ./target/debug/tendril \
+  --name unicode-send-smoke \
+  --artifact-dir "summaries/${CACOPHONY_AGENT:-manual}/unicode-send-smoke" \
+  unicode-send-smoke
+```
+
+The script opens a local UTF-8 form, runs
+`send("Café π — emoji ✓ quoted text")`, clicks Submit, and reads the page state
+back through Firefox Marionette. The run JSON must include the transient
+CLIPBOARD paste fallback note, and the page state must equal the proof string
+exactly.
+
 ## Browser↔OS clipboard smoke test
 
 For deterministic clipboard transfer in the headless X11 desktop, prefer the

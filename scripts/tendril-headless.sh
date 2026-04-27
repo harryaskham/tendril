@@ -48,6 +48,8 @@ Commands:
              Reproduce the native Firefox chooser limitation, then upload via helper.
   clipboard-smoke
              Prove Firefox↔OS text transfer through Tendril's explicit X11 clipboard helper.
+  unicode-send-smoke
+             Prove send(...) enters non-ASCII Unicode text into a Firefox field on X11.
   selection-clipboard-smoke
              Prove a Firefox textarea drag-selection plus Ctrl+C creates an OS-readable X11 clipboard owner.
   page-text-clipboard-smoke
@@ -99,6 +101,9 @@ Firefox file-upload smoke:
 
 Firefox/X11 clipboard smoke:
   scripts/tendril-headless.sh --browser firefox --tendril-bin ./target/debug/tendril clipboard-smoke
+
+Firefox/X11 Unicode send smoke:
+  scripts/tendril-headless.sh --browser firefox --tendril-bin ./target/debug/tendril unicode-send-smoke
 
 Firefox/X11 drag-selection clipboard smoke:
   scripts/tendril-headless.sh --browser firefox --tendril-bin ./target/debug/tendril selection-clipboard-smoke
@@ -188,7 +193,7 @@ dsl_escape() {
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      start|env|inspect|reset|stop|smoke|firefox-upload|file-upload-smoke|clipboard-smoke|selection-clipboard-smoke|page-text-clipboard-smoke|canvas-drag-smoke|contextmenu-smoke|doubleclick-smoke|hover-smoke|scroll-smoke)
+      start|env|inspect|reset|stop|smoke|firefox-upload|file-upload-smoke|clipboard-smoke|unicode-send-smoke|selection-clipboard-smoke|page-text-clipboard-smoke|canvas-drag-smoke|contextmenu-smoke|doubleclick-smoke|hover-smoke|scroll-smoke)
         if [[ -n "$COMMAND" ]]; then
           fail "only one command may be provided"
         fi
@@ -955,6 +960,44 @@ write_clipboard_smoke_page() {
         status.textContent = 'Firefox received OS clipboard text.';
         status.className = 'ok';
       }
+    });
+  </script>
+</body>
+</html>
+EOF_HTML
+}
+
+write_unicode_send_smoke_page() {
+  local dir="$1"
+  cat >"$dir/unicode-send-task.html" <<'EOF_HTML'
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tendril Unicode Send Task</title>
+  <style>
+    body { font-family: sans-serif; margin: 32px; background: #111827; color: #f9fafb; }
+    input { display: block; width: 820px; margin: 16px 0 24px; padding: 10px; font: 22px sans-serif; }
+    button { font: 20px sans-serif; padding: 10px 18px; }
+    .ok { color: #86efac; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <h1>Tendril Unicode Send Task</h1>
+  <p>Type the proof string into this UTF-8 field with Tendril send(...).</p>
+  <label for="unicode-input">Unicode input</label>
+  <input id="unicode-input" autocomplete="off" spellcheck="false">
+  <button id="submit" type="button">Submit</button>
+  <p id="status">Waiting for Unicode input.</p>
+  <script>
+    const expected = 'Café π — emoji ✓ quoted text';
+    const input = document.getElementById('unicode-input');
+    const status = document.getElementById('status');
+    document.getElementById('submit').addEventListener('click', () => {
+      document.body.dataset.submittedValue = input.value;
+      document.body.dataset.unicodeOk = String(input.value === expected);
+      status.textContent = input.value === expected ? 'unicode-send-browser-ok' : 'unicode-send-browser-mismatch';
+      status.className = input.value === expected ? 'ok' : '';
     });
   </script>
 </body>
@@ -1946,6 +1989,205 @@ EOF_MANIFEST
   git_add_artifacts "$artifact_dir"
 
   log "clipboard smoke passed; artifacts are under $artifact_dir"
+  if [[ "$started_here" == "true" ]]; then
+    stop_env
+    trap - EXIT
+  fi
+}
+
+run_unicode_send_smoke() {
+  ensure_name_safe
+  if [[ -z "$BROWSER_BIN" ]]; then
+    BROWSER_BIN="firefox"
+  fi
+  local tendril_program
+  tendril_program="${TENDRIL_BIN%% *}"
+  [[ -x "$tendril_program" || "$(command -v "$tendril_program" 2>/dev/null || true)" ]] || fail "Tendril binary not found: $TENDRIL_BIN; pass --tendril-bin ./target/debug/tendril or --tendril-bin 'nix run .#tendril --'"
+
+  local artifact_dir
+  artifact_dir="$(resolve_artifact_dir)"
+  ensure_artifact_dir_safe "$artifact_dir"
+  mkdir -p "$artifact_dir"
+  write_unicode_send_smoke_page "$artifact_dir"
+  local unicode_url unicode_proof
+  unicode_url="file://$artifact_dir/unicode-send-task.html"
+  unicode_proof="Café π — emoji ✓ quoted text"
+
+  local started_here="false"
+  if ! state_alive; then
+    start_env >/dev/null
+    started_here="true"
+  else
+    log "using existing environment '$NAME' on DISPLAY=${DISPLAY}"
+  fi
+  trap 'if [[ "${started_here:-false}" == "true" ]]; then stop_env; fi' EXIT
+
+  local dir list_json display_id window_id navigate_json before_capture unicode_run page_state_json after_capture
+  dir="${TENDRIL_HEADLESS_RUNTIME_DIR:-$(runtime_dir)}"
+
+  log "waiting for Tendril to see a ${WIDTH}x${HEIGHT} Firefox window"
+  if ! list_json="$(wait_for_targets)"; then
+    diagnose_browser_log "$dir/logs/browser.log"
+    preserve_runtime_logs "$dir" "$artifact_dir"
+    fail "Tendril did not discover expected headless Firefox targets"
+  fi
+  printf '%s\n' "$list_json" >"$artifact_dir/${NAME}-unicode-send-list-initial.json"
+
+  display_id="$(python3 -c '
+import json, sys
+width=int(sys.argv[1]); height=int(sys.argv[2]); payload=json.load(sys.stdin)
+for target in payload["data"]["targets"]:
+    bounds=target.get("bounds", {})
+    if target.get("kind") == "display" and bounds.get("width") == width and bounds.get("height") == height:
+        print(target["id"]); break
+else:
+    raise SystemExit(1)
+' "$WIDTH" "$HEIGHT" <<<"$list_json")"
+
+  window_id="$(python3 -c '
+import json, sys
+browser_pid=sys.argv[1]
+payload=json.load(sys.stdin)
+for target in payload["data"]["targets"]:
+    haystack=" ".join(str(target.get(k) or "") for k in ("name", "title", "app_name")).lower()
+    if target.get("kind") == "window" and ((browser_pid and str(target.get("process_id") or "") == browser_pid) or "firefox" in haystack):
+        print(target["id"]); break
+else:
+    raise SystemExit("no Firefox window found")
+' "${TENDRIL_HEADLESS_BROWSER_PID:-}" <<<"$list_json")"
+
+  log "navigating Firefox to Unicode send smoke page through Marionette preflight"
+  NAVIGATE_URL="$unicode_url" \
+    HELPER_OUTPUT="$artifact_dir/${NAME}-unicode-send-marionette-navigate.json" \
+    run_firefox_navigate_helper
+  navigate_json="$(cat "$artifact_dir/${NAME}-unicode-send-marionette-navigate.json")"
+  python3 -c '
+import json, sys
+payload=json.loads(sys.argv[1])
+assert payload["status"] == "success", payload
+assert "Tendril Unicode Send Task" in (payload.get("page", {}).get("title") or "")
+' "$navigate_json"
+
+  log "capturing Unicode send page before input"
+  before_capture="$(run_tendril --json --window "$window_id" capture --max-width "$WIDTH" --max-height "$HEIGHT" -o "$artifact_dir/${NAME}-unicode-send-before.png")"
+  printf '%s\n' "$before_capture" >"$artifact_dir/${NAME}-unicode-send-before-capture.json"
+
+  log "typing Unicode proof text through Tendril send(...)"
+  unicode_run="$(run_tendril --json --window "$window_id" run "lclick(180,307),wait(150ms),send(\"$unicode_proof\"),wait(300ms),lclick(80,390),wait(500ms)")"
+  printf '%s\n' "$unicode_run" >"$artifact_dir/${NAME}-unicode-send-run.json"
+  python3 -c '
+import json, sys
+payload=json.loads(sys.argv[1])
+assert payload["status"] == "success", payload
+notes="\n".join(payload["data"].get("notes") or [])
+assert "transient CLIPBOARD paste fallback" in notes, notes
+assert payload["data"].get("action_count") == 6, payload["data"]
+' "$unicode_run"
+
+  log "reading Firefox page state through Marionette for exact Unicode assertion"
+  python3 - "${TENDRIL_HEADLESS_MARIONETTE_PORT:-}" "$unicode_proof" >"$artifact_dir/${NAME}-unicode-send-page-state.json" <<'PY'
+import json
+import socket
+import sys
+
+port = int(sys.argv[1])
+expected = sys.argv[2]
+
+
+def recv_message(sock):
+    header = b""
+    while b":" not in header:
+        chunk = sock.recv(1)
+        if not chunk:
+            raise RuntimeError("Marionette socket closed before frame header")
+        header += chunk
+    length = int(header[:-1])
+    payload = b""
+    while len(payload) < length:
+        chunk = sock.recv(length - len(payload))
+        if not chunk:
+            raise RuntimeError("Marionette socket closed before frame payload")
+        payload += chunk
+    return json.loads(payload.decode("utf-8"))
+
+
+def send(sock, payload):
+    data = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    sock.sendall(str(len(data)).encode("ascii") + b":" + data)
+
+
+def command(sock, message_id, name, params):
+    send(sock, [0, message_id, name, params])
+    response = recv_message(sock)
+    if not (isinstance(response, list) and len(response) == 4 and response[0] == 1 and response[1] == message_id):
+        raise RuntimeError(f"unexpected Marionette response to {name}: {response!r}")
+    if response[2] is not None:
+        raise RuntimeError(f"Marionette {name} failed: {response[2]!r}")
+    return response[3]
+
+
+with socket.create_connection(("127.0.0.1", port), timeout=10) as sock:
+    sock.settimeout(10)
+    hello = recv_message(sock)
+    if not isinstance(hello, dict) or hello.get("applicationType") != "gecko":
+        raise RuntimeError(f"unexpected Marionette hello: {hello!r}")
+    session = command(sock, 1, "WebDriver:NewSession", {})
+    script = """
+const input = document.getElementById('unicode-input');
+return {
+  title: document.title,
+  value: input ? input.value : null,
+  submitted: document.body.dataset.submittedValue || null,
+  unicodeOk: document.body.dataset.unicodeOk || null,
+  status: document.getElementById('status') ? document.getElementById('status').textContent : null,
+};
+"""
+    params = {"script": script, "args": [], "newSandbox": True, "sandbox": "tendril-unicode-send", "line": 1}
+    state = command(sock, 2, "WebDriver:ExecuteScript", params)
+    value = state.get("value", state)
+
+result = {
+    "filename": "tendril-headless-firefox-unicode-send-state",
+    "helper": "tendril-headless firefox-unicode-send-state",
+    "transport": "firefox-marionette",
+    "expected": expected,
+    "state": value,
+    "ok": isinstance(value, dict) and value.get("value") == expected and value.get("submitted") == expected and value.get("unicodeOk") == "true",
+}
+print(json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False))
+if not result["ok"]:
+    raise SystemExit(1)
+PY
+  page_state_json="$(cat "$artifact_dir/${NAME}-unicode-send-page-state.json")"
+  python3 -c '
+import json, sys
+payload=json.loads(sys.argv[1])
+assert payload["ok"] is True, payload
+assert payload["state"]["value"] == payload["expected"], payload
+assert payload["state"]["submitted"] == payload["expected"], payload
+' "$page_state_json"
+
+  log "capturing verified Unicode send page through Tendril"
+  after_capture="$(run_tendril --json --display "$display_id" capture --max-width "$WIDTH" --max-height "$HEIGHT" -o "$artifact_dir/${NAME}-unicode-send-after-display.png")"
+  printf '%s\n' "$after_capture" >"$artifact_dir/${NAME}-unicode-send-after-display-capture.json"
+
+  cat >"$artifact_dir/${NAME}-unicode-send-manifest.txt" <<EOF_MANIFEST
+Tendril headless Firefox Unicode send smoke passed.
+name=$NAME
+display=$DISPLAY
+browser=${TENDRIL_HEADLESS_BROWSER:-}
+browser_window=$window_id
+marionette_port=${TENDRIL_HEADLESS_MARIONETTE_PORT:-}
+resolution=${WIDTH}x${HEIGHT}x${DEPTH}
+runtime_dir=$dir
+unicode_url=$unicode_url
+unicode_proof=$unicode_proof
+workflow=Tendril send(...) typed non-ASCII proof text into Firefox via X11 clipboard fallback, clicked Submit, and Marionette read back the exact UTF-8 field value.
+artifacts=$artifact_dir
+EOF_MANIFEST
+  git_add_artifacts "$artifact_dir"
+
+  log "Unicode send smoke passed; artifacts are under $artifact_dir"
   if [[ "$started_here" == "true" ]]; then
     stop_env
     trap - EXIT
@@ -3756,6 +3998,7 @@ case "$COMMAND" in
   firefox-upload) run_firefox_upload_helper ;;
   file-upload-smoke) run_file_upload_smoke ;;
   clipboard-smoke) run_clipboard_smoke ;;
+  unicode-send-smoke) run_unicode_send_smoke ;;
   selection-clipboard-smoke) run_selection_clipboard_smoke ;;
   page-text-clipboard-smoke) run_page_text_clipboard_smoke ;;
   canvas-drag-smoke) run_canvas_drag_smoke ;;
