@@ -1,0 +1,9 @@
+Tendril multi-window browser plus OS workflow passed.
+name=tndl-ctrl-multiwin-20260427T041344Z
+window_one=0x600004 Tendril Window One — Mozilla Firefox
+window_two=0x600020 Tendril Window Two — Mozilla Firefox
+xterm_window=0x40000c
+xterm_verification=multiwin-os-verified
+workflow=Use Tendril to navigate Firefox window one, create a second Firefox window with Ctrl+N, discover both browser windows via list, capture each targeted window, close window two, verify list state, then drive XTerm to verify local page files.
+notes=Successful retry waited for Firefox discovery after headless start.
+artifacts=/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-multiwin-os-20260427T041344Z
