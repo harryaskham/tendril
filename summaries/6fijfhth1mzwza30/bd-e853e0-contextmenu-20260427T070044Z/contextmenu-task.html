@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tendril Context Menu Waiting</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #101827;
+      color: #e5e7eb;
+      font: 24px/1.35 system-ui, sans-serif;
+    }
+    main { padding: 48px 72px; }
+    h1 { margin: 0 0 16px; font-size: 42px; }
+    #status { margin: 0 0 12px; color: #fbbf24; font-weight: 700; }
+    #details { margin: 0 0 20px; color: #93c5fd; }
+    #target {
+      display: grid;
+      place-items: center;
+      margin-top: 36px;
+      width: 1000px;
+      height: 420px;
+      border: 5px dashed #38bdf8;
+      border-radius: 18px;
+      background: #111827;
+      box-shadow: 0 0 0 6px rgba(56, 189, 248, 0.15);
+      user-select: none;
+    }
+    #target span { color: #bfdbfe; font-size: 32px; font-weight: 700; }
+    .ok { color: #86efac !important; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Firefox contextmenu target</h1>
+    <p id="status">Waiting for context menu event.</p>
+    <p id="details">Right-click inside the dashed target.</p>
+    <div id="target"><span>Right-click target</span></div>
+  </main>
+  <script>
+    const target = document.getElementById('target');
+    const status = document.getElementById('status');
+    const details = document.getElementById('details');
+
+    target.addEventListener('mousedown', (event) => {
+      if (event.button === 2) {
+        document.body.dataset.rightMouseDownObserved = 'true';
+        document.body.dataset.mouseDownClient = `${event.clientX},${event.clientY}`;
+        details.textContent = `Right mousedown observed at ${event.clientX},${event.clientY}; waiting for contextmenu.`;
+        event.preventDefault();
+      }
+    });
+
+    document.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      const insideTarget = Boolean(event.target.closest && event.target.closest('#target'));
+      document.body.dataset.contextMenuObserved = 'true';
+      document.body.dataset.contextMenuTarget = insideTarget ? 'target' : 'document';
+      document.body.dataset.contextMenuButton = String(event.button);
+      document.body.dataset.contextMenuClient = `${event.clientX},${event.clientY}`;
+      if (insideTarget) {
+        document.title = 'Tendril Context Menu Hit';
+        status.textContent = `Context menu observed at ${event.clientX},${event.clientY}`;
+        status.className = 'ok';
+        details.textContent = 'Firefox page received and canceled the contextmenu event.';
+      } else {
+        status.textContent = `Context menu reached document outside target at ${event.clientX},${event.clientY}`;
+        details.textContent = 'Unexpected contextmenu target; Tendril should click inside the dashed area.';
+      }
+    }, true);
+  </script>
+</body>
+</html>

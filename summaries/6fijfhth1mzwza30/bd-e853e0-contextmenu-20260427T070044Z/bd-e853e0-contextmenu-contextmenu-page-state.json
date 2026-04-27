@@ -1,0 +1,26 @@
+{
+  "helper": "tendril-headless firefox-contextmenu-state",
+  "marionette": {
+    "hello": {
+      "applicationType": "gecko",
+      "marionetteProtocol": 3
+    },
+    "port": 62090,
+    "sessionId": "3bf45441-7334-41f1-a44f-4fda96bb2144"
+  },
+  "page": {
+    "dataset": {
+      "contextMenuButton": "2",
+      "contextMenuClient": "208,258",
+      "contextMenuObserved": "true",
+      "contextMenuTarget": "target",
+      "mouseDownClient": "208,258",
+      "rightMouseDownObserved": "true"
+    },
+    "details": "Firefox page received and canceled the contextmenu event.",
+    "status": "Context menu observed at 208,258",
+    "title": "Tendril Context Menu Hit"
+  },
+  "status": "success",
+  "transport": "firefox-marionette"
+}

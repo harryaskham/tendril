@@ -1,0 +1,14 @@
+Tendril headless Firefox contextmenu smoke passed.
+name=bd-e853e0-contextmenu
+display=:90
+display_target=1
+browser=/nix/store/7vnya051q0xr2mdwxp48sh70xzim4fpa-firefox-149.0/bin/firefox
+browser_window=0x600016
+marionette_port=62090
+resolution=1920x1080x24
+runtime_dir=/run/user/1000/tendril-headless/bd-e853e0-contextmenu
+context_url=file:///home/harry/.cacophony/agents/tendril/6fijfhth1mzwza30/checkout/summaries/6fijfhth1mzwza30/bd-e853e0-contextmenu-20260427T070044Z/contextmenu-task.html
+gesture=rclick(220,360),wait(900ms)
+assertion=Marionette page state reported rightMouseDownObserved=true, contextMenuObserved=true, contextMenuTarget=target, and title=Tendril Context Menu Hit.
+coverage=Regression smoke for bd-e853e0; verifies mouse-only X11 window runs activate Firefox before right-click delivery and do not report success without a page-observed contextmenu event.
+artifacts=/home/harry/.cacophony/agents/tendril/6fijfhth1mzwza30/checkout/summaries/6fijfhth1mzwza30/bd-e853e0-contextmenu-20260427T070044Z
