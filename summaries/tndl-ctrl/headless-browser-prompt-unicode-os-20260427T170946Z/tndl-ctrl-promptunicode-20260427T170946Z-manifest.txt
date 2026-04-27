@@ -1,0 +1,12 @@
+Tendril headless Firefox Unicode prompt + OS workflow validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-promptunicode-20260427T170946Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-prompt-unicode-os-20260427T170946Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a local page, open a JavaScript prompt, use Tendril send(...) with actual emoji/accent/symbol text, accept the prompt, verify browser title, then drive XTerm to create an OS proof file.
+browser_proof=Tendril Unicode Prompt Accepted
+text_proof=Prompt 😀 Café π — ✓
+os_proof=unicode-prompt-os-verified
