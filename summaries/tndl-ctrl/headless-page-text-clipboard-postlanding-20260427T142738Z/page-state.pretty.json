@@ -1,0 +1,26 @@
+{
+    "helper": "tendril-headless firefox-page-text-clipboard-state",
+    "marionette": {
+        "hello": {
+            "applicationType": "gecko",
+            "marionetteProtocol": 3
+        },
+        "port": 62090,
+        "sessionId": "c88b351b-94cb-4116-9f84-7e9ccdd7d3ca"
+    },
+    "page": {
+        "active": "BODY",
+        "dataset": {
+            "copyObserved": "true",
+            "copySelection": "doublewordclipboard",
+            "selection": "doublewordclipboard"
+        },
+        "expected": "doublewordclipboard",
+        "result": "copied selection=doublewordclipboard",
+        "selection": "doublewordclipboard",
+        "status": "page-text-clipboard-browser-ok",
+        "title": "Tendril Page Text Clipboard Copied"
+    },
+    "status": "success",
+    "transport": "firefox-marionette"
+}

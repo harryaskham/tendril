@@ -1,0 +1,53 @@
+{
+  "helper": "tendril-headless firefox-page-text-clipboard-geometry",
+  "marionette": {
+    "hello": {
+      "applicationType": "gecko",
+      "marionetteProtocol": 3
+    },
+    "port": 62090,
+    "sessionId": "6c0805c6-66dd-4a11-a156-23b8bec3f332"
+  },
+  "page": {
+    "dataset": {
+      "copyObserved": "false",
+      "copySelection": "",
+      "selection": ""
+    },
+    "expected": "doublewordclipboard",
+    "rect": {
+      "bottom": 311.31666564941406,
+      "height": 60.899993896484375,
+      "left": 184.01666259765625,
+      "right": 605.1333312988281,
+      "top": 250.4166717529297,
+      "width": 421.1166687011719
+    },
+    "selection": "",
+    "title": "Tendril Page Text Clipboard Waiting",
+    "viewport": {
+      "devicePixelRatio": 1.0344827586206897,
+      "innerHeight": 933,
+      "innerWidth": 1854,
+      "mozInnerScreenX": 0.9666666388511658,
+      "mozInnerScreenY": 106.33333587646484,
+      "scrollX": 0,
+      "scrollY": 0
+    }
+  },
+  "status": "success",
+  "target": {
+    "x": 395,
+    "y": 365
+  },
+  "transport": "firefox-marionette",
+  "window": {
+    "bounds": {
+      "height": 1053,
+      "width": 1918,
+      "x": 1,
+      "y": 22
+    },
+    "id": "0x600004"
+  }
+}

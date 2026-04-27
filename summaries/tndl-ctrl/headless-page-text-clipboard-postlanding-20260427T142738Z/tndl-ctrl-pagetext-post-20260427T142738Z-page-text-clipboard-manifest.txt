@@ -1,0 +1,16 @@
+Tendril headless Firefox normal page-text double-click clipboard smoke passed.
+name=tndl-ctrl-pagetext-post-20260427T142738Z
+display=:90
+display_target=1
+browser=/home/harry/.nix-profile/bin/firefox
+browser_window=0x600004
+marionette_port=62090
+resolution=1920x1080x24
+runtime_dir=/run/user/1000/tendril-headless/tndl-ctrl-pagetext-post-20260427T142738Z
+page_text_url=file:///home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-page-text-clipboard-postlanding-20260427T142738Z/page-text-clipboard-task.html
+proof=doublewordclipboard
+target_coordinate=395,365
+gesture=dblclick(395,365),wait(500ms),hold(ctrl),c,release(ctrl),wait(900ms)
+assertion=Firefox copy event reported the expected normal page text selection and tendril clipboard get returned the same proof text from the X11 CLIPBOARD owner.
+diagnostic=The smoke treats a DOM copy event as insufficient by itself: it separately records window.getSelection() through Marionette and requires tendril clipboard get to read the same X11 CLIPBOARD text, guarding against the prior page event plus clipboard_selection_unowned failure mode.
+artifacts=/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-page-text-clipboard-postlanding-20260427T142738Z

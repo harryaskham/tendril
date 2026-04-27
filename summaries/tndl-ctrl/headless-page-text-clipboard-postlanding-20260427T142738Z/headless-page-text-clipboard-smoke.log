@@ -1,0 +1,14 @@
+[tendril-headless] starting Xvfb :90 at 1920x1080x24
+[tendril-headless] starting window manager: openbox
+[tendril-headless] starting browser: /home/harry/.nix-profile/bin/firefox
+[tendril-headless] started environment 'tndl-ctrl-pagetext-post-20260427T142738Z'; logs are under /run/user/1000/tendril-headless/tndl-ctrl-pagetext-post-20260427T142738Z/logs
+[tendril-headless] waiting for Tendril to see a 1920x1080 Firefox window
+[tendril-headless] navigating Firefox to normal page-text clipboard smoke page through Marionette preflight
+[tendril-headless] reading page geometry through Marionette to target the normal text span center
+[tendril-headless] capturing normal page-text clipboard page before double-click copy
+[tendril-headless] double-clicking normal Firefox page text and copying through Ctrl+C
+[tendril-headless] capturing normal page-text clipboard page after double-click copy
+[tendril-headless] reading Marionette page state to prove the page copy event saw the expected normal text selection
+[tendril-headless] reading OS clipboard after Firefox normal page-text Ctrl+C
+[tendril-headless] page-text clipboard smoke passed; artifacts are under /home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-page-text-clipboard-postlanding-20260427T142738Z
+[tendril-headless] stopped environment 'tndl-ctrl-pagetext-post-20260427T142738Z' and removed /run/user/1000/tendril-headless/tndl-ctrl-pagetext-post-20260427T142738Z

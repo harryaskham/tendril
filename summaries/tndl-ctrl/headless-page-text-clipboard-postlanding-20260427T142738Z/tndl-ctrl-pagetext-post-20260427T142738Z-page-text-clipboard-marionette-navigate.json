@@ -1,0 +1,21 @@
+{
+  "helper": "tendril-headless firefox-marionette-navigate",
+  "marionette": {
+    "hello": {
+      "applicationType": "gecko",
+      "marionetteProtocol": 3
+    },
+    "port": 62090,
+    "sessionId": "90825889-ce80-48de-9780-75142c2fab26"
+  },
+  "page": {
+    "bodyText": "Tendril normal page-text clipboard task\n\nWaiting for Tendril double-click page-text copy.\n\nprefix doublewordclipboard suffix\nNo copy event yet.",
+    "title": "Tendril Page Text Clipboard Waiting",
+    "url": "file:///home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-page-text-clipboard-postlanding-20260427T142738Z/page-text-clipboard-task.html"
+  },
+  "request": {
+    "navigate_url": "file:///home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-page-text-clipboard-postlanding-20260427T142738Z/page-text-clipboard-task.html"
+  },
+  "status": "success",
+  "transport": "firefox-marionette"
+}

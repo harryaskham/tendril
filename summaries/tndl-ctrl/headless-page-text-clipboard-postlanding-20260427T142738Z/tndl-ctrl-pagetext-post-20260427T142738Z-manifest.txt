@@ -1,0 +1,4 @@
+artifact_dir=summaries/tndl-ctrl/headless-page-text-clipboard-postlanding-20260427T142738Z
+status=passed
+bead=bd-0fdcd9
+validation=controller post-landing page-text-clipboard-smoke

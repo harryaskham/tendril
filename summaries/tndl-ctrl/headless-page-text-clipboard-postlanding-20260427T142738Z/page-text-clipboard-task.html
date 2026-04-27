@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tendril Page Text Clipboard Waiting</title>
+  <style>
+    body { font-family: sans-serif; margin: 48px; font-size: 24px; background: #f8fafc; color: #0f172a; }
+    .copyline { margin-top: 40px; padding: 24px; border: 4px solid #334155; font-size: 42px; line-height: 1.4; user-select: text; width: 1100px; background: white; }
+    .marker { color: #1d4ed8; font-weight: 800; background: #dbeafe; padding: 0 6px; border-radius: 6px; }
+    #status { color: #92400e; font-weight: 700; }
+    #result { margin-top: 24px; padding: 16px; border: 3px solid #334155; min-height: 48px; background: white; }
+    .ok { color: #047857 !important; }
+    .bad { color: #b91c1c !important; }
+  </style>
+</head>
+<body data-copy-observed="false" data-selection="" data-copy-selection="">
+  <h1>Tendril normal page-text clipboard task</h1>
+  <p id="status">Waiting for Tendril double-click page-text copy.</p>
+  <div id="copyline" class="copyline">prefix <span id="target" class="marker">doublewordclipboard</span> suffix</div>
+  <div id="result">No copy event yet.</div>
+  <script>
+    const target = document.getElementById('target');
+    const status = document.getElementById('status');
+    const result = document.getElementById('result');
+    const expected = target.textContent;
+
+    function currentSelection() {
+      return String(window.getSelection());
+    }
+
+    function recordSelection() {
+      document.body.dataset.selection = currentSelection();
+    }
+
+    document.addEventListener('selectionchange', recordSelection);
+    document.addEventListener('copy', () => {
+      const selection = currentSelection();
+      document.body.dataset.copyObserved = 'true';
+      document.body.dataset.copySelection = selection;
+      recordSelection();
+      result.textContent = `copied selection=${selection}`;
+      if (selection === expected) {
+        document.title = 'Tendril Page Text Clipboard Copied';
+        status.textContent = 'page-text-clipboard-browser-ok';
+        status.className = 'ok';
+      } else {
+        document.title = 'Tendril Page Text Clipboard Mismatch';
+        status.textContent = 'page-text-clipboard-browser-mismatch';
+        status.className = 'bad';
+      }
+    });
+  </script>
+</body>
+</html>
