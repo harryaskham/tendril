@@ -1,0 +1,24 @@
+{
+  "helper": "tendril-headless firefox-contextmenu-state",
+  "marionette": {
+    "hello": {
+      "applicationType": "gecko",
+      "marionetteProtocol": 3
+    },
+    "port": 62090,
+    "sessionId": "90a800a4-ad4f-405f-9b78-22775c066df2"
+  },
+  "page": {
+    "dataset": {
+      "contextMenuButton": "2",
+      "contextMenuClient": "208,287",
+      "contextMenuLocal": "136,50",
+      "contextMenuObserved": "true"
+    },
+    "details": "contextmenu button=2 client=208,287",
+    "status": "Context menu observed at 136,50.",
+    "title": "Tendril Context Menu Hit"
+  },
+  "status": "success",
+  "transport": "firefox-marionette"
+}

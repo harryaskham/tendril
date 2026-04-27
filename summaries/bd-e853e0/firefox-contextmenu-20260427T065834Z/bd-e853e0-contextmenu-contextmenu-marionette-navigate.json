@@ -1,0 +1,21 @@
+{
+  "helper": "tendril-headless firefox-marionette-navigate",
+  "marionette": {
+    "hello": {
+      "applicationType": "gecko",
+      "marionetteProtocol": 3
+    },
+    "port": 62090,
+    "sessionId": "2018195d-fe6c-4137-9e65-9c9e9a5063e6"
+  },
+  "page": {
+    "bodyText": "Firefox context menu target\n\nWaiting for context menu event.\n\nRight-click inside the dashed target.\n\nRight-click target",
+    "title": "Tendril Context Menu Waiting",
+    "url": "file:///home/harry/.cacophony/agents/tendril/nxlpn17f3ocssgzb/checkout/summaries/bd-e853e0/firefox-contextmenu-20260427T065834Z/contextmenu-task.html"
+  },
+  "request": {
+    "navigate_url": "file:///home/harry/.cacophony/agents/tendril/nxlpn17f3ocssgzb/checkout/summaries/bd-e853e0/firefox-contextmenu-20260427T065834Z/contextmenu-task.html"
+  },
+  "status": "success",
+  "transport": "firefox-marionette"
+}
