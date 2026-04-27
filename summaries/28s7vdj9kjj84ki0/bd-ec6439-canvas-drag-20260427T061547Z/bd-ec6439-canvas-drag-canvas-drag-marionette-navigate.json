@@ -1,0 +1,21 @@
+{
+  "helper": "tendril-headless firefox-marionette-navigate",
+  "marionette": {
+    "hello": {
+      "applicationType": "gecko",
+      "marionetteProtocol": 3
+    },
+    "port": 62090,
+    "sessionId": "2b7485de-7e25-4d23-b60e-26240ac480c3"
+  },
+  "page": {
+    "bodyText": "Firefox canvas drag target\n\nAwaiting Tendril drag\n\nWaiting for canvas drag",
+    "title": "Tendril Canvas Drag Task",
+    "url": "file:///home/harry/.cacophony/agents/tendril/28s7vdj9kjj84ki0/checkout/summaries/28s7vdj9kjj84ki0/bd-ec6439-canvas-drag-20260427T061547Z/canvas-drag-task.html"
+  },
+  "request": {
+    "navigate_url": "file:///home/harry/.cacophony/agents/tendril/28s7vdj9kjj84ki0/checkout/summaries/28s7vdj9kjj84ki0/bd-ec6439-canvas-drag-20260427T061547Z/canvas-drag-task.html"
+  },
+  "status": "success",
+  "transport": "firefox-marionette"
+}

@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tendril Canvas Drag Task</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #0f172a;
+      color: #e5e7eb;
+      font: 24px/1.35 system-ui, sans-serif;
+    }
+    main { padding: 48px 72px; }
+    h1 { margin: 0 0 16px; font-size: 42px; }
+    #status { margin: 0 0 12px; color: #fbbf24; font-weight: 700; }
+    #details { margin: 0 0 20px; color: #93c5fd; }
+    #pad {
+      display: block;
+      margin-top: 40px;
+      width: 1000px;
+      height: 480px;
+      border: 4px solid #38bdf8;
+      border-radius: 18px;
+      background: #111827;
+      box-shadow: 0 0 0 6px rgba(56, 189, 248, 0.15);
+      touch-action: none;
+    }
+    .ok { color: #86efac !important; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Firefox canvas drag target</h1>
+    <p id="status">Awaiting Tendril drag</p>
+    <p id="details">Waiting for canvas drag</p>
+    <canvas id="pad" width="1000" height="480"></canvas>
+  </main>
+  <script>
+    const canvas = document.getElementById('pad');
+    const ctx = canvas.getContext('2d');
+    const status = document.getElementById('status');
+    const details = document.getElementById('details');
+    const state = { dragging: false, start: null, end: null, moves: 0 };
+
+    function point(event) {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: Math.round(event.clientX - rect.left),
+        y: Math.round(event.clientY - rect.top),
+      };
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#111827';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(18, 18, canvas.width - 36, canvas.height - 36);
+      if (!state.start || !state.end) return;
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 10;
+      ctx.beginPath();
+      ctx.moveTo(state.start.x, state.start.y);
+      ctx.lineTo(state.end.x, state.end.y);
+      ctx.stroke();
+    }
+
+    draw();
+
+    canvas.addEventListener('mousedown', (event) => {
+      state.dragging = true;
+      state.start = point(event);
+      state.end = state.start;
+      state.moves = 0;
+      document.body.dataset.mouseDownObserved = 'true';
+      status.textContent = `Drag started at ${state.start.x},${state.start.y}`;
+      details.textContent = 'Waiting for mousemove and mouseup';
+      draw();
+      event.preventDefault();
+    });
+
+    canvas.addEventListener('mousemove', (event) => {
+      if (!state.dragging) return;
+      state.end = point(event);
+      state.moves += 1;
+      document.body.dataset.mouseMoveObserved = 'true';
+      details.textContent = `Dragging through ${state.end.x},${state.end.y} (${state.moves} move events)`;
+      draw();
+      event.preventDefault();
+    });
+
+    window.addEventListener('mouseup', (event) => {
+      if (!state.dragging) return;
+      state.dragging = false;
+      state.end = point(event);
+      document.body.dataset.mouseUpObserved = 'true';
+      document.body.dataset.dragOk = 'true';
+      document.body.dataset.moveCount = String(state.moves);
+      document.body.dataset.dragStart = `${state.start.x},${state.start.y}`;
+      document.body.dataset.dragEnd = `${state.end.x},${state.end.y}`;
+      status.textContent = `Canvas drag observed: ${state.start.x},${state.start.y} to ${state.end.x},${state.end.y}`;
+      status.className = 'ok';
+      details.textContent = `Mouse events observed: mousedown, ${state.moves} mousemove, mouseup`;
+      draw();
+      event.preventDefault();
+    });
+  </script>
+</body>
+</html>

@@ -48,6 +48,8 @@ Commands:
              Reproduce the native Firefox chooser limitation, then upload via helper.
   clipboard-smoke
              Prove Firefox↔OS text transfer through Tendril's explicit X11 clipboard helper.
+  canvas-drag-smoke
+             Prove a Tendril drag gesture reaches Firefox canvas page handlers.
 
 Options:
   --name <name>          Environment name (default: default).
@@ -85,6 +87,9 @@ Firefox file-upload smoke:
 
 Firefox/X11 clipboard smoke:
   scripts/tendril-headless.sh --browser firefox --tendril-bin ./target/debug/tendril clipboard-smoke
+
+Firefox/X11 canvas drag smoke:
+  scripts/tendril-headless.sh --browser firefox --tendril-bin ./target/debug/tendril canvas-drag-smoke
 USAGE
 }
 
@@ -153,7 +158,7 @@ dsl_escape() {
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      start|env|inspect|reset|stop|smoke|firefox-upload|file-upload-smoke|clipboard-smoke)
+      start|env|inspect|reset|stop|smoke|firefox-upload|file-upload-smoke|clipboard-smoke|canvas-drag-smoke)
         if [[ -n "$COMMAND" ]]; then
           fail "only one command may be provided"
         fi
@@ -927,6 +932,124 @@ write_clipboard_smoke_page() {
 EOF_HTML
 }
 
+write_canvas_drag_smoke_page() {
+  local dir="$1"
+  cat >"$dir/canvas-drag-task.html" <<'EOF_HTML'
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tendril Canvas Drag Task</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #0f172a;
+      color: #e5e7eb;
+      font: 24px/1.35 system-ui, sans-serif;
+    }
+    main { padding: 48px 72px; }
+    h1 { margin: 0 0 16px; font-size: 42px; }
+    #status { margin: 0 0 12px; color: #fbbf24; font-weight: 700; }
+    #details { margin: 0 0 20px; color: #93c5fd; }
+    #pad {
+      display: block;
+      margin-top: 40px;
+      width: 1000px;
+      height: 480px;
+      border: 4px solid #38bdf8;
+      border-radius: 18px;
+      background: #111827;
+      box-shadow: 0 0 0 6px rgba(56, 189, 248, 0.15);
+      touch-action: none;
+    }
+    .ok { color: #86efac !important; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Firefox canvas drag target</h1>
+    <p id="status">Awaiting Tendril drag</p>
+    <p id="details">Waiting for canvas drag</p>
+    <canvas id="pad" width="1000" height="480"></canvas>
+  </main>
+  <script>
+    const canvas = document.getElementById('pad');
+    const ctx = canvas.getContext('2d');
+    const status = document.getElementById('status');
+    const details = document.getElementById('details');
+    const state = { dragging: false, start: null, end: null, moves: 0 };
+
+    function point(event) {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: Math.round(event.clientX - rect.left),
+        y: Math.round(event.clientY - rect.top),
+      };
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#111827';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(18, 18, canvas.width - 36, canvas.height - 36);
+      if (!state.start || !state.end) return;
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 10;
+      ctx.beginPath();
+      ctx.moveTo(state.start.x, state.start.y);
+      ctx.lineTo(state.end.x, state.end.y);
+      ctx.stroke();
+    }
+
+    draw();
+
+    canvas.addEventListener('mousedown', (event) => {
+      state.dragging = true;
+      state.start = point(event);
+      state.end = state.start;
+      state.moves = 0;
+      document.body.dataset.mouseDownObserved = 'true';
+      status.textContent = `Drag started at ${state.start.x},${state.start.y}`;
+      details.textContent = 'Waiting for mousemove and mouseup';
+      draw();
+      event.preventDefault();
+    });
+
+    canvas.addEventListener('mousemove', (event) => {
+      if (!state.dragging) return;
+      state.end = point(event);
+      state.moves += 1;
+      document.body.dataset.mouseMoveObserved = 'true';
+      details.textContent = `Dragging through ${state.end.x},${state.end.y} (${state.moves} move events)`;
+      draw();
+      event.preventDefault();
+    });
+
+    window.addEventListener('mouseup', (event) => {
+      if (!state.dragging) return;
+      state.dragging = false;
+      state.end = point(event);
+      document.body.dataset.mouseUpObserved = 'true';
+      document.body.dataset.dragOk = 'true';
+      document.body.dataset.moveCount = String(state.moves);
+      document.body.dataset.dragStart = `${state.start.x},${state.start.y}`;
+      document.body.dataset.dragEnd = `${state.end.x},${state.end.y}`;
+      status.textContent = `Canvas drag observed: ${state.start.x},${state.start.y} to ${state.end.x},${state.end.y}`;
+      status.className = 'ok';
+      details.textContent = `Mouse events observed: mousedown, ${state.moves} mousemove, mouseup`;
+      draw();
+      event.preventDefault();
+    });
+  </script>
+</body>
+</html>
+EOF_HTML
+}
+
 run_smoke() {
   ensure_name_safe
   local tendril_program
@@ -1549,6 +1672,199 @@ EOF_MANIFEST
   fi
 }
 
+run_canvas_drag_smoke() {
+  ensure_name_safe
+  if [[ -z "$BROWSER_BIN" ]]; then
+    BROWSER_BIN="firefox"
+  fi
+  local tendril_program
+  tendril_program="${TENDRIL_BIN%% *}"
+  [[ -x "$tendril_program" || "$(command -v "$tendril_program" 2>/dev/null || true)" ]] || fail "Tendril binary not found: $TENDRIL_BIN; pass --tendril-bin ./target/debug/tendril or --tendril-bin 'nix run .#tendril --'"
+
+  local artifact_dir
+  artifact_dir="$(resolve_artifact_dir)"
+  ensure_artifact_dir_safe "$artifact_dir"
+  mkdir -p "$artifact_dir"
+  write_canvas_drag_smoke_page "$artifact_dir"
+  local canvas_url
+  canvas_url="file://$artifact_dir/canvas-drag-task.html"
+
+  local started_here="false"
+  if ! state_alive; then
+    start_env >/dev/null
+    started_here="true"
+  else
+    log "using existing environment '$NAME' on DISPLAY=${DISPLAY}"
+  fi
+  trap 'if [[ "${started_here:-false}" == "true" ]]; then stop_env; fi' EXIT
+
+  local dir list_json display_id window_id navigate_json before_capture drag_run state_json after_capture
+  dir="${TENDRIL_HEADLESS_RUNTIME_DIR:-$(runtime_dir)}"
+
+  log "waiting for Tendril to see a ${WIDTH}x${HEIGHT} Firefox window"
+  if ! list_json="$(wait_for_targets)"; then
+    diagnose_browser_log "$dir/logs/browser.log"
+    preserve_runtime_logs "$dir" "$artifact_dir"
+    fail "Tendril did not discover expected headless Firefox targets"
+  fi
+  printf '%s\n' "$list_json" >"$artifact_dir/${NAME}-canvas-drag-list-initial.json"
+
+  display_id="$(python3 -c '
+import json, sys
+width=int(sys.argv[1]); height=int(sys.argv[2]); payload=json.load(sys.stdin)
+for target in payload["data"]["targets"]:
+    bounds=target.get("bounds", {})
+    if target.get("kind") == "display" and bounds.get("width") == width and bounds.get("height") == height:
+        print(target["id"]); break
+else:
+    raise SystemExit(1)
+' "$WIDTH" "$HEIGHT" <<<"$list_json")"
+
+  window_id="$(python3 -c '
+import json, sys
+browser_pid=sys.argv[1]
+payload=json.load(sys.stdin)
+for target in payload["data"]["targets"]:
+    haystack=" ".join(str(target.get(k) or "") for k in ("name", "title", "app_name")).lower()
+    if target.get("kind") == "window" and ((browser_pid and str(target.get("process_id") or "") == browser_pid) or "firefox" in haystack):
+        print(target["id"]); break
+else:
+    raise SystemExit("no Firefox window found")
+' "${TENDRIL_HEADLESS_BROWSER_PID:-}" <<<"$list_json")"
+
+  log "navigating Firefox to canvas drag smoke page through Marionette preflight"
+  NAVIGATE_URL="$canvas_url" \
+    HELPER_OUTPUT="$artifact_dir/${NAME}-canvas-drag-marionette-navigate.json" \
+    run_firefox_navigate_helper
+  navigate_json="$(cat "$artifact_dir/${NAME}-canvas-drag-marionette-navigate.json")"
+  python3 -c '
+import json, sys
+payload=json.loads(sys.argv[1])
+assert payload["status"] == "success", payload
+assert "Tendril Canvas Drag Task" in (payload.get("page", {}).get("title") or ""), payload.get("page")
+' "$navigate_json"
+
+  log "capturing canvas page before Tendril drag"
+  before_capture="$(run_tendril --json --window "$window_id" capture --max-width "$WIDTH" --max-height "$HEIGHT" -o "$artifact_dir/${NAME}-canvas-drag-before.png")"
+  printf '%s\n' "$before_capture" >"$artifact_dir/${NAME}-canvas-drag-before-capture.json"
+
+  log "dragging across the Firefox canvas with Tendril"
+  drag_run="$(run_tendril --json --window "$window_id" run 'drag(120,390,820,520),wait(900ms)')"
+  printf '%s\n' "$drag_run" >"$artifact_dir/${NAME}-canvas-drag-run.json"
+  python3 -c '
+import json, sys
+payload=json.loads(sys.argv[1])
+assert payload["status"] == "success", payload
+assert payload["data"]["action_count"] >= 2, payload["data"]
+assert payload["data"]["focus_required"] is True, payload["data"]
+assert payload["data"]["focus_transferred"] is True, payload["data"]
+' "$drag_run"
+
+  log "reading page-observed canvas drag state through Marionette"
+  python3 - "${TENDRIL_HEADLESS_MARIONETTE_PORT:-}" >"$artifact_dir/${NAME}-canvas-drag-page-state.json" <<'PY'
+import json
+import socket
+import sys
+import time
+
+port = int(sys.argv[1])
+
+def recv(sock):
+    length_bytes = bytearray()
+    while True:
+        chunk = sock.recv(1)
+        if not chunk:
+            raise EOFError("Marionette closed while reading frame length")
+        if chunk == b":":
+            break
+        length_bytes.extend(chunk)
+    length = int(length_bytes.decode("ascii"))
+    body = bytearray()
+    while len(body) < length:
+        chunk = sock.recv(length - len(body))
+        if not chunk:
+            raise EOFError("Marionette closed while reading frame body")
+        body.extend(chunk)
+    return json.loads(body.decode("utf-8"))
+
+def send(sock, payload):
+    encoded = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    sock.sendall(str(len(encoded)).encode("ascii") + b":" + encoded)
+
+def command(sock, message_id, name, params):
+    send(sock, [0, message_id, name, params])
+    response = recv(sock)
+    if response[2] is not None:
+        raise RuntimeError(f"Marionette {name} failed: {response[2]!r}")
+    return response[3]
+
+sock = socket.create_connection(("127.0.0.1", port), timeout=5)
+sock.settimeout(20)
+try:
+    hello = recv(sock)
+    session = command(sock, 1, "WebDriver:NewSession", {})
+    time.sleep(0.25)
+    result = command(sock, 2, "WebDriver:ExecuteScript", {
+        "script": "return { title: document.title, status: document.getElementById('status')?.textContent, details: document.getElementById('details')?.textContent, dataset: Object.assign({}, document.body.dataset) };",
+        "args": [],
+        "newSandbox": True,
+        "sandbox": "default",
+        "line": 1,
+        "filename": "tendril-headless-firefox-canvas-drag-state",
+    })
+    print(json.dumps({
+        "status": "success",
+        "helper": "tendril-headless firefox-canvas-drag-state",
+        "transport": "firefox-marionette",
+        "marionette": {"port": port, "hello": hello, "sessionId": session.get("sessionId")},
+        "page": result.get("value", result),
+    }, indent=2, sort_keys=True))
+finally:
+    sock.close()
+PY
+  state_json="$(cat "$artifact_dir/${NAME}-canvas-drag-page-state.json")"
+  python3 -c '
+import json, sys
+payload=json.loads(sys.argv[1])
+assert payload["status"] == "success", payload
+page = payload["page"]
+dataset = page.get("dataset") or {}
+assert dataset.get("mouseDownObserved") == "true", page
+assert dataset.get("mouseMoveObserved") == "true", page
+assert dataset.get("mouseUpObserved") == "true", page
+assert dataset.get("dragOk") == "true", page
+assert int(dataset.get("moveCount") or "0") >= 2, page
+assert "Canvas drag observed" in (page.get("status") or ""), page
+' "$state_json"
+
+  log "capturing canvas page after page-observed drag"
+  after_capture="$(run_tendril --json --window "$window_id" capture --max-width "$WIDTH" --max-height "$HEIGHT" -o "$artifact_dir/${NAME}-canvas-drag-after.png")"
+  printf '%s\n' "$after_capture" >"$artifact_dir/${NAME}-canvas-drag-after-capture.json"
+
+  cat >"$artifact_dir/${NAME}-canvas-drag-manifest.txt" <<EOF_MANIFEST
+Tendril headless Firefox canvas drag smoke passed.
+name=$NAME
+display=$DISPLAY
+display_target=$display_id
+browser=${TENDRIL_HEADLESS_BROWSER:-}
+browser_window=$window_id
+marionette_port=${TENDRIL_HEADLESS_MARIONETTE_PORT:-}
+resolution=${WIDTH}x${HEIGHT}x${DEPTH}
+runtime_dir=$dir
+canvas_url=$canvas_url
+gesture=drag(120,390,820,520),wait(900ms)
+assertion=Marionette page state reported mousedown, mousemove, mouseup, dragOk=true, and moveCount>=2.
+artifacts=$artifact_dir
+EOF_MANIFEST
+  git_add_artifacts "$artifact_dir"
+
+  log "canvas drag smoke passed; artifacts are under $artifact_dir"
+  if [[ "$started_here" == "true" ]]; then
+    stop_env
+    trap - EXIT
+  fi
+}
+
 run_file_upload_smoke() {
   ensure_name_safe
   if [[ -z "$BROWSER_BIN" ]]; then
@@ -1706,5 +2022,6 @@ case "$COMMAND" in
   firefox-upload) run_firefox_upload_helper ;;
   file-upload-smoke) run_file_upload_smoke ;;
   clipboard-smoke) run_clipboard_smoke ;;
+  canvas-drag-smoke) run_canvas_drag_smoke ;;
   *) fail "unsupported command: $COMMAND" ;;
 esac

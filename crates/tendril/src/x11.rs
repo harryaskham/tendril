@@ -228,13 +228,18 @@ fn prepare_x11_input_state(
         .map(|state| focus_snapshot_for_window(connection, state.window));
 
     let keyboard_input = request.text.is_some() || request.actions.iter().any(action_is_keyboard);
-    let (focus_required, focus_transferred) = if keyboard_input {
-        (
-            true,
-            prepare_keyboard_focus(connection, request, &mut notes)?,
-        )
+    let window_target = matches!(request.target, CaptureTargetKind::Window);
+    let focus_required = keyboard_input || window_target;
+    let focus_transferred = if window_target {
+        prepare_window_focus(connection, request, &mut notes)?
+    } else if keyboard_input {
+        notes.push(
+            "Display-scoped keyboard input uses the currently focused control; place focus explicitly if a different app should receive text or key taps."
+                .to_owned(),
+        );
+        false
     } else {
-        (false, false)
+        false
     };
 
     Ok(X11InputRunState {
@@ -286,31 +291,24 @@ fn capture_requested_restore_state(
     }
 }
 
-fn prepare_keyboard_focus(
+fn prepare_window_focus(
     connection: &X11Connection,
     request: &InputRequest,
     notes: &mut Vec<String>,
 ) -> Result<bool, TendrilError> {
-    if !matches!(request.target, CaptureTargetKind::Window) {
-        notes.push(
-            "Display-scoped keyboard input uses the currently focused control; place focus explicitly if a different app should receive text or key taps."
-                .to_owned(),
-        );
-        return Ok(false);
-    }
-
     let window = parse_window_id(&request.target_id)
         .map_err(|message| input_execution_error("invalid_target", message, None, Some("focus")))?;
     activate_window(connection, window).map_err(|error| {
         input_execution_error(
             "focus_failed",
-            format!("failed to focus target window: {error}"),
+            format!("failed to focus target window before input delivery: {error}"),
             None,
             Some("focus"),
         )
     })?;
     notes.push(
-        "Activated the target window before keyboard delivery for X11 reliability.".to_owned(),
+        "Activated the target X11 window before input delivery so mouse gestures and keyboard events are delivered to the requested window instead of the previously focused or stacked target."
+            .to_owned(),
     );
     std::thread::sleep(reliability_delay());
     Ok(true)
@@ -1211,15 +1209,22 @@ fn click_button(
 ) -> Result<(), TendrilError> {
     let (absolute_x, absolute_y) = absolute_point(request, x, y);
     move_pointer(connection, absolute_x, absolute_y, action_index, action)?;
+    flush_x11_input(connection, action_index, action, "click pointer move")?;
+    std::thread::sleep(reliability_delay());
+
     let button = mouse_button_number(button);
     fake_button_event(connection, BUTTON_PRESS_EVENT, button, action_index, action)?;
+    flush_x11_input(connection, action_index, action, "click button press")?;
+    std::thread::sleep(reliability_delay());
+
     fake_button_event(
         connection,
         BUTTON_RELEASE_EVENT,
         button,
         action_index,
         action,
-    )
+    )?;
+    flush_x11_input(connection, action_index, action, "click button release")
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1236,10 +1241,40 @@ fn drag_mouse(
     let (start_x, start_y) = absolute_point(request, x0, y0);
     let (end_x, end_y) = absolute_point(request, x1, y1);
     move_pointer(connection, start_x, start_y, action_index, action)?;
-    fake_button_event(connection, BUTTON_PRESS_EVENT, 1, action_index, action)?;
+    flush_x11_input(connection, action_index, action, "drag start pointer move")?;
     std::thread::sleep(reliability_delay());
-    move_pointer(connection, end_x, end_y, action_index, action)?;
-    fake_button_event(connection, BUTTON_RELEASE_EVENT, 1, action_index, action)
+
+    fake_button_event(connection, BUTTON_PRESS_EVENT, 1, action_index, action)?;
+    flush_x11_input(connection, action_index, action, "drag button press")?;
+    std::thread::sleep(reliability_delay());
+
+    for (x, y) in drag_motion_points(start_x, start_y, end_x, end_y) {
+        move_pointer(connection, x, y, action_index, action)?;
+        flush_x11_input(connection, action_index, action, "drag motion")?;
+        std::thread::sleep(reliability_delay());
+    }
+
+    fake_button_event(connection, BUTTON_RELEASE_EVENT, 1, action_index, action)?;
+    flush_x11_input(connection, action_index, action, "drag button release")
+}
+
+fn drag_motion_points(start_x: i32, start_y: i32, end_x: i32, end_y: i32) -> Vec<(i32, i32)> {
+    let dx = i64::from(end_x) - i64::from(start_x);
+    let dy = i64::from(end_y) - i64::from(start_y);
+    let distance = dx.unsigned_abs().max(dy.unsigned_abs());
+    let steps = ((distance / 60) + 1).clamp(4, 32);
+    (1..=steps)
+        .map(|step| {
+            let step = i64::try_from(step).unwrap_or(1);
+            let steps = i64::try_from(steps).unwrap_or(1);
+            let x = i64::from(start_x) + (dx * step / steps);
+            let y = i64::from(start_y) + (dy * step / steps);
+            (
+                i32::try_from(x).unwrap_or(if x < 0 { i32::MIN } else { i32::MAX }),
+                i32::try_from(y).unwrap_or(if y < 0 { i32::MIN } else { i32::MAX }),
+            )
+        })
+        .collect()
 }
 
 fn absolute_point(request: &InputRequest, x: i32, y: i32) -> (i32, i32) {
@@ -1853,8 +1888,8 @@ mod tests {
     use super::{
         KeyStroke, KeyboardMap, X11OccludingWindow, X11WindowBounds,
         X11WindowCaptureFallbackReason, XK_INSERT, capture_png_is_solid_black, decode_class_name,
-        decode_text_property, key_name_to_keysym, keysym_for_char, parse_window_id,
-        windows_overlap,
+        decode_text_property, drag_motion_points, key_name_to_keysym, keysym_for_char,
+        parse_window_id, windows_overlap,
     };
 
     #[test]
@@ -1909,6 +1944,16 @@ mod tests {
                 shift: false,
             })
         );
+    }
+
+    #[test]
+    fn produces_incremental_drag_motion_points() {
+        let points = drag_motion_points(10, 20, 130, 80);
+
+        assert!(points.len() >= 4);
+        assert_eq!(points.last(), Some(&(130, 80)));
+        assert!(points.windows(2).all(|pair| pair[0].0 <= pair[1].0));
+        assert!(points.windows(2).all(|pair| pair[0].1 <= pair[1].1));
     }
 
     #[test]

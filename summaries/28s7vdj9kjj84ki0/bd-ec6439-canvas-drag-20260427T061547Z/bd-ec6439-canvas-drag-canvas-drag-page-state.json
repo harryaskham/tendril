@@ -1,0 +1,27 @@
+{
+  "helper": "tendril-headless firefox-canvas-drag-state",
+  "marionette": {
+    "hello": {
+      "applicationType": "gecko",
+      "marionetteProtocol": 3
+    },
+    "port": 62090,
+    "sessionId": "73c0bb8c-2283-479b-b32e-ba8917a1eede"
+  },
+  "page": {
+    "dataset": {
+      "dragEnd": "716,176",
+      "dragOk": "true",
+      "dragStart": "39,50",
+      "mouseDownObserved": "true",
+      "mouseMoveObserved": "true",
+      "mouseUpObserved": "true",
+      "moveCount": "8"
+    },
+    "details": "Mouse events observed: mousedown, 8 mousemove, mouseup",
+    "status": "Canvas drag observed: 39,50 to 716,176",
+    "title": "Tendril Canvas Drag Task"
+  },
+  "status": "success",
+  "transport": "firefox-marionette"
+}

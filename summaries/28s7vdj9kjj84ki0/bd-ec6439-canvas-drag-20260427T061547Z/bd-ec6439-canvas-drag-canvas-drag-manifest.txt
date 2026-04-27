@@ -1,0 +1,13 @@
+Tendril headless Firefox canvas drag smoke passed.
+name=bd-ec6439-canvas-drag
+display=:90
+display_target=1
+browser=/nix/store/7vnya051q0xr2mdwxp48sh70xzim4fpa-firefox-149.0/bin/firefox
+browser_window=0x600016
+marionette_port=62090
+resolution=1920x1080x24
+runtime_dir=/run/user/1000/tendril-headless/bd-ec6439-canvas-drag
+canvas_url=file:///home/harry/.cacophony/agents/tendril/28s7vdj9kjj84ki0/checkout/summaries/28s7vdj9kjj84ki0/bd-ec6439-canvas-drag-20260427T061547Z/canvas-drag-task.html
+gesture=drag(120,390,820,520),wait(900ms)
+assertion=Marionette page state reported mousedown, mousemove, mouseup, dragOk=true, and moveCount>=2.
+artifacts=/home/harry/.cacophony/agents/tendril/28s7vdj9kjj84ki0/checkout/summaries/28s7vdj9kjj84ki0/bd-ec6439-canvas-drag-20260427T061547Z
