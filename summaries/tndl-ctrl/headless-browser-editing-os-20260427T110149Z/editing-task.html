@@ -1,0 +1,20 @@
+<!doctype html>
+<html><head><meta charset="utf-8" /><title>Tendril Editing Waiting</title>
+<style>body{font-family:sans-serif;margin:48px;font-size:22px}label{display:block;margin:18px 0 6px}input,textarea,button{font-size:22px;padding:8px;width:820px}textarea{height:110px}#result{margin-top:24px;padding:16px;border:3px solid #333;min-height:48px}</style>
+</head><body>
+<h1>Tendril browser editing task</h1>
+<p id="status">Waiting for Tendril text editing.</p>
+<form id="taskForm"><label for="first">Editable first field</label><input id="first" autofocus placeholder="first field" /><label for="second">Editable second field</label><textarea id="second" placeholder="second field"></textarea><button id="submit" type="submit">Submit editing proof</button></form>
+<div id="result">No result yet.</div>
+<script>
+document.getElementById('taskForm').addEventListener('submit', event => {
+  event.preventDefault();
+  const first = document.getElementById('first').value;
+  const second = document.getElementById('second').value;
+  const ok = first === 'edited-browser-text' && second === 'tabbed-second-field';
+  document.title = ok ? 'Tendril Editing Submitted' : 'Tendril Editing Mismatch';
+  document.getElementById('status').textContent = ok ? 'editing-browser-ok' : 'editing-browser-mismatch';
+  document.getElementById('result').textContent = `first=${first}; second=${second}`;
+});
+</script>
+</body></html>

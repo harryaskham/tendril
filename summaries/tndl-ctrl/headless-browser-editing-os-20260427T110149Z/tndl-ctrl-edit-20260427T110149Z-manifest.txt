@@ -1,0 +1,11 @@
+Tendril headless Firefox browser text-editing + OS workflow validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-edit-20260427T110149Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-editing-os-20260427T110149Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a local form with Alt-D, use Tendril keyboard input to type throwaway text, Ctrl-A select it, Backspace delete it, type final text, Tab to a textarea, submit with Return, verify browser title/status via list/capture, then drive XTerm to create an OS proof file.
+browser_proof=Tendril Editing Submitted
+os_proof=editing-os-verified
