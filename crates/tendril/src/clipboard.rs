@@ -9,6 +9,7 @@ use crate::platform::{AdapterContext, AdapterInfo, DesktopSession, PlatformKind}
 
 pub const DEFAULT_CLIPBOARD_TIMEOUT_MS: u64 = 3_000;
 pub const DEFAULT_CLIPBOARD_SERVE_MS: u64 = 5_000;
+#[cfg(target_os = "linux")]
 const CLIPBOARD_POLL_INTERVAL: Duration = Duration::from_millis(20);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
