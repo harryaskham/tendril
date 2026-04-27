@@ -279,16 +279,51 @@ pub enum MouseButton {
     Middle,
 }
 
+/// Maximum wheel ticks accepted in a single typed scroll action.
+///
+/// Wheel events are delivered as repeated native button/input events, so this
+/// cap keeps malformed typed-model requests from generating unbounded event
+/// loops while still allowing large page or list movements in one action.
+pub const MAX_SCROLL_TICKS: u32 = 120;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum InputAction {
-    KeyTap { key: String },
-    Hold { modifier: ModifierKey },
-    Release { modifier: ModifierKey },
-    Send { text: String },
-    Wait { duration_ms: u64 },
-    Click { button: MouseButton, x: i32, y: i32 },
-    Drag { x0: i32, y0: i32, x1: i32, y1: i32 },
+    KeyTap {
+        key: String,
+    },
+    Hold {
+        modifier: ModifierKey,
+    },
+    Release {
+        modifier: ModifierKey,
+    },
+    Send {
+        text: String,
+    },
+    Wait {
+        duration_ms: u64,
+    },
+    Click {
+        button: MouseButton,
+        x: i32,
+        y: i32,
+    },
+    Drag {
+        x0: i32,
+        y0: i32,
+        x1: i32,
+        y1: i32,
+    },
+    /// Scroll the wheel under source-space coordinates.
+    ///
+    /// `dy` is measured in wheel ticks. Positive values scroll down; negative
+    /// values scroll up. A zero delta is rejected by validation.
+    Scroll {
+        x: i32,
+        y: i32,
+        dy: i32,
+    },
 }
 
 impl InputAction {
@@ -309,6 +344,18 @@ impl InputAction {
             )
             .with_code("invalid_run_input")
             .with_field("actions")),
+            Self::Scroll { dy, .. } if *dy == 0 => Err(TendrilError::validation(
+                "scroll action dy must be non-zero",
+            )
+            .with_code("invalid_run_input")
+            .with_field("actions")),
+            Self::Scroll { dy, .. } if dy.unsigned_abs() > MAX_SCROLL_TICKS => Err(
+                TendrilError::validation(format!(
+                    "scroll action dy must be between -{MAX_SCROLL_TICKS} and {MAX_SCROLL_TICKS} wheel ticks"
+                ))
+                .with_code("invalid_run_input")
+                .with_field("actions"),
+            ),
             _ => Ok(()),
         }
     }
@@ -587,7 +634,8 @@ fn validate_identifier(id: &str, kind: TargetKind) -> Result<(), TendrilError> {
 mod tests {
     use super::{
         AliasInput, AudioFormat, AudioSourceKind, AudioSourceSelector, CaptureInput, ImageFormat,
-        ListInput, ListenInput, RunInput, RunInputPayload, ScaleFactor, ShellKind, TargetSelector,
+        InputAction, ListInput, ListenInput, MAX_SCROLL_TICKS, RunInput, RunInputPayload,
+        ScaleFactor, ShellKind, TargetSelector,
     };
 
     #[test]
@@ -625,6 +673,25 @@ mod tests {
             .expect_err("text payload should be validated");
 
         assert_eq!(error.code(), "invalid_run_input");
+    }
+
+    #[test]
+    fn run_validation_rejects_invalid_typed_scroll_delta() {
+        let over_limit = i32::try_from(MAX_SCROLL_TICKS + 1).expect("scroll limit fits i32");
+        for dy in [0, over_limit, -over_limit] {
+            let input = RunInput {
+                target: TargetSelector::Display { id: "1".into() },
+                payload: RunInputPayload::Actions {
+                    actions: vec![InputAction::Scroll { x: 10, y: 20, dy }],
+                },
+                restore_focus: true,
+            };
+
+            let error = input.validate().expect_err("scroll dy should be validated");
+
+            assert_eq!(error.code(), "invalid_run_input");
+            assert_eq!(error.details().expect("action details")["action_index"], 0);
+        }
     }
 
     #[test]

@@ -54,6 +54,8 @@ Commands:
              Prove a Tendril drag gesture reaches Firefox canvas page handlers.
   contextmenu-smoke
              Prove a Tendril right-click reaches Firefox page contextmenu handlers.
+  scroll-smoke
+             Prove a Tendril wheel scroll changes a nested Firefox scroll region.
 
 Options:
   --name <name>          Environment name (default: default).
@@ -100,6 +102,9 @@ Firefox/X11 canvas drag smoke:
 
 Firefox/X11 contextmenu smoke:
   scripts/tendril-headless.sh --browser firefox --tendril-bin ./target/debug/tendril contextmenu-smoke
+
+Firefox/X11 nested scroll smoke:
+  scripts/tendril-headless.sh --browser firefox --tendril-bin ./target/debug/tendril scroll-smoke
 USAGE
 }
 
@@ -168,7 +173,7 @@ dsl_escape() {
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      start|env|inspect|reset|stop|smoke|firefox-upload|file-upload-smoke|clipboard-smoke|selection-clipboard-smoke|canvas-drag-smoke|contextmenu-smoke)
+      start|env|inspect|reset|stop|smoke|firefox-upload|file-upload-smoke|clipboard-smoke|selection-clipboard-smoke|canvas-drag-smoke|contextmenu-smoke|scroll-smoke)
         if [[ -n "$COMMAND" ]]; then
           fail "only one command may be provided"
         fi
@@ -2187,6 +2192,281 @@ EOF_MANIFEST
   fi
 }
 
+write_scroll_smoke_page() {
+  local dir="$1"
+  cat >"$dir/scroll-task.html" <<'EOF_HTML'
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tendril Scroll Waiting</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #111827;
+      color: #e5e7eb;
+      font: 24px/1.35 system-ui, sans-serif;
+      overflow: hidden;
+    }
+    main { padding: 48px 72px; }
+    h1 { margin: 0 0 16px; font-size: 42px; }
+    #status { margin: 0 0 12px; color: #fbbf24; font-weight: 700; }
+    #details { margin: 0 0 20px; color: #93c5fd; }
+    #scroller {
+      margin-top: 40px;
+      width: 1000px;
+      height: 360px;
+      overflow: auto;
+      border: 5px solid #38bdf8;
+      border-radius: 18px;
+      background: #0f172a;
+      box-shadow: 0 0 0 6px rgba(56, 189, 248, 0.15);
+    }
+    .item {
+      display: grid;
+      place-items: center;
+      height: 180px;
+      margin: 18px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #1e3a8a, #312e81);
+      color: #dbeafe;
+      font-size: 34px;
+      font-weight: 800;
+    }
+    .ok { color: #86efac !important; }
+  </style>
+</head>
+<body data-scroll-top="0" data-scroll-observed="false">
+  <main>
+    <h1>Firefox nested scroll target</h1>
+    <p id="status">Waiting for Tendril wheel scroll.</p>
+    <p id="details">Wheel over the bordered scroll pane.</p>
+    <div id="scroller" tabindex="0" aria-label="Nested scroll pane">
+      <div class="item">Top of nested scroll pane</div>
+      <div class="item">Middle section one</div>
+      <div class="item">Middle section two</div>
+      <div class="item">Bottom proof section</div>
+      <div class="item">Scroll target footer</div>
+    </div>
+  </main>
+  <script>
+    const scroller = document.getElementById('scroller');
+    const status = document.getElementById('status');
+    const details = document.getElementById('details');
+
+    function updateState() {
+      const top = Math.round(scroller.scrollTop);
+      document.body.dataset.scrollTop = String(top);
+      document.body.dataset.scrollObserved = top > 0 ? 'true' : 'false';
+      if (top > 0) {
+        document.title = 'Tendril Scroll Hit';
+        status.textContent = `Scroll observed: scrollTop=${top}.`;
+        status.className = 'ok';
+        details.textContent = `Nested scroll pane moved to ${top}px.`;
+      }
+    }
+
+    scroller.addEventListener('scroll', updateState, { passive: true });
+    updateState();
+  </script>
+</body>
+</html>
+EOF_HTML
+}
+
+run_scroll_smoke() {
+  ensure_name_safe
+  if [[ -z "$BROWSER_BIN" ]]; then
+    BROWSER_BIN="firefox"
+  fi
+  local tendril_program
+  tendril_program="${TENDRIL_BIN%% *}"
+  [[ -x "$tendril_program" || "$(command -v "$tendril_program" 2>/dev/null || true)" ]] || fail "Tendril binary not found: $TENDRIL_BIN; pass --tendril-bin ./target/debug/tendril or --tendril-bin 'nix run .#tendril --'"
+
+  local artifact_dir
+  artifact_dir="$(resolve_artifact_dir)"
+  ensure_artifact_dir_safe "$artifact_dir"
+  mkdir -p "$artifact_dir"
+  write_scroll_smoke_page "$artifact_dir"
+  local scroll_url
+  scroll_url="file://$artifact_dir/scroll-task.html"
+
+  local started_here="false"
+  if ! state_alive; then
+    start_env >/dev/null
+    started_here="true"
+  else
+    log "using existing environment '$NAME' on DISPLAY=${DISPLAY}"
+  fi
+  trap 'if [[ "${started_here:-false}" == "true" ]]; then stop_env; fi' EXIT
+
+  local dir list_json display_id window_id navigate_json before_capture scroll_run state_json after_capture
+  dir="${TENDRIL_HEADLESS_RUNTIME_DIR:-$(runtime_dir)}"
+
+  log "waiting for Tendril to see a ${WIDTH}x${HEIGHT} Firefox window"
+  if ! list_json="$(wait_for_targets)"; then
+    diagnose_browser_log "$dir/logs/browser.log"
+    preserve_runtime_logs "$dir" "$artifact_dir"
+    fail "Tendril did not discover expected headless Firefox targets"
+  fi
+  printf '%s\n' "$list_json" >"$artifact_dir/${NAME}-scroll-list-initial.json"
+
+  display_id="$(python3 -c '
+import json, sys
+width=int(sys.argv[1]); height=int(sys.argv[2]); payload=json.load(sys.stdin)
+for target in payload["data"]["targets"]:
+    bounds=target.get("bounds", {})
+    if target.get("kind") == "display" and bounds.get("width") == width and bounds.get("height") == height:
+        print(target["id"]); break
+else:
+    raise SystemExit(1)
+' "$WIDTH" "$HEIGHT" <<<"$list_json")"
+
+  window_id="$(python3 -c '
+import json, sys
+browser_pid=sys.argv[1]
+payload=json.load(sys.stdin)
+for target in payload["data"]["targets"]:
+    haystack=" ".join(str(target.get(k) or "") for k in ("name", "title", "app_name")).lower()
+    if target.get("kind") == "window" and ((browser_pid and str(target.get("process_id") or "") == browser_pid) or "firefox" in haystack):
+        print(target["id"]); break
+else:
+    raise SystemExit("no Firefox window found")
+' "${TENDRIL_HEADLESS_BROWSER_PID:-}" <<<"$list_json")"
+
+  log "navigating Firefox to nested scroll smoke page through Marionette preflight"
+  NAVIGATE_URL="$scroll_url" \
+    HELPER_OUTPUT="$artifact_dir/${NAME}-scroll-marionette-navigate.json" \
+    run_firefox_navigate_helper
+  navigate_json="$(cat "$artifact_dir/${NAME}-scroll-marionette-navigate.json")"
+  python3 -c '
+import json, sys
+payload=json.loads(sys.argv[1])
+assert payload["status"] == "success", payload
+assert "Tendril Scroll Waiting" in (payload.get("page", {}).get("title") or ""), payload.get("page")
+' "$navigate_json"
+
+  log "capturing scroll page before Tendril wheel input"
+  before_capture="$(run_tendril --json --window "$window_id" capture --max-width "$WIDTH" --max-height "$HEIGHT" -o "$artifact_dir/${NAME}-scroll-before.png")"
+  printf '%s\n' "$before_capture" >"$artifact_dir/${NAME}-scroll-before-capture.json"
+
+  log "scrolling the nested Firefox pane with Tendril wheel input"
+  scroll_run="$(run_tendril --json --window "$window_id" run 'scroll(220,420,8),wait(900ms)')"
+  printf '%s\n' "$scroll_run" >"$artifact_dir/${NAME}-scroll-run.json"
+  python3 -c '
+import json, sys
+payload=json.loads(sys.argv[1])
+assert payload["status"] == "success", payload
+assert payload["data"]["action_count"] >= 2, payload["data"]
+assert payload["data"]["focus_required"] is True, payload["data"]
+assert payload["data"]["focus_transferred"] is True, payload["data"]
+' "$scroll_run"
+
+  log "reading page-observed scroll state through Marionette"
+  python3 - "${TENDRIL_HEADLESS_MARIONETTE_PORT:-}" >"$artifact_dir/${NAME}-scroll-page-state.json" <<'PY'
+import json
+import socket
+import sys
+import time
+
+port = int(sys.argv[1])
+
+def recv(sock):
+    length_bytes = bytearray()
+    while True:
+        chunk = sock.recv(1)
+        if not chunk:
+            raise EOFError("Marionette closed while reading frame length")
+        if chunk == b":":
+            break
+        length_bytes.extend(chunk)
+    length = int(length_bytes.decode("ascii"))
+    body = bytearray()
+    while len(body) < length:
+        chunk = sock.recv(length - len(body))
+        if not chunk:
+            raise EOFError("Marionette closed while reading frame body")
+        body.extend(chunk)
+    return json.loads(body.decode("utf-8"))
+
+def send(sock, payload):
+    encoded = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    sock.sendall(str(len(encoded)).encode("ascii") + b":" + encoded)
+
+def command(sock, message_id, name, params):
+    send(sock, [0, message_id, name, params])
+    response = recv(sock)
+    if response[2] is not None:
+        raise RuntimeError(f"Marionette {name} failed: {response[2]!r}")
+    return response[3]
+
+sock = socket.create_connection(("127.0.0.1", port), timeout=5)
+sock.settimeout(20)
+try:
+    hello = recv(sock)
+    session = command(sock, 1, "WebDriver:NewSession", {})
+    time.sleep(0.25)
+    result = command(sock, 2, "WebDriver:ExecuteScript", {
+        "script": "const s = document.getElementById('scroller'); return { title: document.title, status: document.getElementById('status')?.textContent, details: document.getElementById('details')?.textContent, scrollTop: Math.round(s?.scrollTop || 0), dataset: Object.assign({}, document.body.dataset) };",
+        "args": [],
+        "newSandbox": True,
+        "sandbox": "default",
+        "line": 1,
+        "filename": "tendril-headless-firefox-scroll-state",
+    })
+    print(json.dumps({
+        "status": "success",
+        "helper": "tendril-headless firefox-scroll-state",
+        "transport": "firefox-marionette",
+        "marionette": {"port": port, "hello": hello, "sessionId": session.get("sessionId")},
+        "page": result.get("value", result),
+    }, indent=2, sort_keys=True))
+finally:
+    sock.close()
+PY
+  state_json="$(cat "$artifact_dir/${NAME}-scroll-page-state.json")"
+  python3 -c '
+import json, sys
+payload=json.loads(sys.argv[1])
+assert payload["status"] == "success", payload
+page = payload["page"]
+dataset = page.get("dataset") or {}
+scroll_top = int(page.get("scrollTop") or dataset.get("scrollTop") or 0)
+assert scroll_top > 0, page
+assert dataset.get("scrollObserved") == "true", page
+assert "Tendril Scroll Hit" in (page.get("title") or ""), page
+' "$state_json"
+
+  log "capturing scroll page after page-observed wheel input"
+  after_capture="$(run_tendril --json --window "$window_id" capture --max-width "$WIDTH" --max-height "$HEIGHT" -o "$artifact_dir/${NAME}-scroll-after.png")"
+  printf '%s\n' "$after_capture" >"$artifact_dir/${NAME}-scroll-after-capture.json"
+
+  cat >"$artifact_dir/${NAME}-scroll-manifest.txt" <<EOF_MANIFEST
+Tendril headless Firefox nested scroll smoke passed.
+name=$NAME
+display=$DISPLAY
+display_target=$display_id
+browser=${TENDRIL_HEADLESS_BROWSER:-}
+browser_window=$window_id
+marionette_port=${TENDRIL_HEADLESS_MARIONETTE_PORT:-}
+resolution=${WIDTH}x${HEIGHT}x${DEPTH}
+runtime_dir=$dir
+scroll_url=$scroll_url
+gesture=scroll(220,420,8),wait(900ms)
+assertion=Marionette page state reported scrollObserved=true and nested scrollTop > 0.
+artifacts=$artifact_dir
+EOF_MANIFEST
+  git_add_artifacts "$artifact_dir"
+
+  log "scroll smoke passed; artifacts are under $artifact_dir"
+  if [[ "$started_here" == "true" ]]; then
+    stop_env
+    trap - EXIT
+  fi
+}
+
 run_contextmenu_smoke() {
   ensure_name_safe
   if [[ -z "$BROWSER_BIN" ]]; then
@@ -2541,5 +2821,6 @@ case "$COMMAND" in
   selection-clipboard-smoke) run_selection_clipboard_smoke ;;
   canvas-drag-smoke) run_canvas_drag_smoke ;;
   contextmenu-smoke) run_contextmenu_smoke ;;
+  scroll-smoke) run_scroll_smoke ;;
   *) fail "unsupported command: $COMMAND" ;;
 esac

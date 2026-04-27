@@ -29,6 +29,8 @@ const KEY_RELEASE_EVENT: u8 = 3;
 const BUTTON_PRESS_EVENT: u8 = 4;
 const BUTTON_RELEASE_EVENT: u8 = 5;
 const MOTION_NOTIFY_EVENT: u8 = 6;
+const X11_WHEEL_UP_BUTTON: u8 = 4;
+const X11_WHEEL_DOWN_BUTTON: u8 = 5;
 const SOLID_BLACK_CHANNEL_THRESHOLD: u8 = 2;
 const DRAG_BUTTON_HOLD_DELAY_MS: u64 = 120;
 const DRAG_MOTION_STEP_PX: u64 = 16;
@@ -1199,7 +1201,54 @@ fn dispatch_action(
             Some(action_index),
             Some(label),
         ),
+        InputAction::Scroll { x, y, dy } => scroll_wheel(
+            connection,
+            request,
+            *x,
+            *y,
+            *dy,
+            Some(action_index),
+            Some(label),
+        ),
     }
+}
+
+fn scroll_wheel(
+    connection: &X11Connection,
+    request: &InputRequest,
+    x: i32,
+    y: i32,
+    dy: i32,
+    action_index: Option<usize>,
+    action: Option<&str>,
+) -> Result<(), TendrilError> {
+    let (absolute_x, absolute_y) = absolute_point(request, x, y);
+    move_pointer(connection, absolute_x, absolute_y, action_index, action)?;
+    flush_x11_input(connection, action_index, action, "scroll pointer move")?;
+    std::thread::sleep(reliability_delay());
+
+    let button = if dy > 0 {
+        X11_WHEEL_DOWN_BUTTON
+    } else {
+        X11_WHEEL_UP_BUTTON
+    };
+
+    for _ in 0..dy.unsigned_abs() {
+        fake_button_event(connection, BUTTON_PRESS_EVENT, button, action_index, action)?;
+        flush_x11_input(connection, action_index, action, "scroll button press")?;
+        std::thread::sleep(reliability_delay());
+        fake_button_event(
+            connection,
+            BUTTON_RELEASE_EVENT,
+            button,
+            action_index,
+            action,
+        )?;
+        flush_x11_input(connection, action_index, action, "scroll button release")?;
+        std::thread::sleep(reliability_delay());
+    }
+
+    Ok(())
 }
 
 fn click_button(
@@ -1586,6 +1635,7 @@ fn action_label(action: &InputAction) -> String {
         InputAction::Wait { duration_ms } => format!("wait({duration_ms}ms)"),
         InputAction::Click { button, x, y } => format!("{button:?}_click({x},{y})").to_lowercase(),
         InputAction::Drag { x0, y0, x1, y1 } => format!("drag({x0},{y0},{x1},{y1})"),
+        InputAction::Scroll { x, y, dy } => format!("scroll({x},{y},{dy})"),
     }
 }
 

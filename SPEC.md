@@ -102,7 +102,8 @@ The initial CLI surface will include:
   - `send("...")`,
   - `wait(<duration>)`,
   - `lclick(x,y)`, `rclick(x,y)`, `mclick(x,y)`,
-  - `drag(x0,y0,x1,y1)`.
+  - `drag(x0,y0,x1,y1)`,
+  - `scroll(x,y,dy)` with positive `dy` scrolling down and negative `dy` scrolling up under the pointer.
 - Coordinates are relative to the target’s top-left origin in source-space.
 - If the agent derived coordinates from a scaled capture, Tendril must expose the scale math needed to translate them correctly.
 - The runtime must inject small delays where required for reliability, or prefer native accessibility/input APIs when that is more robust.
@@ -211,7 +212,7 @@ Provide target-scoped command execution for text entry and explicit input sequen
 #### Required behavior
 - Support plain string typing for common agent use.
 - Support the DSL sequence form for precise control.
-- Support mouse clicks and drag actions with source-space coordinates.
+- Support mouse clicks, drag actions, and wheel scroll actions with source-space coordinates.
 - Insert or honor reliability delays as required.
 - Prefer accessibility/native automation APIs when appropriate.
 
@@ -306,7 +307,7 @@ The strategy will combine:
 
 3. **Coordinate mapping tests**
    - source-space to output-space transform correctness,
-   - resized capture remapping for click/drag actions,
+   - resized capture remapping for click/drag/scroll actions,
    - edge cases near bounds and on fractional scale factors.
 
 4. **MCP parity tests**
@@ -699,7 +700,7 @@ Scenario: An agent needs to search for a location on a map application, zoom in,
    ```bash
    tendril --json --window <map-id> run 'hold(ctrl),hold(shift),send("+++"),release(shift),release(ctrl),wait(1s)'
    ```
-   Or using scroll simulation if the platform supports it (future DSL extension).
+   Or using pointer-local wheel input with `scroll(<map_x>,<map_y>,<dy>)` when the platform adapter supports native scroll delivery.
 
 5. **Capture the zoomed-in view for detailed analysis.**
    ```bash

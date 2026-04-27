@@ -185,6 +185,27 @@ Firefox focus transfer and that the page state reports
 `contextMenuObserved=true`, `contextMenuButton=2`, and title
 `Tendril Context Menu Hit`.
 
+## Firefox nested scroll smoke test
+
+Use the focused scroll smoke when validating Linux/X11 wheel delivery into a
+pointer-local nested Firefox scroll region. It records page state through
+Marionette and fails if Tendril reports a successful `run` envelope without the
+nested scroll pane moving.
+
+```bash
+cargo build -p tendril
+scripts/tendril-headless.sh \
+  --name scroll-smoke \
+  --browser firefox \
+  --tendril-bin ./target/debug/tendril \
+  --artifact-dir "summaries/${CACOPHONY_AGENT:-manual}/scroll-smoke" \
+  scroll-smoke
+```
+
+The smoke asserts that `scroll(220,420,8),wait(900ms)` returns success with
+Firefox focus transfer and that the page state reports `scrollObserved=true`,
+`scrollTop > 0`, and title `Tendril Scroll Hit`.
+
 ## Manual lifecycle
 
 Start an environment and export its display into the current shell:

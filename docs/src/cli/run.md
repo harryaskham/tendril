@@ -7,6 +7,7 @@ Use `tendril run` to send text or explicit input sequences to a selected target.
 ```bash
 tendril --window <id> run 'send("hello")'
 tendril --window <id> run 'hold(ctrl),c,release(ctrl),wait(250ms),send("done")'
+tendril --window <id> run 'scroll(220,420,8),wait(250ms)'
 tendril --window <id> run --no-restore-focus 'send("leave focus here")'
 ```
 
@@ -68,8 +69,11 @@ The current model covers:
 - modifier hold and release,
 - `send("...")`,
 - timed waits,
-- left/right/middle clicks, and
-- drag gestures.
+- left/right/middle clicks,
+- drag gestures, and
+- wheel scrolls with `scroll(x,y,dy)`.
+
+`scroll(x,y,dy)` moves the pointer to source-space coordinates `x,y` and sends native wheel ticks under that pointer. Positive `dy` scrolls down, negative `dy` scrolls up, and `dy=0` is rejected as `invalid_run_input`. Linux/X11 delivery uses XTEST wheel buttons and currently accepts up to 120 ticks in one action to prevent accidental unbounded event loops.
 
 ## Focus restoration
 

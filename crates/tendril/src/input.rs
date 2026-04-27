@@ -4,8 +4,8 @@ use serde_json::json;
 
 use crate::error::TendrilError;
 use crate::model::{
-    Bounds, CoordinateTransform, InputAction, ModifierKey, MouseButton, RunInput, RunInputPayload,
-    RunOutput, TargetSelector,
+    Bounds, CoordinateTransform, InputAction, MAX_SCROLL_TICKS, ModifierKey, MouseButton, RunInput,
+    RunInputPayload, RunOutput, TargetSelector,
 };
 use crate::platform::{
     AdapterInfo, CaptureTargetKind, DesktopSession, InputRequest as PlatformInputRequest,
@@ -302,7 +302,9 @@ fn vulnerable_ctrl_l_navigation(actions: &[InputAction]) -> Option<(usize, &str)
         let mut pending_url_send = None;
         for (action_index, action) in significant_actions.iter().skip(start + 3).copied() {
             match action {
-                InputAction::Click { .. } | InputAction::Drag { .. } => break,
+                InputAction::Click { .. }
+                | InputAction::Drag { .. }
+                | InputAction::Scroll { .. } => break,
                 InputAction::Send { text } if looks_like_navigation_text(text) => {
                     pending_url_send = Some((action_index, text.as_str()));
                 }
@@ -438,6 +440,9 @@ fn validate_actions_for_target(
             InputAction::Drag { x0, y0, x1, y1 } => {
                 validate_relative_point(*x0, *y0, &target.bounds, action_index, "drag_start")?;
                 validate_relative_point(*x1, *y1, &target.bounds, action_index, "drag_end")?;
+            }
+            InputAction::Scroll { x, y, .. } => {
+                validate_relative_point(*x, *y, &target.bounds, action_index, "scroll")?;
             }
         }
     }
@@ -900,6 +905,22 @@ fn parse_action_segment(segment: &str, action_index: usize) -> Result<InputActio
                 y1: parse_i32(arguments[3], action_index, segment, "y1")?,
             })
         }
+        "scroll" => {
+            let arguments = split_arguments(inner, action_index, segment)?;
+            if arguments.len() != 3 {
+                return Err(dsl_error(
+                    "`scroll` expects exactly x, y, and dy arguments",
+                    Some(action_index),
+                    Some(segment),
+                    Some("parse"),
+                ));
+            }
+            Ok(InputAction::Scroll {
+                x: parse_i32(arguments[0], action_index, segment, "x")?,
+                y: parse_i32(arguments[1], action_index, segment, "y")?,
+                dy: parse_scroll_delta(arguments[2], action_index, segment)?,
+            })
+        }
         _ => Err(dsl_error(
             format!("unknown DSL action `{name}`"),
             Some(action_index),
@@ -1170,6 +1191,33 @@ fn parse_i32(
     })
 }
 
+fn parse_scroll_delta(
+    input: &str,
+    action_index: usize,
+    segment: &str,
+) -> Result<i32, TendrilError> {
+    let dy = parse_i32(input, action_index, segment, "dy")?;
+    if dy == 0 {
+        return Err(dsl_error(
+            "scroll dy must be non-zero",
+            Some(action_index),
+            Some(segment),
+            Some("validate"),
+        ));
+    }
+    if dy.unsigned_abs() > MAX_SCROLL_TICKS {
+        return Err(dsl_error(
+            format!(
+                "scroll dy must be between -{MAX_SCROLL_TICKS} and {MAX_SCROLL_TICKS} wheel ticks"
+            ),
+            Some(action_index),
+            Some(segment),
+            Some("validate"),
+        ));
+    }
+    Ok(dy)
+}
+
 fn dsl_error(
     message: impl Into<String>,
     action_index: Option<usize>,
@@ -1381,11 +1429,11 @@ mod tests {
     #[test]
     fn parser_accepts_initial_action_set() {
         let actions = parse_dsl_sequence(
-            r#"hold(ctrl),c,release(ctrl),wait(1.5s),send("abc"),lclick(10,20),rclick(30,40),mclick(50,60),drag(1,2,3,4)"#,
+            r#"hold(ctrl),c,release(ctrl),wait(1.5s),send("abc"),lclick(10,20),rclick(30,40),mclick(50,60),drag(1,2,3,4),scroll(100,200,7),scroll(100,200,-3)"#,
         )
         .expect("dsl should parse");
 
-        assert_eq!(actions.len(), 9);
+        assert_eq!(actions.len(), 11);
         assert_eq!(
             actions[0],
             InputAction::Hold {
@@ -1444,6 +1492,22 @@ mod tests {
                 y1: 4,
             }
         );
+        assert_eq!(
+            actions[9],
+            InputAction::Scroll {
+                x: 100,
+                y: 200,
+                dy: 7,
+            }
+        );
+        assert_eq!(
+            actions[10],
+            InputAction::Scroll {
+                x: 100,
+                y: 200,
+                dy: -3,
+            }
+        );
     }
 
     #[test]
@@ -1487,6 +1551,10 @@ mod tests {
             ("hold(ctrl", "parse", None),
             (r#"send("hi") trailing"#, "parse", Some("action")),
             ("drag(1,2,3)", "parse", Some("action")),
+            ("scroll(10,20)", "parse", Some("action")),
+            ("scroll(10,20,0)", "validate", Some("action")),
+            ("scroll(10,20,121)", "validate", Some("action")),
+            ("scroll(10,20,down)", "parse", Some("action")),
             ("wait(0)", "validate", Some("action")),
             (r#"send("")"#, "validate", Some("action")),
             (r#"send("bad\q")"#, "parse", Some("action")),

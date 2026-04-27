@@ -85,7 +85,7 @@ Those names are semver-relevant.
 | --- | --- | --- | --- |
 | `list` | none | none | Discovers windows and displays. |
 | `capture` | exactly one of `window` or `display` | `max_width`, `max_height`, `format`, `compression`, `timeout_ms` | Uses the same typed request model as CLI capture. |
-| `run` | exactly one of `window` or `display`, plus `input_definition` | `restore_focus`, `no_restore_focus`, `no_lock`, `lock_timeout_ms`, `lock_stale_ms`, `lock_path` | `input_definition` is the same text/DSL field accepted by CLI `run`; focus-restoration and lock options mirror CLI `run` and default to restoring previous focus through the host-local execution queue. |
+| `run` | exactly one of `window` or `display`, plus `input_definition` | `restore_focus`, `no_restore_focus`, `no_lock`, `lock_timeout_ms`, `lock_stale_ms`, `lock_path` | `input_definition` is the same text/DSL field accepted by CLI `run`, including pointer-local wheel actions such as `scroll(x,y,dy)`; focus-restoration and lock options mirror CLI `run` and default to restoring previous focus through the host-local execution queue. |
 | `listen` | none | `source`, `duration_ms`, `format`, `output` | Captures audio on supported backends or returns probe-only capability metadata. |
 
 Representative `tools/call` payloads:
@@ -94,6 +94,7 @@ Representative `tools/call` payloads:
 {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list","arguments":{}}}
 {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"capture","arguments":{"window":"window-1","max_width":1440}}}
 {"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"run","arguments":{"window":"window-1","input_definition":"send(\"hello\")","lock_timeout_ms":5000}}}
+{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"run","arguments":{"window":"window-1","input_definition":"scroll(220,420,8),wait(250ms)"}}}
 ```
 
 ## Schema and semver expectations

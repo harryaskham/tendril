@@ -2139,6 +2139,13 @@ fn dispatch_macos_action(
                 macos_mouse_jxa_script(MouseButton::Left, start_x, start_y, Some((end_x, end_y)));
             run_macos_osascript_jxa_for_input(&script, "dispatch", Some(action_index), Some(label))
         }
+        InputAction::Scroll { .. } => Err(input_execution_error(
+            "unsupported_scroll_action",
+            "scroll(...) is currently implemented for Linux/X11 input delivery; this adapter does not yet support native wheel injection".to_owned(),
+            "dispatch",
+            Some(action_index),
+            Some(label),
+        )),
     }
 }
 
@@ -2407,6 +2414,13 @@ fn dispatch_windows_action_with_runtime(
                 Some(label),
             )
         }
+        InputAction::Scroll { .. } => Err(input_execution_error(
+            "unsupported_scroll_action",
+            "scroll(...) is currently implemented for Linux/X11 input delivery; this adapter does not yet support native wheel injection".to_owned(),
+            "dispatch",
+            Some(action_index),
+            Some(label),
+        )),
     }
 }
 

@@ -264,6 +264,13 @@ fn dispatch_action(
                 Some(label),
             )
         }
+        InputAction::Scroll { .. } => Err(input_execution_error(
+            "unsupported_scroll_action",
+            "scroll(...) is currently implemented for Linux/X11 input delivery; this Wayland adapter does not yet support native wheel injection".to_owned(),
+            "dispatch",
+            Some(action_index),
+            Some(label),
+        )),
     }
 }
 
@@ -532,10 +539,12 @@ fn looks_like_ydotool_socket_error(stderr: &str, stdout: &str) -> bool {
 }
 
 fn request_has_pointer(request: &InputRequest) -> bool {
-    request
-        .actions
-        .iter()
-        .any(|action| matches!(action, InputAction::Click { .. } | InputAction::Drag { .. }))
+    request.actions.iter().any(|action| {
+        matches!(
+            action,
+            InputAction::Click { .. } | InputAction::Drag { .. } | InputAction::Scroll { .. }
+        )
+    })
 }
 
 fn action_is_keyboard(action: &InputAction) -> bool {
