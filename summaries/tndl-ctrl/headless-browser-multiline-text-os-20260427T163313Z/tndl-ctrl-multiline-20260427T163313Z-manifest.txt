@@ -1,0 +1,12 @@
+Tendril headless Firefox multiline non-ASCII text entry + OS workflow validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-multiline-20260427T163313Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-multiline-text-os-20260427T163313Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a local page, type a multiline proof containing newline, tab, emoji, accented and symbolic characters with Tendril send(...), submit and verify browser title, then drive XTerm to create an OS proof file.
+browser_proof=Tendril Multiline Text Submitted
+text_proof=Line one / Line two tabbed / Emoji 😀 Café π — ✓
+os_proof=multiline-browser-os-verified

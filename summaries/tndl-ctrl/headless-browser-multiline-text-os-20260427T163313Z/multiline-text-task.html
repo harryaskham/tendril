@@ -1,0 +1,8 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Tendril Multiline Text Waiting</title>
+<style>body{font-family:sans-serif;margin:48px;font-size:24px}textarea{font-size:26px;width:1250px;height:230px;padding:12px;white-space:pre-wrap}button{font-size:28px;padding:16px 28px;margin-top:18px}#status{margin-top:24px;border:3px solid #333;padding:16px;min-height:40px;white-space:pre-wrap}</style></head><body>
+<h1>Tendril multiline browser text task</h1>
+<p>Type the exact multiline proof text, including newline, tab, emoji, accent, and symbols.</p>
+<textarea id="proof" autofocus></textarea><br>
+<button id="submit" onclick="const expected='Line one\nLine two\tTabbed\nEmoji 😀 Café π — ✓'; const got=document.getElementById('proof').value; document.body.dataset.got=got; if(got===expected){document.title='Tendril Multiline Text Submitted'; document.getElementById('status').textContent='multiline-browser-ok';}else{document.title='Tendril Multiline Text Mismatch'; document.getElementById('status').textContent='multiline mismatch got='+JSON.stringify(got);}">Submit multiline proof</button>
+<div id="status">waiting</div>
+</body></html>
