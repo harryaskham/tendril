@@ -38,9 +38,11 @@ Use explicit DSL syntax for automation text, such as `send("hi")` or `send("hi")
 
 ### Unicode text on Linux/X11
 
-Linux/X11 key synthesis is limited by the active keyboard map: XTEST can only press keycodes that the X server maps to the requested character. ASCII text continues to use direct key events. When `send("...")` encounters text such as `Café π — emoji ✓ quoted text` that is not present in the keyboard map, Tendril falls back to a transient X11 `CLIPBOARD` owner and dispatches Ctrl+V into the focused control.
+Linux/X11 key synthesis is limited by the active keyboard map: XTEST can only press keycodes that the X server maps to the requested character. ASCII text continues to use direct key events. When `send("...")` encounters text such as `Café π — emoji ✓ quoted text` that is not present in the keyboard map, Tendril falls back to a transient X11 selection owner and asks the focused application to paste the UTF-8 text.
 
-The fallback is intentionally short-lived and visible in JSON `notes`: Tendril replaces the current `CLIPBOARD` owner only for the paste serve window, serves the UTF-8 text to the requesting application, and releases ownership before `run` returns. If no application requests the clipboard data, `run` fails with `clipboard_paste_unserved` instead of silently claiming success. Release explicit held modifiers before a Unicode `send(...)`; the fallback does not run while a DSL `hold(...)` modifier is still active.
+For ordinary editable controls, Tendril temporarily owns `CLIPBOARD` and dispatches Ctrl+V. For XTerm-like terminal targets, Ctrl+V is not a paste shortcut, so Tendril tries terminal-compatible paste semantics first: `PRIMARY` + Shift+Insert, then `CLIPBOARD` + Shift+Insert, then `CLIPBOARD` + Ctrl+Shift+V before falling back to Ctrl+V. This lets agents send Unicode shell commands such as `printf '%s\n' 'Terminal 😀 Café π — ✓'` into X11 terminals.
+
+The fallback is intentionally short-lived and visible in JSON `notes`: Tendril owns the selected X11 selection only for the paste serve window, serves the UTF-8 text to the requesting application, and releases ownership before `run` returns. If no application requests the selection data, `run` fails with `clipboard_paste_unserved` instead of silently claiming success. Release explicit held modifiers before a Unicode `send(...)`; the fallback does not run while a DSL `hold(...)` modifier is still active.
 
 ### Browser navigation guard on Linux/X11
 

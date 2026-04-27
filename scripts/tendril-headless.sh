@@ -50,6 +50,8 @@ Commands:
              Prove Firefox↔OS text transfer through Tendril's explicit X11 clipboard helper.
   unicode-send-smoke
              Prove send(...) enters non-ASCII Unicode text into a Firefox field on X11.
+  xterm-unicode-command-smoke
+             Prove send(...) enters and executes a Unicode shell command in XTerm on X11.
   selection-clipboard-smoke
              Prove a Firefox textarea drag-selection plus Ctrl+C creates an OS-readable X11 clipboard owner.
   page-text-clipboard-smoke
@@ -104,6 +106,9 @@ Firefox/X11 clipboard smoke:
 
 Firefox/X11 Unicode send smoke:
   scripts/tendril-headless.sh --browser firefox --tendril-bin ./target/debug/tendril unicode-send-smoke
+
+XTerm/X11 Unicode shell-command smoke:
+  scripts/tendril-headless.sh --browser firefox --tendril-bin ./target/debug/tendril xterm-unicode-command-smoke
 
 Firefox/X11 drag-selection clipboard smoke:
   scripts/tendril-headless.sh --browser firefox --tendril-bin ./target/debug/tendril selection-clipboard-smoke
@@ -187,13 +192,13 @@ abspath() {
 }
 
 dsl_escape() {
-  python3 -c 'import json, sys; print(json.dumps(sys.argv[1])[1:-1])' "$1"
+  python3 -c 'import json, sys; print(json.dumps(sys.argv[1], ensure_ascii=False)[1:-1])' "$1"
 }
 
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      start|env|inspect|reset|stop|smoke|firefox-upload|file-upload-smoke|clipboard-smoke|unicode-send-smoke|selection-clipboard-smoke|page-text-clipboard-smoke|canvas-drag-smoke|contextmenu-smoke|doubleclick-smoke|hover-smoke|scroll-smoke)
+      start|env|inspect|reset|stop|smoke|firefox-upload|file-upload-smoke|clipboard-smoke|unicode-send-smoke|xterm-unicode-command-smoke|selection-clipboard-smoke|page-text-clipboard-smoke|canvas-drag-smoke|contextmenu-smoke|doubleclick-smoke|hover-smoke|scroll-smoke)
         if [[ -n "$COMMAND" ]]; then
           fail "only one command may be provided"
         fi
@@ -2194,6 +2199,139 @@ EOF_MANIFEST
   fi
 }
 
+run_xterm_unicode_command_smoke() {
+  ensure_name_safe
+  local tendril_program
+  tendril_program="${TENDRIL_BIN%% *}"
+  [[ -x "$tendril_program" || "$(command -v "$tendril_program" 2>/dev/null || true)" ]] || fail "Tendril binary not found: $TENDRIL_BIN; pass --tendril-bin ./target/debug/tendril or --tendril-bin 'nix run .#tendril --'"
+
+  local artifact_dir
+  artifact_dir="$(resolve_artifact_dir)"
+  ensure_artifact_dir_safe "$artifact_dir"
+  mkdir -p "$artifact_dir"
+
+  local expected_text proof_file shell_command escaped_command dsl
+  expected_text="Terminal 😀 Café π — ✓"
+  proof_file="$artifact_dir/${NAME}-xterm-unicode-proof.txt"
+  shell_command="$(python3 - "$expected_text" "$proof_file" <<'PY'
+import shlex
+import sys
+text, proof_file = sys.argv[1], sys.argv[2]
+print("printf '%s\\n' " + shlex.quote(text) + " > " + shlex.quote(proof_file))
+PY
+)"
+  escaped_command="$(dsl_escape "$shell_command")"
+  dsl="send(\"$escaped_command\"),Return,wait(900ms)"
+  printf '%s\n' "$dsl" >"$artifact_dir/${NAME}-xterm-unicode-command.dsl"
+
+  local started_here="false"
+  if ! state_alive; then
+    start_env >/dev/null
+    started_here="true"
+  else
+    log "using existing environment '$NAME' on DISPLAY=${DISPLAY}"
+  fi
+  trap 'if [[ "${started_here:-false}" == "true" ]]; then stop_env; fi' EXIT
+
+  local dir list_json display_id xterm_window_id before_capture run_json after_capture
+  dir="${TENDRIL_HEADLESS_RUNTIME_DIR:-$(runtime_dir)}"
+
+  log "waiting for Tendril to see a ${WIDTH}x${HEIGHT} display and XTerm window"
+  if ! list_json="$(wait_for_targets)"; then
+    diagnose_browser_log "$dir/logs/browser.log"
+    preserve_runtime_logs "$dir" "$artifact_dir"
+    fail "Tendril did not discover expected headless targets"
+  fi
+  printf '%s\n' "$list_json" >"$artifact_dir/${NAME}-xterm-unicode-list-initial.json"
+
+  display_id="$(python3 -c '
+import json, sys
+width=int(sys.argv[1]); height=int(sys.argv[2]); payload=json.load(sys.stdin)
+for target in payload["data"]["targets"]:
+    bounds=target.get("bounds", {})
+    if target.get("kind") == "display" and bounds.get("width") == width and bounds.get("height") == height:
+        print(target["id"]); break
+else:
+    raise SystemExit(1)
+' "$WIDTH" "$HEIGHT" <<<"$list_json")"
+
+  xterm_window_id="$(python3 -c '
+import json, sys
+terminal_pid=sys.argv[1]
+payload=json.load(sys.stdin)
+for target in payload["data"].get("targets", []):
+    if target.get("kind") != "window":
+        continue
+    if terminal_pid and str(target.get("process_id") or "") == terminal_pid:
+        print(target["id"]); break
+    haystack=" ".join(str(target.get(k) or "") for k in ("name", "title", "app_name")).lower()
+    if any(token in haystack for token in ("xterm", "uxterm", "tendril headless shell")):
+        print(target["id"]); break
+else:
+    raise SystemExit("no XTerm window target discovered")
+' "${TENDRIL_HEADLESS_TERMINAL_PID:-}" <<<"$list_json")"
+
+  log "capturing XTerm before Unicode command input"
+  before_capture="$(run_tendril --json --window "$xterm_window_id" capture --max-width "$WIDTH" --max-height "$HEIGHT" -o "$artifact_dir/${NAME}-xterm-unicode-before.png")"
+  printf '%s\n' "$before_capture" >"$artifact_dir/${NAME}-xterm-unicode-before-capture.json"
+
+  log "typing and executing Unicode shell command in XTerm $xterm_window_id"
+  run_json="$(run_tendril --json --window "$xterm_window_id" run "$dsl")"
+  printf '%s\n' "$run_json" >"$artifact_dir/${NAME}-xterm-unicode-command-run.json"
+  python3 -c '
+import json, sys
+payload=json.loads(sys.argv[1])
+assert payload["status"] == "success", payload
+assert payload["data"].get("action_count") == 3, payload["data"]
+notes="\n".join(payload["data"].get("notes") or [])
+assert "terminal-compatible selection paste fallback" in notes, notes
+assert "Shift+Insert" in notes, notes
+' "$run_json"
+
+  log "verifying XTerm Unicode proof file"
+  python3 - "$expected_text" "$proof_file" >"$artifact_dir/${NAME}-xterm-unicode-proof-verify.json" <<'PY'
+import json
+from pathlib import Path
+import sys
+expected, proof_file = sys.argv[1], Path(sys.argv[2])
+actual = proof_file.read_text(encoding="utf-8")
+result = {
+    "expected": expected,
+    "proof_file": str(proof_file),
+    "actual": actual,
+    "ok": actual == expected + "\n",
+}
+print(json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False))
+if not result["ok"]:
+    raise SystemExit(1)
+PY
+
+  log "capturing XTerm and display after Unicode command input"
+  after_capture="$(run_tendril --json --window "$xterm_window_id" capture --max-width "$WIDTH" --max-height "$HEIGHT" -o "$artifact_dir/${NAME}-xterm-unicode-after.png")"
+  printf '%s\n' "$after_capture" >"$artifact_dir/${NAME}-xterm-unicode-after-capture.json"
+  run_tendril --json --display "$display_id" capture --max-width "$WIDTH" --max-height "$HEIGHT" -o "$artifact_dir/${NAME}-xterm-unicode-after-display.png" >"$artifact_dir/${NAME}-xterm-unicode-after-display-capture.json"
+
+  cat >"$artifact_dir/${NAME}-xterm-unicode-manifest.txt" <<EOF_MANIFEST
+Tendril headless XTerm Unicode shell command smoke passed.
+name=$NAME
+display=$DISPLAY
+xterm_window=$xterm_window_id
+resolution=${WIDTH}x${HEIGHT}x${DEPTH}
+runtime_dir=$dir
+expected_text=$expected_text
+proof_file=$proof_file
+workflow=Tendril send(...) typed a shell command containing emoji, accented text, Greek pi, em dash, and checkmark into XTerm, pressed Return, and verified the generated file contained the exact UTF-8 text.
+artifacts=$artifact_dir
+EOF_MANIFEST
+  git_add_artifacts "$artifact_dir"
+
+  log "XTerm Unicode command smoke passed; artifacts are under $artifact_dir"
+  if [[ "$started_here" == "true" ]]; then
+    stop_env
+    trap - EXIT
+  fi
+}
+
 run_selection_clipboard_smoke() {
   ensure_name_safe
   if [[ -z "$BROWSER_BIN" ]]; then
@@ -3999,6 +4137,7 @@ case "$COMMAND" in
   file-upload-smoke) run_file_upload_smoke ;;
   clipboard-smoke) run_clipboard_smoke ;;
   unicode-send-smoke) run_unicode_send_smoke ;;
+  xterm-unicode-command-smoke) run_xterm_unicode_command_smoke ;;
   selection-clipboard-smoke) run_selection_clipboard_smoke ;;
   page-text-clipboard-smoke) run_page_text_clipboard_smoke ;;
   canvas-drag-smoke) run_canvas_drag_smoke ;;

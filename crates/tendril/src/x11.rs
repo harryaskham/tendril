@@ -118,6 +118,7 @@ pub(crate) fn execute_input(
         let dispatch_notes = type_text(
             &connection,
             &keyboard_map,
+            request,
             text,
             &held_modifiers,
             Some(0),
@@ -1183,6 +1184,7 @@ fn dispatch_action(
             let dispatch_notes = type_text(
                 connection,
                 keyboard_map,
+                request,
                 text,
                 held_modifiers,
                 Some(action_index),
@@ -1524,6 +1526,7 @@ fn fake_key_event(
 fn type_text(
     connection: &X11Connection,
     keyboard_map: &KeyboardMap,
+    request: &InputRequest,
     text: &str,
     held_modifiers: &HashSet<ModifierKey>,
     action_index: Option<usize>,
@@ -1544,9 +1547,10 @@ fn type_text(
                 serde_json::json!("Release held modifiers before send(...) when entering non-ASCII text on X11, or paste with an explicit clipboard workflow."),
             ));
         }
-        return paste_text_via_x11_clipboard(
+        return paste_text_via_x11_selection(
             connection,
             keyboard_map,
+            request,
             text,
             character,
             action_index,
@@ -1580,132 +1584,438 @@ fn first_unmapped_text_character(keyboard_map: &KeyboardMap, text: &str) -> Opti
         .find(|character| keyboard_map.stroke_for_char(*character).is_none())
 }
 
-fn paste_text_via_x11_clipboard(
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct X11UnicodePasteAttempt {
+    selection: ClipboardSelection,
+    shortcut: X11PasteShortcut,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum X11PasteShortcut {
+    CtrlV,
+    ShiftInsert,
+    CtrlShiftV,
+}
+
+impl X11PasteShortcut {
+    fn label(self) -> &'static str {
+        match self {
+            Self::CtrlV => "Ctrl+V",
+            Self::ShiftInsert => "Shift+Insert",
+            Self::CtrlShiftV => "Ctrl+Shift+V",
+        }
+    }
+}
+
+fn paste_text_via_x11_selection(
     connection: &X11Connection,
     keyboard_map: &KeyboardMap,
+    request: &InputRequest,
     text: &str,
     unmapped_character: char,
     action_index: Option<usize>,
     action: Option<&str>,
 ) -> Result<Vec<String>, TendrilError> {
+    let attempts = x11_unicode_paste_attempts(request);
+    let mut failed_attempts = Vec::new();
+    let mut last_error = None;
+
+    for attempt in attempts {
+        match try_x11_unicode_paste_attempt(
+            connection,
+            keyboard_map,
+            text,
+            attempt,
+            action_index,
+            action,
+        ) {
+            Ok(Some((served_requests, mut notes))) => {
+                let fallback = if is_terminal_paste_attempt(attempt) {
+                    "terminal-compatible selection paste fallback"
+                } else {
+                    "transient CLIPBOARD paste fallback"
+                };
+                notes.insert(
+                    0,
+                    format!(
+                        "X11 send(...) used a {fallback} because character `{unmapped_character}` is not present in the active keyboard map; Tendril temporarily owned the {} selection and dispatched {}.",
+                        clipboard_selection_name(attempt.selection).to_uppercase(),
+                        attempt.shortcut.label()
+                    ),
+                );
+                notes.push(format!(
+                    "X11 Unicode paste fallback served {served_requests} selection request(s) for {} bytes of UTF-8 text via {} + {}.",
+                    text.len(),
+                    clipboard_selection_name(attempt.selection),
+                    attempt.shortcut.label()
+                ));
+                return Ok(notes);
+            }
+            Ok(None) => failed_attempts.push(serde_json::json!({
+                "selection": clipboard_selection_name(attempt.selection),
+                "shortcut": attempt.shortcut.label(),
+                "served_requests": 0,
+            })),
+            Err(error) => {
+                failed_attempts.push(serde_json::json!({
+                    "selection": clipboard_selection_name(attempt.selection),
+                    "shortcut": attempt.shortcut.label(),
+                    "error": error.to_string(),
+                }));
+                last_error = Some(error);
+            }
+        }
+    }
+
+    let terminal_target = is_x11_terminal_target(request);
+    let mut error = input_execution_error(
+        "clipboard_paste_unserved",
+        if terminal_target {
+            "X11 Unicode paste fallback tried terminal-compatible paste shortcuts, but no application requested Tendril's selection text"
+        } else {
+            "X11 clipboard paste fallback dispatched Ctrl+V but no application requested Tendril's clipboard text"
+        },
+        action_index,
+        action,
+    )
+    .with_detail_entry(
+        "fallback",
+        serde_json::json!(if terminal_target {
+            "x11_terminal_selection_paste"
+        } else {
+            "x11_clipboard_paste"
+        }),
+    )
+    .with_detail_entry("text_len", serde_json::json!(text.len()))
+    .with_detail_entry("attempts", serde_json::json!(failed_attempts))
+    .with_detail_entry(
+        "suggested_action",
+        serde_json::json!(if terminal_target {
+            "Capture the terminal to verify focus is at a shell prompt, then retry send(...). Tendril should use PRIMARY+Shift+Insert for XTerm-like targets and CLIPBOARD terminal paste chords for other X11 terminals."
+        } else {
+            "Capture the target to verify focus is in an editable control, then retry send(...) or use tendril clipboard set plus an explicit paste shortcut."
+        }),
+    );
+    if let Some(last_error) = last_error {
+        error = error.with_detail_entry("last_error", serde_json::json!(last_error.to_string()));
+    }
+    Err(error)
+}
+
+fn try_x11_unicode_paste_attempt(
+    connection: &X11Connection,
+    keyboard_map: &KeyboardMap,
+    text: &str,
+    attempt: X11UnicodePasteAttempt,
+    action_index: Option<usize>,
+    action: Option<&str>,
+) -> Result<Option<(usize, Vec<String>)>, TendrilError> {
     let owner = serve_x11_clipboard_in_background(
-        ClipboardSelection::Clipboard,
+        attempt.selection,
         text,
         std::time::Duration::from_millis(X11_UNICODE_PASTE_SERVE_MS),
     )
     .map_err(|error| {
         error
-            .with_detail_entry("fallback", serde_json::json!("x11_clipboard_paste"))
+            .with_detail_entry("fallback", serde_json::json!("x11_unicode_paste"))
+            .with_detail_entry(
+                "selection",
+                serde_json::json!(clipboard_selection_name(attempt.selection)),
+            )
+            .with_detail_entry("shortcut", serde_json::json!(attempt.shortcut.label()))
             .with_detail_entry("action", serde_json::json!(action))
     })?;
 
-    let paste_result =
-        send_x11_clipboard_paste_shortcut(connection, keyboard_map, action_index, action);
+    let paste_result = send_x11_paste_shortcut(
+        connection,
+        keyboard_map,
+        attempt.shortcut,
+        action_index,
+        action,
+    );
     let serve_result = owner.join();
     if let Err(error) = paste_result {
         let _ = serve_result;
-        return Err(error);
+        return Err(error
+            .with_detail_entry(
+                "selection",
+                serde_json::json!(clipboard_selection_name(attempt.selection)),
+            )
+            .with_detail_entry("shortcut", serde_json::json!(attempt.shortcut.label())));
     }
-    let (served_requests, mut notes) = serve_result.map_err(|error| {
+    let (served_requests, notes) = serve_result.map_err(|error| {
         error
-            .with_detail_entry("fallback", serde_json::json!("x11_clipboard_paste"))
+            .with_detail_entry("fallback", serde_json::json!("x11_unicode_paste"))
+            .with_detail_entry(
+                "selection",
+                serde_json::json!(clipboard_selection_name(attempt.selection)),
+            )
+            .with_detail_entry("shortcut", serde_json::json!(attempt.shortcut.label()))
             .with_detail_entry("action", serde_json::json!(action))
     })?;
 
     if served_requests == 0 {
-        return Err(input_execution_error(
-            "clipboard_paste_unserved",
-            "X11 clipboard paste fallback dispatched Ctrl+V but no application requested Tendril's clipboard text",
-            action_index,
-            action,
-        )
-        .with_detail_entry("fallback", serde_json::json!("x11_clipboard_paste"))
-        .with_detail_entry("selection", serde_json::json!("clipboard"))
-        .with_detail_entry("text_len", serde_json::json!(text.len()))
-        .with_detail_entry(
-            "suggested_action",
-            serde_json::json!("Capture the target to verify focus is in an editable control, then retry send(...) or use tendril clipboard set plus an explicit paste shortcut."),
-        ));
+        Ok(None)
+    } else {
+        Ok(Some((served_requests, notes)))
     }
-
-    notes.insert(
-        0,
-        format!(
-            "X11 send(...) used a transient CLIPBOARD paste fallback because character `{unmapped_character}` is not present in the active keyboard map; the previous CLIPBOARD owner is replaced during the {X11_UNICODE_PASTE_SERVE_MS}ms serve window and Tendril releases ownership before returning."
-        ),
-    );
-    notes.push(format!(
-        "X11 clipboard paste fallback served {served_requests} selection request(s) for {} bytes of UTF-8 text.",
-        text.len()
-    ));
-    Ok(notes)
 }
 
-fn send_x11_clipboard_paste_shortcut(
+fn x11_unicode_paste_attempts(request: &InputRequest) -> Vec<X11UnicodePasteAttempt> {
+    if is_x11_terminal_target(request) {
+        return vec![
+            X11UnicodePasteAttempt {
+                selection: ClipboardSelection::Primary,
+                shortcut: X11PasteShortcut::ShiftInsert,
+            },
+            X11UnicodePasteAttempt {
+                selection: ClipboardSelection::Clipboard,
+                shortcut: X11PasteShortcut::ShiftInsert,
+            },
+            X11UnicodePasteAttempt {
+                selection: ClipboardSelection::Clipboard,
+                shortcut: X11PasteShortcut::CtrlShiftV,
+            },
+            X11UnicodePasteAttempt {
+                selection: ClipboardSelection::Clipboard,
+                shortcut: X11PasteShortcut::CtrlV,
+            },
+        ];
+    }
+
+    vec![X11UnicodePasteAttempt {
+        selection: ClipboardSelection::Clipboard,
+        shortcut: X11PasteShortcut::CtrlV,
+    }]
+}
+
+fn is_terminal_paste_attempt(attempt: X11UnicodePasteAttempt) -> bool {
+    matches!(
+        attempt.shortcut,
+        X11PasteShortcut::ShiftInsert | X11PasteShortcut::CtrlShiftV
+    )
+}
+
+fn is_x11_terminal_target(request: &InputRequest) -> bool {
+    let mut haystack = request.target_name.to_ascii_lowercase();
+    if let Some(app_name) = &request.app_name {
+        haystack.push(' ');
+        haystack.push_str(&app_name.to_ascii_lowercase());
+    }
+
+    [
+        "xterm",
+        "uxterm",
+        "terminal",
+        "gnome-terminal",
+        "konsole",
+        "xfce4-terminal",
+        "mate-terminal",
+        "lxterminal",
+        "alacritty",
+        "kitty",
+        "wezterm",
+        "foot",
+        "rxvt",
+        "urxvt",
+    ]
+    .iter()
+    .any(|token| haystack.contains(token))
+}
+
+fn clipboard_selection_name(selection: ClipboardSelection) -> &'static str {
+    match selection {
+        ClipboardSelection::Clipboard => "clipboard",
+        ClipboardSelection::Primary => "primary",
+    }
+}
+
+fn send_x11_paste_shortcut(
     connection: &X11Connection,
     keyboard_map: &KeyboardMap,
+    shortcut: X11PasteShortcut,
     action_index: Option<usize>,
     action: Option<&str>,
 ) -> Result<(), TendrilError> {
-    let ctrl = keyboard_map
-        .modifier_stroke(ModifierKey::Ctrl)
-        .ok_or_else(|| {
-            input_execution_error(
-                "modifier_not_mapped",
-                "ctrl is not available in the active X11 keyboard map for clipboard paste fallback",
-                action_index,
-                action,
-            )
-        })?;
-    let v = keyboard_map.stroke_for_char('v').ok_or_else(|| {
+    match shortcut {
+        X11PasteShortcut::CtrlV => send_x11_modified_key_chord(
+            connection,
+            keyboard_map,
+            &[ModifierKey::Ctrl],
+            'v',
+            "clipboard paste Ctrl+V key events",
+            action_index,
+            action,
+        ),
+        X11PasteShortcut::ShiftInsert => send_x11_modified_keysym_chord(
+            connection,
+            keyboard_map,
+            &[ModifierKey::Shift],
+            XK_INSERT,
+            "terminal paste Shift+Insert key events",
+            action_index,
+            action,
+        ),
+        X11PasteShortcut::CtrlShiftV => send_x11_modified_key_chord(
+            connection,
+            keyboard_map,
+            &[ModifierKey::Ctrl, ModifierKey::Shift],
+            'v',
+            "terminal paste Ctrl+Shift+V key events",
+            action_index,
+            action,
+        ),
+    }
+}
+
+fn send_x11_modified_key_chord(
+    connection: &X11Connection,
+    keyboard_map: &KeyboardMap,
+    modifiers: &[ModifierKey],
+    key: char,
+    event_kind: &str,
+    action_index: Option<usize>,
+    action: Option<&str>,
+) -> Result<(), TendrilError> {
+    let stroke = keyboard_map.stroke_for_char(key).ok_or_else(|| {
         input_execution_error(
             "paste_key_not_mapped",
-            "key `v` is not available in the active X11 keyboard map for clipboard paste fallback",
+            format!(
+                "key `{key}` is not available in the active X11 keyboard map for paste fallback"
+            ),
             action_index,
             action,
         )
     })?;
-    if v.shift {
+    send_x11_modified_keysym_stroke(
+        connection,
+        keyboard_map,
+        modifiers,
+        stroke,
+        &key.to_string(),
+        action_index,
+        action,
+    )?;
+    flush_x11_input(connection, action_index, action, event_kind)
+}
+
+fn send_x11_modified_keysym_chord(
+    connection: &X11Connection,
+    keyboard_map: &KeyboardMap,
+    modifiers: &[ModifierKey],
+    keysym: u32,
+    event_kind: &str,
+    action_index: Option<usize>,
+    action: Option<&str>,
+) -> Result<(), TendrilError> {
+    let stroke = keyboard_map.stroke_for_keysym(keysym).ok_or_else(|| {
+        input_execution_error(
+            "paste_key_not_mapped",
+            "Insert is not available in the active X11 keyboard map for terminal paste fallback",
+            action_index,
+            action,
+        )
+    })?;
+    send_x11_modified_keysym_stroke(
+        connection,
+        keyboard_map,
+        modifiers,
+        stroke,
+        "Insert",
+        action_index,
+        action,
+    )?;
+    flush_x11_input(connection, action_index, action, event_kind)
+}
+
+fn send_x11_modified_keysym_stroke(
+    connection: &X11Connection,
+    keyboard_map: &KeyboardMap,
+    modifiers: &[ModifierKey],
+    stroke: KeyStroke,
+    key_label: &str,
+    action_index: Option<usize>,
+    action: Option<&str>,
+) -> Result<(), TendrilError> {
+    if stroke.shift {
         return Err(input_execution_error(
             "paste_key_not_mapped",
-            "key `v` requires shift in the active X11 keyboard map; clipboard paste fallback requires an unshifted Ctrl+V chord",
+            format!(
+                "key `{key_label}` requires shift in the active X11 keyboard map; paste fallback chords need an unshifted physical key"
+            ),
             action_index,
             action,
         ));
     }
 
-    fake_key_event(
-        connection,
-        KEY_PRESS_EVENT,
-        ctrl.keycode,
-        action_index,
-        action,
-    )?;
-    let paste_result = (|| {
-        fake_key_event(connection, KEY_PRESS_EVENT, v.keycode, action_index, action)?;
+    let mut pressed_modifiers = Vec::new();
+    for modifier in modifiers {
+        let modifier_stroke = keyboard_map.modifier_stroke(*modifier).ok_or_else(|| {
+            input_execution_error(
+                "modifier_not_mapped",
+                format!("modifier `{modifier:?}` is not available in the active X11 keyboard map for paste fallback"),
+                action_index,
+                action,
+            )
+        })?;
+        if let Err(error) = fake_key_event(
+            connection,
+            KEY_PRESS_EVENT,
+            modifier_stroke.keycode,
+            action_index,
+            action,
+        ) {
+            let _ = release_pressed_modifiers(connection, &pressed_modifiers, action_index, action);
+            return Err(error);
+        }
+        pressed_modifiers.push(modifier_stroke.keycode);
+    }
+
+    let key_result = (|| {
+        fake_key_event(
+            connection,
+            KEY_PRESS_EVENT,
+            stroke.keycode,
+            action_index,
+            action,
+        )?;
         fake_key_event(
             connection,
             KEY_RELEASE_EVENT,
-            v.keycode,
+            stroke.keycode,
             action_index,
             action,
         )
     })();
-    let release_result = fake_key_event(
-        connection,
-        KEY_RELEASE_EVENT,
-        ctrl.keycode,
-        action_index,
-        action,
-    );
-    paste_result?;
-    release_result?;
-    flush_x11_input(
-        connection,
-        action_index,
-        action,
-        "clipboard paste key events",
-    )
+    let release_result =
+        release_pressed_modifiers(connection, &pressed_modifiers, action_index, action);
+    key_result?;
+    release_result
+}
+
+fn release_pressed_modifiers(
+    connection: &X11Connection,
+    pressed_modifiers: &[u8],
+    action_index: Option<usize>,
+    action: Option<&str>,
+) -> Result<(), TendrilError> {
+    let mut first_error = None;
+    for keycode in pressed_modifiers.iter().rev() {
+        if let Err(error) = fake_key_event(
+            connection,
+            KEY_RELEASE_EVENT,
+            *keycode,
+            action_index,
+            action,
+        ) {
+            first_error.get_or_insert(error);
+        }
+    }
+    if let Some(error) = first_error {
+        Err(error)
+    } else {
+        Ok(())
+    }
 }
 
 fn send_key_stroke(
@@ -2188,11 +2498,15 @@ mod tests {
 
     use image::{DynamicImage, ImageBuffer, ImageFormat as RasterImageFormat, Rgba};
 
+    use crate::model::Bounds;
+    use crate::platform::{CaptureTargetKind, InputRequest};
+
     use super::{
-        DRAG_MIN_STEPS, KeyStroke, KeyboardMap, X11OccludingWindow, X11WindowBounds,
-        X11WindowCaptureFallbackReason, XK_INSERT, capture_png_is_solid_black, decode_class_name,
-        decode_text_property, drag_motion_points, first_unmapped_text_character,
-        key_name_to_keysym, keysym_for_char, parse_window_id, windows_overlap,
+        DRAG_MIN_STEPS, KeyStroke, KeyboardMap, X11OccludingWindow, X11PasteShortcut,
+        X11UnicodePasteAttempt, X11WindowBounds, X11WindowCaptureFallbackReason, XK_INSERT,
+        capture_png_is_solid_black, decode_class_name, decode_text_property, drag_motion_points,
+        first_unmapped_text_character, is_x11_terminal_target, key_name_to_keysym, keysym_for_char,
+        parse_window_id, windows_overlap, x11_unicode_paste_attempts,
     };
 
     #[test]
@@ -2250,6 +2564,48 @@ mod tests {
         assert_eq!(
             first_unmapped_text_character(&keyboard_map, "Café π"),
             Some('é')
+        );
+    }
+
+    #[test]
+    fn terminal_targets_use_terminal_compatible_unicode_paste_attempts_first() {
+        let request = sample_input_request("Tendril Headless Shell", Some("XTerm"));
+
+        assert!(is_x11_terminal_target(&request));
+        assert_eq!(
+            x11_unicode_paste_attempts(&request),
+            vec![
+                X11UnicodePasteAttempt {
+                    selection: crate::clipboard::ClipboardSelection::Primary,
+                    shortcut: X11PasteShortcut::ShiftInsert,
+                },
+                X11UnicodePasteAttempt {
+                    selection: crate::clipboard::ClipboardSelection::Clipboard,
+                    shortcut: X11PasteShortcut::ShiftInsert,
+                },
+                X11UnicodePasteAttempt {
+                    selection: crate::clipboard::ClipboardSelection::Clipboard,
+                    shortcut: X11PasteShortcut::CtrlShiftV,
+                },
+                X11UnicodePasteAttempt {
+                    selection: crate::clipboard::ClipboardSelection::Clipboard,
+                    shortcut: X11PasteShortcut::CtrlV,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn non_terminal_targets_keep_browser_clipboard_paste_attempt() {
+        let request = sample_input_request("firefox", Some("firefox"));
+
+        assert!(!is_x11_terminal_target(&request));
+        assert_eq!(
+            x11_unicode_paste_attempts(&request),
+            vec![X11UnicodePasteAttempt {
+                selection: crate::clipboard::ClipboardSelection::Clipboard,
+                shortcut: X11PasteShortcut::CtrlV,
+            }]
         );
     }
 
@@ -2362,6 +2718,25 @@ mod tests {
                 .expect("blue-tinted png should decode")
         );
         assert!(!capture_png_is_solid_black(&sample_mixed_png()).expect("mixed png should decode"));
+    }
+
+    fn sample_input_request(target_name: &str, app_name: Option<&str>) -> InputRequest {
+        InputRequest {
+            target_id: "0x40000c".to_owned(),
+            target: CaptureTargetKind::Window,
+            target_name: target_name.to_owned(),
+            bounds: Bounds {
+                x: 0,
+                y: 0,
+                width: 80,
+                height: 24,
+            },
+            app_name: app_name.map(str::to_owned),
+            process_id: Some(1234),
+            restore_focus: true,
+            text: None,
+            actions: Vec::new(),
+        }
     }
 
     fn sample_png_from_pixel(pixel: Rgba<u8>) -> Vec<u8> {
