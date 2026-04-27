@@ -1,0 +1,11 @@
+Tendril headless Firefox textarea resize-handle drag + OS workflow validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-resize-20260427T191717Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-resize-textarea-os-20260427T191717Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a local resizable textarea page, use Tendril drag(...) on the lower-right resize handle, verify page-measured dimensions exceeded thresholds, then drive XTerm to create an ASCII OS proof file.
+browser_proof=Tendril Resize Submitted
+os_proof=resize-browser-os-verified
