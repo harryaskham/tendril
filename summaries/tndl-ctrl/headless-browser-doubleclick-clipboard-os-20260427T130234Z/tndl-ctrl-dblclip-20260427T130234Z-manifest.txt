@@ -1,0 +1,7 @@
+Tendril Firefox normal page-text double-click clipboard workflow failed; follow-up required.
+status=failed_followup_required
+followup_bead=bd-0fdcd9
+blocked_by=bd-2e2407
+name=tndl-ctrl-dblclip-20260427T130234Z
+outcome=Page copy listener fired after Tendril dblclick+Ctrl-C, but selected text was unexpected ('word') and tendril clipboard get returned clipboard_selection_unowned instead of target text doublewordclipboard.
+artifact_dir=summaries/tndl-ctrl/headless-browser-doubleclick-clipboard-os-20260427T130234Z
