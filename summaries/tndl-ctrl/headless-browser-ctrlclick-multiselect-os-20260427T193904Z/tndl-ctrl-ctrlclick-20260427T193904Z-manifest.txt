@@ -1,0 +1,11 @@
+Tendril headless Firefox Control-click multi-select + OS workflow validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-ctrlclick-20260427T193904Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-ctrlclick-multiselect-os-20260427T193904Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a local multi-select page, hold Control while clicking two list rows, verify page observed two ctrlKey clicks and selected Alpha plus Gamma, then drive XTerm to create an ASCII OS proof file.
+browser_proof=Tendril CtrlClick Submitted
+os_proof=ctrlclick-browser-os-verified
