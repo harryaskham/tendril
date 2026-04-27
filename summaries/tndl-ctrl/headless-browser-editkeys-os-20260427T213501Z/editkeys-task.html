@@ -1,0 +1,8 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Tendril EditKeys Waiting</title>
+<style>body{font-family:sans-serif;margin:48px;font-size:24px}input,button{font-size:28px;margin:14px 0}input{width:760px;padding:14px}button{padding:16px 28px}#status{margin-top:24px;border:3px solid #333;padding:16px;min-height:40px}</style></head><body>
+<h1>Tendril edit-key task</h1><p>Use editing keys inside the input, then submit.</p>
+<form id="form"><input id="value" autofocus type="text" placeholder="edit target"><br><button id="submit" type="submit">Verify edited value</button></form>
+<div id="status">waiting</div>
+<script>
+document.getElementById('form').addEventListener('submit', e => { e.preventDefault(); const value=document.getElementById('value').value; if(value==='Start-AlphXOmega Done'){document.title='Tendril EditKeys Submitted'; document.getElementById('status').textContent='editkeys-browser-ok';}else{document.title='Tendril EditKeys Mismatch'; document.getElementById('status').textContent='editkeys mismatch value='+JSON.stringify(value);} });
+</script></body></html>
