@@ -1,0 +1,21 @@
+{
+  "data": {
+    "adapter": {
+      "audio_backend": "pipe_wire",
+      "platform": "linux",
+      "session": "x11",
+      "stateless": true
+    },
+    "notes": [
+      "Read X11 clipboard selection from owner 0x600021 using target UTF8_STRING."
+    ],
+    "selection": "clipboard",
+    "text": "Cut Paste Agent",
+    "text_len": 15
+  },
+  "meta": {
+    "command": "clipboard",
+    "schema_version": 1
+  },
+  "status": "success"
+}
