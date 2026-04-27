@@ -1,0 +1,10 @@
+Tendril browser checkbox/radio plus OS workflow passed.
+name=tndl-ctrl-checkradio-20260427T010255Z
+browser_window=0x600004
+xterm_window=0x40000c
+url=http://127.0.0.1:34339/
+form_result=confirm=yes;choice=blue
+xterm_verification=checkradio-os-verified
+workflow=Use Tendril to navigate Firefox to a local checkbox/radio form, click a checkbox and radio option, submit to a local OS HTTP server, capture the browser result, then drive XTerm to verify the OS-side saved choice.
+notes=Successful retry used corrected capture-derived coordinates. Controls were placed away from the known top-left occlusion issue tracked by bd-765fa3.
+artifacts=/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-checkradio-os-20260427T010255Z
