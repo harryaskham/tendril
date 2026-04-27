@@ -1,0 +1,11 @@
+Tendril headless Firefox keyboard copy/paste form + OS workflow validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-copypaste-20260427T220040Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-copypaste-form-os-20260427T220040Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a local two-field form, type source text, use Ctrl+A/C then Tab and Ctrl+V to paste into destination, submit via keyboard, verify browser title, optionally record Tendril clipboard get output, then drive XTerm to create an ASCII OS proof file.
+browser_proof=Tendril CopyPaste Submitted
+os_proof=copypaste-browser-os-verified
