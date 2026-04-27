@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tendril Selection Clipboard Waiting</title>
+  <style>
+    body { font-family: sans-serif; font-size: 30px; margin: 40px; }
+    textarea { display: block; width: 1100px; height: 110px; padding: 16px; font: 30px monospace; }
+    #status { color: #064; font-weight: 700; margin-top: 25px; }
+    .box { border: 3px solid #333; background: #f7fbff; padding: 25px; width: 1250px; }
+  </style>
+</head>
+<body>
+  <h1>Tendril Selection Clipboard Task</h1>
+  <div class="box">
+    <textarea id="proof">select-drag-clipboard-proof-ok</textarea>
+    <div id="status">Drag-select the text and copy it.</div>
+  </div>
+  <script>
+    const proof = document.getElementById('proof');
+    const status = document.getElementById('status');
+    proof.addEventListener('copy', () => {
+      const selected = proof.value.substring(proof.selectionStart, proof.selectionEnd);
+      document.body.dataset.copyObserved = 'true';
+      document.body.dataset.selectionStart = String(proof.selectionStart);
+      document.body.dataset.selectionEnd = String(proof.selectionEnd);
+      document.body.dataset.selected = selected;
+      if (selected === proof.value) {
+        document.title = 'Tendril Selection Copied';
+        status.textContent = 'selection-copy-event-ok';
+      } else {
+        document.title = 'Tendril Selection Empty';
+        status.textContent = `copy-event-without-full-selection start=${proof.selectionStart} end=${proof.selectionEnd}`;
+      }
+    });
+  </script>
+</body>
+</html>

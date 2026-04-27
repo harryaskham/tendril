@@ -48,6 +48,8 @@ Commands:
              Reproduce the native Firefox chooser limitation, then upload via helper.
   clipboard-smoke
              Prove Firefox↔OS text transfer through Tendril's explicit X11 clipboard helper.
+  selection-clipboard-smoke
+             Prove a Firefox textarea drag-selection plus Ctrl+C creates an OS-readable X11 clipboard owner.
   canvas-drag-smoke
              Prove a Tendril drag gesture reaches Firefox canvas page handlers.
   contextmenu-smoke
@@ -89,6 +91,9 @@ Firefox file-upload smoke:
 
 Firefox/X11 clipboard smoke:
   scripts/tendril-headless.sh --browser firefox --tendril-bin ./target/debug/tendril clipboard-smoke
+
+Firefox/X11 drag-selection clipboard smoke:
+  scripts/tendril-headless.sh --browser firefox --tendril-bin ./target/debug/tendril selection-clipboard-smoke
 
 Firefox/X11 canvas drag smoke:
   scripts/tendril-headless.sh --browser firefox --tendril-bin ./target/debug/tendril canvas-drag-smoke
@@ -163,7 +168,7 @@ dsl_escape() {
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      start|env|inspect|reset|stop|smoke|firefox-upload|file-upload-smoke|clipboard-smoke|canvas-drag-smoke|contextmenu-smoke)
+      start|env|inspect|reset|stop|smoke|firefox-upload|file-upload-smoke|clipboard-smoke|selection-clipboard-smoke|canvas-drag-smoke|contextmenu-smoke)
         if [[ -n "$COMMAND" ]]; then
           fail "only one command may be provided"
         fi
@@ -929,6 +934,50 @@ write_clipboard_smoke_page() {
         document.body.dataset.osPasteOk = 'true';
         status.textContent = 'Firefox received OS clipboard text.';
         status.className = 'ok';
+      }
+    });
+  </script>
+</body>
+</html>
+EOF_HTML
+}
+
+write_selection_clipboard_smoke_page() {
+  local dir="$1"
+  cat >"$dir/selection-clipboard-task.html" <<'EOF_HTML'
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tendril Selection Clipboard Waiting</title>
+  <style>
+    body { font-family: sans-serif; font-size: 30px; margin: 40px; }
+    textarea { display: block; width: 1100px; height: 110px; padding: 16px; font: 30px monospace; }
+    #status { color: #064; font-weight: 700; margin-top: 25px; }
+    .box { border: 3px solid #333; background: #f7fbff; padding: 25px; width: 1250px; }
+  </style>
+</head>
+<body>
+  <h1>Tendril Selection Clipboard Task</h1>
+  <div class="box">
+    <textarea id="proof">select-drag-clipboard-proof-ok</textarea>
+    <div id="status">Drag-select the text and copy it.</div>
+  </div>
+  <script>
+    const proof = document.getElementById('proof');
+    const status = document.getElementById('status');
+    proof.addEventListener('copy', () => {
+      const selected = proof.value.substring(proof.selectionStart, proof.selectionEnd);
+      document.body.dataset.copyObserved = 'true';
+      document.body.dataset.selectionStart = String(proof.selectionStart);
+      document.body.dataset.selectionEnd = String(proof.selectionEnd);
+      document.body.dataset.selected = selected;
+      if (selected === proof.value) {
+        document.title = 'Tendril Selection Copied';
+        status.textContent = 'selection-copy-event-ok';
+      } else {
+        document.title = 'Tendril Selection Empty';
+        status.textContent = `copy-event-without-full-selection start=${proof.selectionStart} end=${proof.selectionEnd}`;
       }
     });
   </script>
@@ -1746,6 +1795,205 @@ EOF_MANIFEST
   fi
 }
 
+run_selection_clipboard_smoke() {
+  ensure_name_safe
+  if [[ -z "$BROWSER_BIN" ]]; then
+    BROWSER_BIN="firefox"
+  fi
+  local tendril_program
+  tendril_program="${TENDRIL_BIN%% *}"
+  [[ -x "$tendril_program" || "$(command -v "$tendril_program" 2>/dev/null || true)" ]] || fail "Tendril binary not found: $TENDRIL_BIN; pass --tendril-bin ./target/debug/tendril or --tendril-bin 'nix run .#tendril --'"
+
+  local artifact_dir
+  artifact_dir="$(resolve_artifact_dir)"
+  ensure_artifact_dir_safe "$artifact_dir"
+  mkdir -p "$artifact_dir"
+  write_selection_clipboard_smoke_page "$artifact_dir"
+  local selection_url proof gesture
+  selection_url="file://$artifact_dir/selection-clipboard-task.html"
+  proof="select-drag-clipboard-proof-ok"
+  gesture="drag(95,328,850,328),wait(500ms),hold(ctrl),c,release(ctrl),wait(700ms)"
+
+  local started_here="false"
+  if ! state_alive; then
+    start_env >/dev/null
+    started_here="true"
+  else
+    log "using existing environment '$NAME' on DISPLAY=${DISPLAY}"
+  fi
+  trap 'if [[ "${started_here:-false}" == "true" ]]; then stop_env; fi' EXIT
+
+  local dir list_json display_id window_id navigate_json before_capture drag_copy_run page_state_json clipboard_get_json after_capture
+  dir="${TENDRIL_HEADLESS_RUNTIME_DIR:-$(runtime_dir)}"
+
+  log "waiting for Tendril to see a ${WIDTH}x${HEIGHT} Firefox window"
+  if ! list_json="$(wait_for_targets)"; then
+    diagnose_browser_log "$dir/logs/browser.log"
+    preserve_runtime_logs "$dir" "$artifact_dir"
+    fail "Tendril did not discover expected headless Firefox targets"
+  fi
+  printf '%s\n' "$list_json" >"$artifact_dir/${NAME}-selection-clipboard-list-initial.json"
+
+  display_id="$(python3 -c '
+import json, sys
+width=int(sys.argv[1]); height=int(sys.argv[2]); payload=json.load(sys.stdin)
+for target in payload["data"]["targets"]:
+    bounds=target.get("bounds", {})
+    if target.get("kind") == "display" and bounds.get("width") == width and bounds.get("height") == height:
+        print(target["id"]); break
+else:
+    raise SystemExit(1)
+' "$WIDTH" "$HEIGHT" <<<"$list_json")"
+
+  window_id="$(python3 -c '
+import json, sys
+browser_pid=sys.argv[1]
+payload=json.load(sys.stdin)
+for target in payload["data"]["targets"]:
+    haystack=" ".join(str(target.get(k) or "") for k in ("name", "title", "app_name")).lower()
+    if target.get("kind") == "window" and ((browser_pid and str(target.get("process_id") or "") == browser_pid) or "firefox" in haystack):
+        print(target["id"]); break
+else:
+    raise SystemExit("no Firefox window found")
+' "${TENDRIL_HEADLESS_BROWSER_PID:-}" <<<"$list_json")"
+
+  log "navigating Firefox to selection clipboard smoke page through Marionette preflight"
+  NAVIGATE_URL="$selection_url" \
+    HELPER_OUTPUT="$artifact_dir/${NAME}-selection-clipboard-marionette-navigate.json" \
+    run_firefox_navigate_helper
+  navigate_json="$(cat "$artifact_dir/${NAME}-selection-clipboard-marionette-navigate.json")"
+  python3 -c '
+import json, sys
+payload=json.loads(sys.argv[1])
+assert payload["status"] == "success", payload
+assert "Tendril Selection Clipboard" in (payload.get("page", {}).get("title") or ""), payload
+' "$navigate_json"
+
+  log "capturing selection page before drag-copy"
+  before_capture="$(run_tendril --json --window "$window_id" capture --max-width "$WIDTH" --max-height "$HEIGHT" -o "$artifact_dir/${NAME}-selection-clipboard-before.png")"
+  printf '%s\n' "$before_capture" >"$artifact_dir/${NAME}-selection-clipboard-before-capture.json"
+
+  log "drag-selecting Firefox textarea text and copying through Ctrl+C"
+  drag_copy_run="$(run_tendril --json --window "$window_id" run "$gesture")"
+  printf '%s\n' "$drag_copy_run" >"$artifact_dir/${NAME}-selection-clipboard-drag-copy-run.json"
+
+  log "capturing selection page after drag-copy"
+  after_capture="$(run_tendril --json --window "$window_id" capture --max-width "$WIDTH" --max-height "$HEIGHT" -o "$artifact_dir/${NAME}-selection-clipboard-after-copy.png")"
+  printf '%s\n' "$after_capture" >"$artifact_dir/${NAME}-selection-clipboard-after-copy-capture.json"
+
+  log "reading Marionette page state to prove the copy event had a non-empty textarea selection"
+  python3 - "${TENDRIL_HEADLESS_MARIONETTE_PORT:-}" >"$artifact_dir/${NAME}-selection-clipboard-page-state.json" <<'PY'
+import json
+import socket
+import sys
+import time
+
+port = int(sys.argv[1])
+
+def recv(sock):
+    length_bytes = bytearray()
+    while True:
+        chunk = sock.recv(1)
+        if not chunk:
+            raise EOFError("Marionette closed while reading frame length")
+        if chunk == b":":
+            break
+        length_bytes.extend(chunk)
+    length = int(length_bytes.decode("ascii"))
+    body = bytearray()
+    while len(body) < length:
+        chunk = sock.recv(length - len(body))
+        if not chunk:
+            raise EOFError("Marionette closed while reading frame body")
+        body.extend(chunk)
+    return json.loads(body.decode("utf-8"))
+
+def send(sock, payload):
+    encoded = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    sock.sendall(str(len(encoded)).encode("ascii") + b":" + encoded)
+
+def command(sock, message_id, name, params):
+    send(sock, [0, message_id, name, params])
+    response = recv(sock)
+    if response[2] is not None:
+        raise RuntimeError(f"Marionette {name} failed: {response[2]!r}")
+    return response[3]
+
+sock = socket.create_connection(("127.0.0.1", port), timeout=5)
+sock.settimeout(20)
+try:
+    hello = recv(sock)
+    session = command(sock, 1, "WebDriver:NewSession", {})
+    time.sleep(0.25)
+    result = command(sock, 2, "WebDriver:ExecuteScript", {
+        "script": "const proof = document.getElementById('proof'); return { title: document.title, status: document.getElementById('status')?.textContent, dataset: Object.assign({}, document.body.dataset), active: document.activeElement?.id || null, selectionStart: proof.selectionStart, selectionEnd: proof.selectionEnd, selected: proof.value.substring(proof.selectionStart, proof.selectionEnd), value: proof.value };",
+        "args": [],
+        "newSandbox": True,
+        "sandbox": "default",
+        "line": 1,
+        "filename": "tendril-headless-firefox-selection-clipboard-state",
+    })
+    print(json.dumps({
+        "status": "success",
+        "helper": "tendril-headless firefox-selection-clipboard-state",
+        "transport": "firefox-marionette",
+        "marionette": {"port": port, "hello": hello, "sessionId": session.get("sessionId")},
+        "page": result.get("value", result),
+    }, indent=2, sort_keys=True))
+finally:
+    sock.close()
+PY
+  page_state_json="$(cat "$artifact_dir/${NAME}-selection-clipboard-page-state.json")"
+  python3 -c '
+import json, sys
+payload=json.loads(sys.argv[1])
+expected=sys.argv[2]
+assert payload["status"] == "success", payload
+page=payload["page"]
+dataset=page.get("dataset") or {}
+assert dataset.get("copyObserved") == "true", page
+assert dataset.get("selected") == expected, page
+assert page.get("selected") == expected, page
+assert page.get("selectionStart") == 0 and page.get("selectionEnd") == len(expected), page
+assert page.get("active") == "proof", page
+' "$page_state_json" "$proof"
+
+  log "reading OS clipboard after Firefox drag-selection Ctrl+C"
+  clipboard_get_json="$(run_tendril --json clipboard get --selection clipboard --timeout-ms 3000)"
+  printf '%s\n' "$clipboard_get_json" >"$artifact_dir/${NAME}-selection-clipboard-get.json"
+  python3 -c '
+import json, sys
+payload=json.loads(sys.argv[1])
+expected=sys.argv[2]
+assert payload["status"] == "success", payload
+assert payload["data"]["text"] == expected, payload["data"].get("text")
+' "$clipboard_get_json" "$proof"
+
+  cat >"$artifact_dir/${NAME}-selection-clipboard-manifest.txt" <<EOF_MANIFEST
+Tendril headless Firefox drag-selection clipboard smoke passed.
+name=$NAME
+display=$DISPLAY
+display_target=$display_id
+browser=${TENDRIL_HEADLESS_BROWSER:-}
+browser_window=$window_id
+marionette_port=${TENDRIL_HEADLESS_MARIONETTE_PORT:-}
+resolution=${WIDTH}x${HEIGHT}x${DEPTH}
+runtime_dir=$dir
+selection_url=$selection_url
+proof=$proof
+gesture=$gesture
+assertion=Firefox copy event reported the full textarea selection and tendril clipboard get returned the same proof text. This uses the text baseline y-coordinate; the original y=350 repro lands below the glyphs, fires a copy event with an empty textarea selection, and now receives an actionable clipboard_selection_unowned diagnostic.
+artifacts=$artifact_dir
+EOF_MANIFEST
+  git_add_artifacts "$artifact_dir"
+
+  log "selection clipboard smoke passed; artifacts are under $artifact_dir"
+  if [[ "$started_here" == "true" ]]; then
+    stop_env
+    trap - EXIT
+  fi
+}
+
 run_canvas_drag_smoke() {
   ensure_name_safe
   if [[ -z "$BROWSER_BIN" ]]; then
@@ -2290,6 +2538,7 @@ case "$COMMAND" in
   firefox-upload) run_firefox_upload_helper ;;
   file-upload-smoke) run_file_upload_smoke ;;
   clipboard-smoke) run_clipboard_smoke ;;
+  selection-clipboard-smoke) run_selection_clipboard_smoke ;;
   canvas-drag-smoke) run_canvas_drag_smoke ;;
   contextmenu-smoke) run_contextmenu_smoke ;;
   *) fail "unsupported command: $COMMAND" ;;

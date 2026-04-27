@@ -1,0 +1,28 @@
+{
+  "helper": "tendril-headless firefox-selection-clipboard-state",
+  "marionette": {
+    "hello": {
+      "applicationType": "gecko",
+      "marionetteProtocol": 3
+    },
+    "port": 62091,
+    "sessionId": "8ae7487c-976b-4186-a65f-9709219a0038"
+  },
+  "page": {
+    "active": "proof",
+    "dataset": {
+      "copyObserved": "true",
+      "selected": "select-drag-clipboard-proof-ok",
+      "selectionEnd": "30",
+      "selectionStart": "0"
+    },
+    "selected": "select-drag-clipboard-proof-ok",
+    "selectionEnd": 30,
+    "selectionStart": 0,
+    "status": "selection-copy-event-ok",
+    "title": "Tendril Selection Copied",
+    "value": "select-drag-clipboard-proof-ok"
+  },
+  "status": "success",
+  "transport": "firefox-marionette"
+}

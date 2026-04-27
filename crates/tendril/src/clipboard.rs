@@ -384,7 +384,7 @@ mod x11_impl {
             .with_detail_entry("selection", json!(selection.as_str()))
             .with_detail_entry(
                 "suggested_action",
-                json!("Copy from the browser with Ctrl+C, then immediately run `tendril clipboard get --json`; X11 selection ownership is process-owned and may disappear when the source exits."),
+                json!("Copy from the browser with Ctrl+C, then immediately run `tendril clipboard get --json`; X11 selection ownership is process-owned and may disappear when the source exits. If a Firefox page observed a copy event but this error persists after a drag gesture, verify the text is actually selected (for a textarea, selectionStart must differ from selectionEnd and a highlight should be visible); Firefox can fire a copy event for an empty textarea selection without taking clipboard ownership. Use a slower text-baseline drag, drag from the end of the text back to the start, or focus the field and use Ctrl+A then Ctrl+C."),
             ));
         }
 

@@ -30,6 +30,10 @@ const BUTTON_PRESS_EVENT: u8 = 4;
 const BUTTON_RELEASE_EVENT: u8 = 5;
 const MOTION_NOTIFY_EVENT: u8 = 6;
 const SOLID_BLACK_CHANNEL_THRESHOLD: u8 = 2;
+const DRAG_BUTTON_HOLD_DELAY_MS: u64 = 120;
+const DRAG_MOTION_STEP_PX: u64 = 16;
+const DRAG_MIN_STEPS: u64 = 6;
+const DRAG_MAX_STEPS: u64 = 96;
 
 const XK_BACK_SPACE: u32 = 0xff08;
 const XK_TAB: u32 = 0xff09;
@@ -1246,7 +1250,7 @@ fn drag_mouse(
 
     fake_button_event(connection, BUTTON_PRESS_EVENT, 1, action_index, action)?;
     flush_x11_input(connection, action_index, action, "drag button press")?;
-    std::thread::sleep(reliability_delay());
+    std::thread::sleep(std::time::Duration::from_millis(DRAG_BUTTON_HOLD_DELAY_MS));
 
     for (x, y) in drag_motion_points(start_x, start_y, end_x, end_y) {
         move_pointer(connection, x, y, action_index, action)?;
@@ -1262,7 +1266,7 @@ fn drag_motion_points(start_x: i32, start_y: i32, end_x: i32, end_y: i32) -> Vec
     let dx = i64::from(end_x) - i64::from(start_x);
     let dy = i64::from(end_y) - i64::from(start_y);
     let distance = dx.unsigned_abs().max(dy.unsigned_abs());
-    let steps = ((distance / 60) + 1).clamp(4, 32);
+    let steps = ((distance / DRAG_MOTION_STEP_PX) + 1).clamp(DRAG_MIN_STEPS, DRAG_MAX_STEPS);
     (1..=steps)
         .map(|step| {
             let step = i64::try_from(step).unwrap_or(1);
@@ -1886,7 +1890,7 @@ mod tests {
     use image::{DynamicImage, ImageBuffer, ImageFormat as RasterImageFormat, Rgba};
 
     use super::{
-        KeyStroke, KeyboardMap, X11OccludingWindow, X11WindowBounds,
+        DRAG_MIN_STEPS, KeyStroke, KeyboardMap, X11OccludingWindow, X11WindowBounds,
         X11WindowCaptureFallbackReason, XK_INSERT, capture_png_is_solid_black, decode_class_name,
         decode_text_property, drag_motion_points, key_name_to_keysym, keysym_for_char,
         parse_window_id, windows_overlap,
@@ -1950,10 +1954,20 @@ mod tests {
     fn produces_incremental_drag_motion_points() {
         let points = drag_motion_points(10, 20, 130, 80);
 
-        assert!(points.len() >= 4);
+        assert!(points.len() >= usize::try_from(DRAG_MIN_STEPS).unwrap());
         assert_eq!(points.last(), Some(&(130, 80)));
         assert!(points.windows(2).all(|pair| pair[0].0 <= pair[1].0));
         assert!(points.windows(2).all(|pair| pair[0].1 <= pair[1].1));
+
+        let long_text_drag = drag_motion_points(95, 350, 850, 350);
+        assert!(long_text_drag.len() > 32);
+        assert_eq!(long_text_drag.first(), Some(&(110, 350)));
+        assert_eq!(long_text_drag.last(), Some(&(850, 350)));
+        assert!(
+            long_text_drag
+                .windows(2)
+                .all(|pair| pair[1].0 - pair[0].0 <= 16)
+        );
     }
 
     #[test]

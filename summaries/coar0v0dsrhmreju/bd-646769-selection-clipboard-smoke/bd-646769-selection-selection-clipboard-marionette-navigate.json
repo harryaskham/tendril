@@ -1,0 +1,21 @@
+{
+  "helper": "tendril-headless firefox-marionette-navigate",
+  "marionette": {
+    "hello": {
+      "applicationType": "gecko",
+      "marionetteProtocol": 3
+    },
+    "port": 62091,
+    "sessionId": "5c69d811-e5b1-4106-8ac6-3439ad89cc7b"
+  },
+  "page": {
+    "bodyText": "Tendril Selection Clipboard Task\nDrag-select the text and copy it.",
+    "title": "Tendril Selection Clipboard Waiting",
+    "url": "file:///home/harry/.cacophony/agents/tendril/coar0v0dsrhmreju/checkout/summaries/coar0v0dsrhmreju/bd-646769-selection-clipboard-smoke/selection-clipboard-task.html"
+  },
+  "request": {
+    "navigate_url": "file:///home/harry/.cacophony/agents/tendril/coar0v0dsrhmreju/checkout/summaries/coar0v0dsrhmreju/bd-646769-selection-clipboard-smoke/selection-clipboard-task.html"
+  },
+  "status": "success",
+  "transport": "firefox-marionette"
+}
