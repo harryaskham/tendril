@@ -1,0 +1,11 @@
+Tendril browser context-menu workflow failed; follow-up required.
+status=failed_followup_required
+followup_bead=bd-e853e0
+blocked_by=bd-ec6439
+name=tndl-ctrl-context-20260427T055329Z
+browser_window=0x600004
+xterm_window=0x40000c
+url=file:///home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-contextmenu-os-20260427T055329Z/contextmenu-task.html
+xterm_verification=contextmenu-os-verified
+outcome=Tendril rclick returned success, but the page title stayed Tendril Context Menu Waiting and the after-capture still showed Waiting for context menu event, so Firefox content did not observe the contextmenu event.
+artifacts=/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-contextmenu-os-20260427T055329Z
