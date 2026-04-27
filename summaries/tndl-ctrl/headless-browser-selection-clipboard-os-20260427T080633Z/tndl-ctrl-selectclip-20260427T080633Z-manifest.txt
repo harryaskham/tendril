@@ -1,0 +1,9 @@
+Tendril Firefox drag-selection clipboard workflow failed; follow-up required.
+status=failed_followup_required
+followup_bead=bd-646769
+blocked_by=bd-c0d068
+name=tndl-ctrl-selectclip-20260427T080633Z
+browser_window=0x600004
+proof=select-drag-clipboard-proof-ok
+outcome=Browser page observed the copy event and title changed to Tendril Selection Copied, but tendril clipboard get returned clipboard_selection_unowned instead of the copied proof text.
+artifacts=/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-selection-clipboard-os-20260427T080633Z

@@ -1,0 +1,16 @@
+{
+  "status": "error",
+  "meta": {
+    "schema_version": 1,
+    "command": "clipboard"
+  },
+  "error": {
+    "category": "execution_failure",
+    "code": "clipboard_selection_unowned",
+    "message": "execution failure: X11 clipboard selection has no owner; copy text in the source application first or use `tendril clipboard set --text ...`",
+    "details": {
+      "selection": "clipboard",
+      "suggested_action": "Copy from the browser with Ctrl+C, then immediately run `tendril clipboard get --json`; X11 selection ownership is process-owned and may disappear when the source exits."
+    }
+  }
+}
