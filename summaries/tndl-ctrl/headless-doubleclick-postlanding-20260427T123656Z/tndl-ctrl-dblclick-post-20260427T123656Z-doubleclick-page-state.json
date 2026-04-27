@@ -1,0 +1,27 @@
+{
+  "helper": "tendril-headless firefox-doubleclick-state",
+  "marionette": {
+    "hello": {
+      "applicationType": "gecko",
+      "marionetteProtocol": 3
+    },
+    "port": 62090,
+    "sessionId": "c3e63957-29c6-41a7-b71b-63e8dc09cdb6"
+  },
+  "page": {
+    "dataset": {
+      "clickCount": "2",
+      "doubleClickButton": "0",
+      "doubleClickClient": "213,292",
+      "doubleClickDetail": "2",
+      "doubleClickLocal": "141,55",
+      "doubleClickObserved": "true",
+      "lastClickDetail": "2"
+    },
+    "details": "dblclick button=0 detail=2 client=213,292",
+    "status": "Double-click observed at 141,55.",
+    "title": "Tendril Double Click Hit"
+  },
+  "status": "success",
+  "transport": "firefox-marionette"
+}

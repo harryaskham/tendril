@@ -1,0 +1,12 @@
+[tendril-headless] starting Xvfb :90 at 1920x1080x24
+[tendril-headless] starting window manager: openbox
+[tendril-headless] starting browser: /home/harry/.nix-profile/bin/firefox
+[tendril-headless] started environment 'tndl-ctrl-dblclick-post-20260427T123656Z'; logs are under /run/user/1000/tendril-headless/tndl-ctrl-dblclick-post-20260427T123656Z/logs
+[tendril-headless] waiting for Tendril to see a 1920x1080 Firefox window
+[tendril-headless] navigating Firefox to double-click smoke page through Marionette preflight
+[tendril-headless] capturing double-click page before Tendril dblclick
+[tendril-headless] double-clicking inside the Firefox page target with Tendril
+[tendril-headless] reading page-observed double-click state through Marionette
+[tendril-headless] capturing double-click page after page-observed dblclick
+[tendril-headless] double-click smoke passed; artifacts are under /home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-doubleclick-postlanding-20260427T123656Z
+[tendril-headless] stopped environment 'tndl-ctrl-dblclick-post-20260427T123656Z' and removed /run/user/1000/tendril-headless/tndl-ctrl-dblclick-post-20260427T123656Z

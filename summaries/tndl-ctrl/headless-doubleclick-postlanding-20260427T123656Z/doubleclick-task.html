@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tendril Double Click Waiting</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #111827;
+      color: #e5e7eb;
+      font: 24px/1.35 system-ui, sans-serif;
+    }
+    main { padding: 48px 72px; }
+    h1 { margin: 0 0 16px; font-size: 42px; }
+    #status { margin: 0 0 12px; color: #fbbf24; font-weight: 700; }
+    #details { margin: 0 0 20px; color: #93c5fd; }
+    #target {
+      display: grid;
+      place-items: center;
+      margin-top: 40px;
+      width: 1000px;
+      height: 480px;
+      border: 5px dashed #38bdf8;
+      border-radius: 18px;
+      background: #0f172a;
+      box-shadow: 0 0 0 6px rgba(56, 189, 248, 0.15);
+      user-select: none;
+    }
+    #target span { color: #7dd3fc; font-size: 36px; font-weight: 800; }
+    .ok { color: #86efac !important; }
+  </style>
+</head>
+<body data-double-click-observed="false" data-click-count="0">
+  <main>
+    <h1>Firefox double-click target</h1>
+    <p id="status">Waiting for double-click event.</p>
+    <p id="details">Double-click inside the dashed target.</p>
+    <div id="target"><span>Double-click target</span></div>
+  </main>
+  <script>
+    const target = document.getElementById('target');
+    const status = document.getElementById('status');
+    const details = document.getElementById('details');
+    let clickCount = 0;
+
+    target.addEventListener('click', (event) => {
+      clickCount += 1;
+      document.body.dataset.clickCount = String(clickCount);
+      document.body.dataset.lastClickDetail = String(event.detail);
+    });
+
+    target.addEventListener('dblclick', (event) => {
+      event.preventDefault();
+      const rect = target.getBoundingClientRect();
+      const localX = Math.round(event.clientX - rect.left);
+      const localY = Math.round(event.clientY - rect.top);
+      document.body.dataset.doubleClickObserved = 'true';
+      document.body.dataset.doubleClickButton = String(event.button);
+      document.body.dataset.doubleClickDetail = String(event.detail);
+      document.body.dataset.doubleClickClient = `${Math.round(event.clientX)},${Math.round(event.clientY)}`;
+      document.body.dataset.doubleClickLocal = `${localX},${localY}`;
+      document.title = 'Tendril Double Click Hit';
+      status.textContent = `Double-click observed at ${localX},${localY}.`;
+      status.className = 'ok';
+      details.textContent = `dblclick button=${event.button} detail=${event.detail} client=${Math.round(event.clientX)},${Math.round(event.clientY)}`;
+    });
+  </script>
+</body>
+</html>

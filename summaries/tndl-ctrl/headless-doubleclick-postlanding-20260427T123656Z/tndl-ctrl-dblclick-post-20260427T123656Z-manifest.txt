@@ -1,0 +1,5 @@
+Tendril post-landing Firefox double-click smoke validation.
+status=passed
+bead=bd-cc7d4f
+artifact_dir=summaries/tndl-ctrl/headless-doubleclick-postlanding-20260427T123656Z
+workflow=Run the new doubleclick-smoke on current main after bd-cc7d4f closed, proving the Tendril dblclick DSL / X11 double-click path reaches Firefox DOM dblclick handlers.
