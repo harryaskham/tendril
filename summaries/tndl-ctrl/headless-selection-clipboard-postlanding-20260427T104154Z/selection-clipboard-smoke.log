@@ -1,0 +1,13 @@
+[tendril-headless] starting Xvfb :90 at 1920x1080x24
+[tendril-headless] starting window manager: openbox
+[tendril-headless] starting browser: /home/harry/.nix-profile/bin/firefox
+[tendril-headless] started environment 'tndl-ctrl-selectclip-post-20260427T104154Z'; logs are under /run/user/1000/tendril-headless/tndl-ctrl-selectclip-post-20260427T104154Z/logs
+[tendril-headless] waiting for Tendril to see a 1920x1080 Firefox window
+[tendril-headless] navigating Firefox to selection clipboard smoke page through Marionette preflight
+[tendril-headless] capturing selection page before drag-copy
+[tendril-headless] drag-selecting Firefox textarea text and copying through Ctrl+C
+[tendril-headless] capturing selection page after drag-copy
+[tendril-headless] reading Marionette page state to prove the copy event had a non-empty textarea selection
+[tendril-headless] reading OS clipboard after Firefox drag-selection Ctrl+C
+[tendril-headless] selection clipboard smoke passed; artifacts are under /home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-selection-clipboard-postlanding-20260427T104154Z
+[tendril-headless] stopped environment 'tndl-ctrl-selectclip-post-20260427T104154Z' and removed /run/user/1000/tendril-headless/tndl-ctrl-selectclip-post-20260427T104154Z

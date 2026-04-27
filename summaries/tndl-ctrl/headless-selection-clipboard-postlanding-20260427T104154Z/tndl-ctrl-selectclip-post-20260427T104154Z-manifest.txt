@@ -1,0 +1,5 @@
+Tendril post-landing Firefox drag-selection clipboard smoke validation.
+status=passed
+bead=bd-646769
+artifact_dir=summaries/tndl-ctrl/headless-selection-clipboard-postlanding-20260427T104154Z
+workflow=Run the new selection-clipboard-smoke on current main after bd-646769 closed, proving Firefox textarea drag-selection plus Ctrl+C creates an OS-readable X11 clipboard owner.

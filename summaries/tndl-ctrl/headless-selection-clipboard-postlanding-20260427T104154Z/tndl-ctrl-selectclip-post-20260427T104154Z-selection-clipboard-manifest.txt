@@ -1,0 +1,14 @@
+Tendril headless Firefox drag-selection clipboard smoke passed.
+name=tndl-ctrl-selectclip-post-20260427T104154Z
+display=:90
+display_target=1
+browser=/home/harry/.nix-profile/bin/firefox
+browser_window=0x600004
+marionette_port=62090
+resolution=1920x1080x24
+runtime_dir=/run/user/1000/tendril-headless/tndl-ctrl-selectclip-post-20260427T104154Z
+selection_url=file:///home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-selection-clipboard-postlanding-20260427T104154Z/selection-clipboard-task.html
+proof=select-drag-clipboard-proof-ok
+gesture=drag(95,328,850,328),wait(500ms),hold(ctrl),c,release(ctrl),wait(700ms)
+assertion=Firefox copy event reported the full textarea selection and tendril clipboard get returned the same proof text. This uses the text baseline y-coordinate; the original y=350 repro lands below the glyphs, fires a copy event with an empty textarea selection, and now receives an actionable clipboard_selection_unowned diagnostic.
+artifacts=/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-selection-clipboard-postlanding-20260427T104154Z
