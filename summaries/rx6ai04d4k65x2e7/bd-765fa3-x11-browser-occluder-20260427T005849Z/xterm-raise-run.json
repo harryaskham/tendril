@@ -1,0 +1,43 @@
+{
+  "data": {
+    "action_count": 3,
+    "adapter": {
+      "audio_backend": "pipe_wire",
+      "platform": "linux",
+      "session": "x11",
+      "stateless": true
+    },
+    "execution_lock": {
+      "acquired": true,
+      "enabled": true,
+      "lock_path": "/tmp/nix-shell.ORrnpD/tendril-execution-lock-harry-wayland-1",
+      "owner_pid": 3981682,
+      "queue_depth_at_join": 1,
+      "queue_position_at_join": 1,
+      "stale_locks_reaped": 0,
+      "stale_ms": 30000,
+      "stale_tickets_reaped": 0,
+      "timeout_ms": 60000,
+      "token": "3981682-1777251535147-1",
+      "wait_ms": 0
+    },
+    "focus_required": true,
+    "focus_restored": false,
+    "focus_transferred": true,
+    "focused_target": "0x40000c",
+    "notes": [
+      "Focus restoration disabled for this run; focus may remain on the target.",
+      "Activated the target window before keyboard delivery for X11 reliability."
+    ],
+    "pointer_restored": false,
+    "target": {
+      "id": "0x40000c",
+      "kind": "window"
+    }
+  },
+  "meta": {
+    "command": "run",
+    "schema_version": 1
+  },
+  "status": "success"
+}

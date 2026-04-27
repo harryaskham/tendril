@@ -1,0 +1,4 @@
+[tendril-headless] starting Xvfb :90 at 1920x1080x24
+[tendril-headless] starting window manager: openbox
+[tendril-headless] starting browser: /nix/store/7vnya051q0xr2mdwxp48sh70xzim4fpa-firefox-149.0/bin/firefox
+[tendril-headless] started environment 'bd-765fa3'; logs are under /run/user/1000/tendril-headless/bd-765fa3/logs

@@ -128,6 +128,40 @@ struct X11RestoreState {
     pointer_root: Option<(i32, i32)>,
 }
 
+#[derive(Debug, Clone)]
+struct X11WindowBounds {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+}
+
+#[derive(Debug, Clone)]
+struct X11OccludingWindow {
+    id: String,
+    name: String,
+    bounds: X11WindowBounds,
+}
+
+#[derive(Debug, Clone)]
+enum X11WindowCaptureFallbackReason {
+    SolidBlackWindowDrawable,
+    OverlappingWindows(Vec<X11OccludingWindow>),
+}
+
+impl X11WindowCaptureFallbackReason {
+    fn summary(&self) -> String {
+        match self {
+            Self::SolidBlackWindowDrawable => "solid black window-drawable image".to_owned(),
+            Self::OverlappingWindows(windows) => format!(
+                "{} overlapping X11 window(s) above the target in the stacking order: {}",
+                windows.len(),
+                summarize_occluding_windows(windows)
+            ),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 struct X11RestoreOutcome {
     focus_restored: bool,
@@ -602,6 +636,8 @@ fn capture_window(
             format!("window `{target_id}` has zero-sized bounds"),
         ));
     }
+
+    let occluding_windows = occluding_windows_above_target(context, connection, window)?;
     let direct_capture = capture_region(
         context,
         connection,
@@ -622,11 +658,29 @@ fn capture_window(
             ),
         )
     })?;
-    if !direct_is_black {
-        return Ok(direct_capture);
+    if direct_is_black {
+        return capture_window_via_root_crop_after_raise(
+            context,
+            connection,
+            target_id,
+            window,
+            &geometry,
+            &X11WindowCaptureFallbackReason::SolidBlackWindowDrawable,
+        );
     }
 
-    capture_window_via_root_crop_after_raise(context, connection, target_id, window, &geometry)
+    if !occluding_windows.is_empty() {
+        return capture_window_via_root_crop_after_raise(
+            context,
+            connection,
+            target_id,
+            window,
+            &geometry,
+            &X11WindowCaptureFallbackReason::OverlappingWindows(occluding_windows),
+        );
+    }
+
+    Ok(direct_capture)
 }
 
 fn capture_window_via_root_crop_after_raise(
@@ -635,13 +689,15 @@ fn capture_window_via_root_crop_after_raise(
     target_id: &str,
     window: Window,
     geometry: &x11rb::protocol::xproto::GetGeometryReply,
+    reason: &X11WindowCaptureFallbackReason,
 ) -> Result<Vec<u8>, PlatformAdapterError> {
+    let reason_summary = reason.summary();
     let restore_state = capture_x11_restore_state(connection).map_err(|error| {
         PlatformAdapterError::adapter_failure(
             AdapterOperation::Capture,
             context.platform,
             format!(
-                "X11 window capture for `{target_id}` returned a solid black image from the window drawable. Tendril would need to temporarily raise the target and capture a root-window crop, but it could not snapshot the current focus for restoration: {error}"
+                "X11 window capture for `{target_id}` detected {reason_summary}. Tendril would need to temporarily raise the target and capture a root-window crop, but it could not snapshot the current focus for restoration: {error}"
             ),
         )
     })?;
@@ -651,7 +707,7 @@ fn capture_window_via_root_crop_after_raise(
             AdapterOperation::Capture,
             context.platform,
             format!(
-                "X11 window capture for `{target_id}` returned a solid black image from the window drawable. This usually means the target is obscured or lacks usable backing pixels, and Tendril could not raise it for a root-window crop fallback: {error}"
+                "X11 window capture for `{target_id}` detected {reason_summary}. Tendril could not raise it for an unoccluded root-window crop fallback: {error}"
             ),
         )
     })?;
@@ -664,6 +720,7 @@ fn capture_window_via_root_crop_after_raise(
         window,
         geometry.width,
         geometry.height,
+        &reason_summary,
     );
     let restore_outcome = restore_x11_state_if_requested(connection, restore_state.as_ref());
 
@@ -673,7 +730,7 @@ fn capture_window_via_root_crop_after_raise(
             AdapterOperation::Capture,
             context.platform,
             format!(
-                "X11 window capture for `{target_id}` recovered from a solid black window-drawable image by raising and root-cropping the target, but focus restoration failed afterwards: {restore_error}"
+                "X11 window capture for `{target_id}` recovered from {reason_summary} by raising and root-cropping the target, but focus restoration failed afterwards: {restore_error}"
             ),
         )),
         (Err(error), None) => Err(error),
@@ -694,6 +751,7 @@ fn capture_raised_window_from_root_crop(
     window: Window,
     width: u16,
     height: u16,
+    reason_summary: &str,
 ) -> Result<Vec<u8>, PlatformAdapterError> {
     let translated = connection
         .conn
@@ -727,7 +785,7 @@ fn capture_raised_window_from_root_crop(
             AdapterOperation::Capture,
             context.platform,
             format!(
-                "X11 window capture for `{target_id}` returned a solid black image from the window drawable and the raise-plus-root-crop fallback was also solid black. The target may be minimized, outside the visible display, or otherwise unavailable to XGetImage; capture a visible display target or make the window visible before retrying."
+                "X11 window capture for `{target_id}` detected {reason_summary}, then the raise-plus-root-crop fallback was also solid black. The target may be minimized, outside the visible display, still occluded by an override-redirect window, or otherwise unavailable to XGetImage; capture a visible display target or make the window visible before retrying."
             ),
         ));
     }
@@ -748,6 +806,154 @@ fn capture_png_is_solid_black(image_bytes: &[u8]) -> Result<bool, String> {
             && pixel[1] <= SOLID_BLACK_CHANNEL_THRESHOLD
             && pixel[2] <= SOLID_BLACK_CHANNEL_THRESHOLD
     }))
+}
+
+fn occluding_windows_above_target(
+    context: &AdapterContext,
+    connection: &X11Connection,
+    target: Window,
+) -> Result<Vec<X11OccludingWindow>, PlatformAdapterError> {
+    let Some(target_bounds) = viewable_window_bounds(connection, target).map_err(|error| {
+        PlatformAdapterError::adapter_failure(
+            AdapterOperation::Capture,
+            context.platform,
+            format!("failed to inspect X11 target bounds for occlusion detection: {error}"),
+        )
+    })?
+    else {
+        return Ok(Vec::new());
+    };
+
+    let stacking = stacking_windows(context, connection)?;
+    let Some(target_index) = stacking.iter().position(|window| *window == target) else {
+        return Ok(Vec::new());
+    };
+
+    let mut occluding_windows = Vec::new();
+    for candidate in stacking.iter().skip(target_index + 1).copied() {
+        if candidate == target {
+            continue;
+        }
+        let Some(bounds) = viewable_window_bounds(connection, candidate).map_err(|error| {
+            PlatformAdapterError::adapter_failure(
+                AdapterOperation::Capture,
+                context.platform,
+                format!(
+                    "failed to inspect X11 stacking candidate {} for occlusion detection: {error}",
+                    format_window_id(candidate)
+                ),
+            )
+        })?
+        else {
+            continue;
+        };
+        if windows_overlap(&target_bounds, &bounds) {
+            occluding_windows.push(X11OccludingWindow {
+                id: format_window_id(candidate),
+                name: window_display_name(connection, candidate),
+                bounds,
+            });
+        }
+    }
+
+    Ok(occluding_windows)
+}
+
+fn stacking_windows(
+    context: &AdapterContext,
+    connection: &X11Connection,
+) -> Result<Vec<Window>, PlatformAdapterError> {
+    let windows = connection.window_list(context)?;
+    if !windows.is_empty() {
+        return Ok(windows);
+    }
+
+    connection
+        .conn
+        .query_tree(connection.screen.root)
+        .map_err(|error| adapter_failure(context, AdapterOperation::Capture, error))?
+        .reply()
+        .map(|reply| reply.children)
+        .map_err(|error| adapter_failure(context, AdapterOperation::Capture, error))
+}
+
+fn viewable_window_bounds(
+    connection: &X11Connection,
+    window: Window,
+) -> Result<Option<X11WindowBounds>, String> {
+    let attributes = connection
+        .conn
+        .get_window_attributes(window)
+        .map_err(|error| format!("failed to query window attributes: {error}"))?
+        .reply()
+        .map_err(|error| format!("failed to read window attributes: {error}"))?;
+    if attributes.map_state != MapState::VIEWABLE {
+        return Ok(None);
+    }
+
+    let geometry = connection
+        .conn
+        .get_geometry(window)
+        .map_err(|error| format!("failed to query window geometry: {error}"))?
+        .reply()
+        .map_err(|error| format!("failed to read window geometry: {error}"))?;
+    if geometry.width == 0 || geometry.height == 0 {
+        return Ok(None);
+    }
+
+    let translated = connection
+        .conn
+        .translate_coordinates(window, connection.screen.root, 0, 0)
+        .map_err(|error| format!("failed to translate window coordinates: {error}"))?
+        .reply()
+        .map_err(|error| format!("failed to read translated window coordinates: {error}"))?;
+
+    Ok(Some(X11WindowBounds {
+        x: i32::from(translated.dst_x),
+        y: i32::from(translated.dst_y),
+        width: u32::from(geometry.width),
+        height: u32::from(geometry.height),
+    }))
+}
+
+fn windows_overlap(left: &X11WindowBounds, right: &X11WindowBounds) -> bool {
+    let left_right = left.x.saturating_add(u32_to_i32_saturating(left.width));
+    let left_bottom = left.y.saturating_add(u32_to_i32_saturating(left.height));
+    let right_right = right.x.saturating_add(u32_to_i32_saturating(right.width));
+    let right_bottom = right.y.saturating_add(u32_to_i32_saturating(right.height));
+
+    left.x < right_right && right.x < left_right && left.y < right_bottom && right.y < left_bottom
+}
+
+fn u32_to_i32_saturating(value: u32) -> i32 {
+    i32::try_from(value).unwrap_or(i32::MAX)
+}
+
+fn window_display_name(connection: &X11Connection, window: Window) -> String {
+    connection
+        .text_property(window, connection.atoms._NET_WM_NAME)
+        .or_else(|| connection.text_property(window, connection.atoms.WM_NAME))
+        .or_else(|| connection.class_name(window))
+        .unwrap_or_else(|| format_window_id(window))
+}
+
+fn summarize_occluding_windows(windows: &[X11OccludingWindow]) -> String {
+    windows
+        .iter()
+        .take(3)
+        .map(|window| {
+            format!(
+                "{} `{}` at {},{} {}x{}",
+                window.id,
+                window.name,
+                window.bounds.x,
+                window.bounds.y,
+                window.bounds.width,
+                window.bounds.height
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 fn capture_display(
@@ -1645,8 +1851,10 @@ mod tests {
     use image::{DynamicImage, ImageBuffer, ImageFormat as RasterImageFormat, Rgba};
 
     use super::{
-        KeyStroke, KeyboardMap, XK_INSERT, capture_png_is_solid_black, decode_class_name,
+        KeyStroke, KeyboardMap, X11OccludingWindow, X11WindowBounds,
+        X11WindowCaptureFallbackReason, XK_INSERT, capture_png_is_solid_black, decode_class_name,
         decode_text_property, key_name_to_keysym, keysym_for_char, parse_window_id,
+        windows_overlap,
     };
 
     #[test]
@@ -1701,6 +1909,51 @@ mod tests {
                 shift: false,
             })
         );
+    }
+
+    #[test]
+    fn detects_overlapping_x11_window_bounds() {
+        let browser = X11WindowBounds {
+            x: 40,
+            y: 50,
+            width: 1200,
+            height: 800,
+        };
+        let xterm = X11WindowBounds {
+            x: 100,
+            y: 120,
+            width: 600,
+            height: 320,
+        };
+        let adjacent = X11WindowBounds {
+            x: 1240,
+            y: 120,
+            width: 300,
+            height: 320,
+        };
+
+        assert!(windows_overlap(&browser, &xterm));
+        assert!(!windows_overlap(&browser, &adjacent));
+    }
+
+    #[test]
+    fn x11_occlusion_fallback_reason_names_overlapping_windows() {
+        let reason = X11WindowCaptureFallbackReason::OverlappingWindows(vec![X11OccludingWindow {
+            id: "0x4200010".to_owned(),
+            name: "xterm".to_owned(),
+            bounds: X11WindowBounds {
+                x: 40,
+                y: 58,
+                width: 605,
+                height: 343,
+            },
+        }]);
+
+        let summary = reason.summary();
+        assert!(summary.contains("overlapping X11 window"));
+        assert!(summary.contains("0x4200010"));
+        assert!(summary.contains("xterm"));
+        assert!(summary.contains("605x343"));
     }
 
     #[test]
