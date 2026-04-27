@@ -1,4 +1,4 @@
-followup_bead=
+followup_bead=bd-765fa3
 Tendril dropdown workflow failed before completion.
 status=failed_followup_required
 outcome=Firefox window captures showed a large black overlapping XTerm occluder over the page, making capture-driven coordinates unreliable. The input run returned success but no dropdown POST reached the local server.
