@@ -1,0 +1,7 @@
+Tendril headless Firefox non-ASCII text entry workflow failed; follow-up required.
+status=failed_followup_required
+followup_bead=bd-175c58
+bead=bd-c82db3
+name=tndl-ctrl-unicode-20260427T143346Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-unicode-text-os-20260427T143346Z
+outcome=Tendril send(...) failed on X11 before text entry with character_not_mapped for é while attempting to type Café π — emoji ✓ quoted text into Firefox.

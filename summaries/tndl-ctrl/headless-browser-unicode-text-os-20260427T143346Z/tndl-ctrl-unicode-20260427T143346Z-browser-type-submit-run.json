@@ -1,0 +1,32 @@
+{
+  "status": "error",
+  "meta": {
+    "schema_version": 1,
+    "command": "run"
+  },
+  "error": {
+    "category": "execution_failure",
+    "code": "character_not_mapped",
+    "message": "execution failure: character `é` is not available in the active X11 keyboard map",
+    "details": {
+      "action": "send(\"Café π — emoji ✓ quoted text\")",
+      "action_index": 2,
+      "action_number": 3,
+      "execution_lock": {
+        "acquired": true,
+        "enabled": true,
+        "lock_path": "/tmp/nix-shell.q7tjIE/tendril-execution-lock-harry-_90",
+        "owner_pid": 3037207,
+        "queue_depth_at_join": 1,
+        "queue_position_at_join": 1,
+        "stale_locks_reaped": 0,
+        "stale_ms": 30000,
+        "stale_tickets_reaped": 0,
+        "timeout_ms": 60000,
+        "token": "3037207-1777300439668-1",
+        "wait_ms": 0
+      },
+      "stage": "dispatch"
+    }
+  }
+}

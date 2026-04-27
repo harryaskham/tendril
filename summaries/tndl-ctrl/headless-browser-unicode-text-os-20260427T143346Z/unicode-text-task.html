@@ -1,0 +1,8 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Tendril Unicode Text Waiting</title>
+<style>body{font-family:sans-serif;margin:48px;font-size:24px}textarea{font-size:28px;width:1200px;height:170px;padding:12px}button{font-size:28px;padding:16px 28px;margin-top:18px}#status{margin-top:24px;border:3px solid #333;padding:16px;min-height:40px}</style></head><body>
+<h1>Tendril Unicode browser text task</h1>
+<p>Type the exact non-ASCII proof text into the textarea and submit.</p>
+<textarea id="proof" autofocus></textarea><br>
+<button id="submit" onclick="const expected='Café π — emoji ✓ quoted text'; const got=document.getElementById('proof').value; document.body.dataset.got=got; if(got===expected){document.title='Tendril Unicode Text Submitted'; document.getElementById('status').textContent='unicode-browser-ok';}else{document.title='Tendril Unicode Text Mismatch'; document.getElementById('status').textContent='unicode mismatch got='+got;}">Submit unicode proof</button>
+<div id="status">waiting</div>
+</body></html>
