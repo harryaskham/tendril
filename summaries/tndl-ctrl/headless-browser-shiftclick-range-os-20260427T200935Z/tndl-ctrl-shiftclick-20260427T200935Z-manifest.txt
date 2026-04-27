@@ -1,0 +1,11 @@
+Tendril headless Firefox Shift-click range selection + OS workflow validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-shiftclick-20260427T200935Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-shiftclick-range-os-20260427T200935Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a local range-select page, click Alpha, hold Shift while clicking Delta, verify page selected Alpha through Delta, then drive XTerm to create an ASCII OS proof file.
+browser_proof=Tendril ShiftClick Submitted
+os_proof=shiftclick-browser-os-verified
