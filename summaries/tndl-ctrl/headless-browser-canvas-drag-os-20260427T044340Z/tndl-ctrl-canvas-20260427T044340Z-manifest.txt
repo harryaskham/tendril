@@ -1,0 +1,10 @@
+Tendril browser canvas drag workflow failed; follow-up required.
+status=failed_followup_required
+followup_bead=bd-ec6439
+name=tndl-ctrl-canvas-20260427T044340Z
+browser_window=0x600004
+xterm_window=0x40000c
+url=file:///home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-canvas-drag-os-20260427T044340Z/canvas-drag-task.html
+xterm_verification=canvas-drag-os-verified
+outcome=Tendril drag run returned success, but the browser page still showed Awaiting Tendril drag / Waiting for canvas drag in the after-capture, so the canvas did not observe mouse drag events.
+artifacts=/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-canvas-drag-os-20260427T044340Z
