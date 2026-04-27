@@ -1,0 +1,48 @@
+{
+  "data": {
+    "action_count": 6,
+    "adapter": {
+      "audio_backend": "pipe_wire",
+      "platform": "linux",
+      "session": "x11",
+      "stateless": true
+    },
+    "execution_lock": {
+      "acquired": true,
+      "enabled": true,
+      "lock_path": "/tmp/nix-shell.q7tjIE/tendril-execution-lock-harry-_90",
+      "owner_pid": 947988,
+      "queue_depth_at_join": 1,
+      "queue_position_at_join": 1,
+      "stale_locks_reaped": 0,
+      "stale_ms": 30000,
+      "stale_tickets_reaped": 0,
+      "timeout_ms": 60000,
+      "token": "947988-1777284906788-1",
+      "wait_ms": 1
+    },
+    "focus_required": true,
+    "focus_restored": true,
+    "focus_transferred": true,
+    "focused_target": "0x600004",
+    "notes": [
+      "Captured previous X11 focus 0x600004 and pointer position for post-run restoration.",
+      "Activated the target X11 window before input delivery so mouse gestures and keyboard events are delivered to the requested window instead of the previously focused or stacked target."
+    ],
+    "pointer_restored": true,
+    "previous_focus": {
+      "id": "0x600004",
+      "kind": "window",
+      "name": "Tendril Smoke Browser — Mozilla Firefox"
+    },
+    "target": {
+      "id": "0x600004",
+      "kind": "window"
+    }
+  },
+  "meta": {
+    "command": "run",
+    "schema_version": 1
+  },
+  "status": "success"
+}

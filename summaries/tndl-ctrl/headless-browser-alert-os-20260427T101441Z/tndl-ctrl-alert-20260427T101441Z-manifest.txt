@@ -1,0 +1,11 @@
+Tendril headless Firefox alert dialog + OS workflow validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-alert-20260427T101441Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-alert-os-20260427T101441Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a local alert page with Alt-D, click a page button to open JavaScript alert(), accept the modal with Return, verify title/status via list/capture, then drive XTerm to create an OS proof file. Coordinates were chosen in source-space from full-size captures.
+browser_proof=Tendril Alert Accepted
+os_proof=alert-dialog-os-verified
