@@ -1,0 +1,10 @@
+Tendril browser slider plus OS workflow passed.
+name=tndl-ctrl-slider-20260426T235422Z
+browser_window=0x600004
+xterm_window=0x40000c
+url=http://127.0.0.1:46399/
+slider_value=86
+xterm_verification=slider-os-verified
+workflow=Use Tendril to navigate Firefox to a local range-slider form, drag the slider thumb to a high value, submit the form to a local OS HTTP server, capture the browser result, then drive XTerm to verify the OS-side saved value.
+notes=Successful retry used documented four-coordinate drag syntax after an earlier invalid five-argument drag attempt was discarded.
+artifacts=/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-slider-os-20260426T235422Z
