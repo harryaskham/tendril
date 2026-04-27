@@ -1,0 +1,9 @@
+Tendril post-landing Firefox canvas drag plus OS workflow passed.
+name=tndl-ctrl-canvas-post-20260427T072557Z
+validated_after=bd-ec6439
+browser_window=0x600004
+xterm_window=0x40000c
+url=file:///home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-canvas-drag-postlanding-20260427T072557Z/canvas-post-task.html
+xterm_verification=canvas-postlanding-verified
+workflow=After bd-ec6439 landed, use Tendril to navigate Firefox to a local canvas page, deliver a drag gesture inside content, verify page title/list changed to Tendril Canvas Post Hit, capture before/after, and drive XTerm to verify the local task file.
+artifacts=/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-canvas-drag-postlanding-20260427T072557Z
