@@ -1,0 +1,11 @@
+Tendril headless Firefox hover-contained action + OS workflow validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-hoveraction-20260427T140318Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-hover-action-os-20260427T140318Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a local page, use Tendril hover(...) to reveal a button inside a hovered element, click the revealed action, verify browser title, then drive XTerm to create an OS proof file.
+browser_proof=Tendril Hover Action Clicked
+os_proof=hover-action-os-verified
