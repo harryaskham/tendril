@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tendril Context Menu Waiting</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #111827;
+      color: #e5e7eb;
+      font: 24px/1.35 system-ui, sans-serif;
+    }
+    main { padding: 48px 72px; }
+    h1 { margin: 0 0 16px; font-size: 42px; }
+    #status { margin: 0 0 12px; color: #fbbf24; font-weight: 700; }
+    #details { margin: 0 0 20px; color: #93c5fd; }
+    #target {
+      display: grid;
+      place-items: center;
+      margin-top: 40px;
+      width: 1000px;
+      height: 480px;
+      border: 5px dashed #f59e0b;
+      border-radius: 18px;
+      background: #0f172a;
+      box-shadow: 0 0 0 6px rgba(245, 158, 11, 0.15);
+      user-select: none;
+    }
+    #target span { color: #fcd34d; font-size: 36px; font-weight: 800; }
+    .ok { color: #86efac !important; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Firefox context menu target</h1>
+    <p id="status">Waiting for context menu event.</p>
+    <p id="details">Right-click inside the dashed target.</p>
+    <div id="target"><span>Right-click target</span></div>
+  </main>
+  <script>
+    const target = document.getElementById('target');
+    const status = document.getElementById('status');
+    const details = document.getElementById('details');
+
+    target.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      const rect = target.getBoundingClientRect();
+      const localX = Math.round(event.clientX - rect.left);
+      const localY = Math.round(event.clientY - rect.top);
+      document.body.dataset.contextMenuObserved = 'true';
+      document.body.dataset.contextMenuButton = String(event.button);
+      document.body.dataset.contextMenuClient = `${Math.round(event.clientX)},${Math.round(event.clientY)}`;
+      document.body.dataset.contextMenuLocal = `${localX},${localY}`;
+      document.title = 'Tendril Context Menu Hit';
+      status.textContent = `Context menu observed at ${localX},${localY}.`;
+      status.className = 'ok';
+      details.textContent = `contextmenu button=${event.button} client=${Math.round(event.clientX)},${Math.round(event.clientY)}`;
+    });
+  </script>
+</body>
+</html>

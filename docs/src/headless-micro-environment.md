@@ -163,6 +163,28 @@ not provide a direct plain-text selection; retry with a smaller text selection
 or file a platform/toolkit-specific clipboard backend bead with the JSON error
 details.
 
+## Firefox contextmenu smoke test
+
+Use the focused contextmenu smoke when validating Linux/X11 right-click delivery
+into Firefox content. It prevents the browser menu, records the page-observed DOM
+`contextmenu` event through Marionette, and fails if Tendril only reports a
+successful `run` envelope without the page changing state.
+
+```bash
+cargo build -p tendril
+scripts/tendril-headless.sh \
+  --name contextmenu-smoke \
+  --browser firefox \
+  --tendril-bin ./target/debug/tendril \
+  --artifact-dir "summaries/${CACOPHONY_AGENT:-manual}/contextmenu-smoke" \
+  contextmenu-smoke
+```
+
+The smoke asserts that `rclick(220,390),wait(900ms)` returns success with
+Firefox focus transfer and that the page state reports
+`contextMenuObserved=true`, `contextMenuButton=2`, and title
+`Tendril Context Menu Hit`.
+
 ## Manual lifecycle
 
 Start an environment and export its display into the current shell:
