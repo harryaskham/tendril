@@ -1,0 +1,23 @@
+<!doctype html><meta charset="utf-8"><title>Tendril Scroll Page Top</title>
+<style>
+body{font-family:sans-serif;font-size:30px;margin:40px;line-height:1.4}
+header{position:sticky;top:0;background:#fff;padding:20px;border-bottom:4px solid #ddd}
+.section{height:850px;border:2px solid #ddd;margin:40px 0;padding:40px}
+#bottom{background:#e8fff0}
+#status{color:#064;font-weight:bold}
+</style>
+<header><h1>Tendril Scroll Key Task</h1><div id="status">scroll-top-control-ok</div></header>
+<div class="section"><p>Top section. Press PageDown to move toward the bottom.</p></div>
+<div class="section"><p>Middle section visible after scrolling.</p></div>
+<div id="bottom" class="section"><h2>Bottom proof</h2><p id="bottom-proof">scroll-bottom-control-ok</p></div>
+<script>
+function update(){
+  const y = Math.round(window.scrollY);
+  const atBottom = y > 1000;
+  document.title = atBottom ? 'Tendril Scroll Page Bottom' : 'Tendril Scroll Page Top';
+  document.getElementById('status').textContent = atBottom ? 'scroll-bottom-control-ok' : 'scroll-top-control-ok';
+  document.body.dataset.scrollY = String(y);
+}
+window.addEventListener('scroll', update, {passive:true});
+window.addEventListener('load', update);
+</script>

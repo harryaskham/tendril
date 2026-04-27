@@ -1,0 +1,9 @@
+Tendril browser PageDown/PageUp plus OS workflow passed.
+name=tndl-ctrl-scrollkey-20260427T031421Z
+browser_window=0x600004
+xterm_window=0x40000c
+url=file:///home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-scrollkey-os-20260427T031421Z/scrollkey-task.html
+history_sequence=top -> PageDown/PageDown bottom -> PageUp/PageUp top
+xterm_verification=scrollkey-os-verified
+workflow=Use Tendril to navigate Firefox to a long local page, send PageDown and PageUp key taps, verify browser window titles after scroll state changes, capture each state, then drive XTerm to verify the page file.
+artifacts=/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-scrollkey-os-20260427T031421Z
