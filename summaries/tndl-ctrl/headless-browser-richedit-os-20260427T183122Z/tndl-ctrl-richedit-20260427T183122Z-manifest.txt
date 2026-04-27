@@ -1,0 +1,13 @@
+Tendril headless Firefox contenteditable rich editor repro.
+status=failed
+bead=bd-ecac53
+related_root=bd-c82db3
+depends_on=bd-5583cd
+artifact_dir=summaries/tndl-ctrl/headless-browser-richedit-os-20260427T183122Z
+workflow=Navigate Firefox to a local contenteditable editor, use Tendril keyboard modifiers for Ctrl-B, send Unicode bold text, toggle bold off, send plain Unicode text, click verify.
+expected_browser_proof=Tendril RichEdit Submitted
+expected_text=Bold 😀 Café plain π — ✓
+actual_browser_title=Tendril RichEdit Mismatch
+actual_visible_text=plain π — ✓
+run_status=success
+failure=The first Unicode segment was lost or replaced after a subsequent Unicode send into the contenteditable editor; both X11 clipboard paste fallback sends reported served selection requests.
