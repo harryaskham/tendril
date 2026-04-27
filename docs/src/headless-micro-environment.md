@@ -163,6 +163,30 @@ not provide a direct plain-text selection; retry with a smaller text selection
 or file a platform/toolkit-specific clipboard backend bead with the JSON error
 details.
 
+### Normal page-text double-click clipboard smoke
+
+Use this focused smoke when validating copy workflows for regular Firefox page
+content rather than textarea/input controls. It opens a normal text page,
+computes the target span center through Marionette geometry, dispatches
+`dblclick(...), Ctrl+C` through Tendril, then requires both the page-observed
+selection and the X11 `CLIPBOARD` text to equal the proof word.
+
+```bash
+cargo build -p tendril
+scripts/tendril-headless.sh \
+  --name page-text-clipboard-smoke \
+  --browser firefox \
+  --tendril-bin ./target/debug/tendril \
+  --artifact-dir "summaries/${CACOPHONY_AGENT:-manual}/page-text-clipboard-smoke" \
+  page-text-clipboard-smoke
+```
+
+A DOM `copy` event alone is not considered proof: Firefox can dispatch the page
+event while the selected text is not the intended word, and an OS consumer still
+needs a live X11 `CLIPBOARD` owner. The smoke therefore writes page state,
+clipboard JSON, before/after captures, geometry, run envelope, and a manifest
+under `summaries/` and fails if any layer disagrees.
+
 ## Firefox contextmenu smoke test
 
 Use the focused contextmenu smoke when validating Linux/X11 right-click delivery

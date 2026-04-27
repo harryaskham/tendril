@@ -581,7 +581,10 @@ Scenario: An agent needs to copy a code snippet from a documentation browser win
    Note: terminal paste often uses Ctrl+Shift+V rather than Ctrl+V. In the
    headless X11 micro-environment, prefer the documented `clipboard-smoke`
    recipe when validating browser↔OS transfer because primary/middle-click and
-   Shift+Insert can exercise different selections or toolkit bindings.
+   Shift+Insert can exercise different selections or toolkit bindings. For
+   regular page content rather than textarea/input controls, use the focused
+   `page-text-clipboard-smoke`; a page `copy` event by itself is not sufficient
+   evidence unless an OS-side `clipboard get` reads the same selected text.
 
 7. **Capture the terminal to verify the paste succeeded.**
    ```bash
