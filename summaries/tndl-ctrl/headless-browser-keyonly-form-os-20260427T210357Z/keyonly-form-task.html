@@ -1,0 +1,8 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Tendril KeyOnly Waiting</title>
+<style>body{font-family:sans-serif;margin:48px;font-size:24px}input,label,button{font-size:28px;margin:14px 0}input[type=text]{width:640px;padding:12px}button{padding:16px 28px}#status{margin-top:24px;border:3px solid #333;padding:16px;min-height:40px}</style></head><body>
+<h1>Tendril keyboard-only form task</h1><p>Use only keyboard actions to type, tick the checkbox, and submit.</p>
+<form id="form"><input id="name" autofocus type="text" placeholder="type name"><br><label><input id="agree" type="checkbox"> I agree</label><br><button id="submit" type="submit">Submit form</button></form>
+<div id="status">waiting</div>
+<script>
+document.getElementById('form').addEventListener('submit', e => { e.preventDefault(); const name=document.getElementById('name').value; const agree=document.getElementById('agree').checked; if(name==='Keyboard Agent' && agree){document.title='Tendril KeyOnly Submitted'; document.getElementById('status').textContent='keyonly-browser-ok';}else{document.title='Tendril KeyOnly Mismatch'; document.getElementById('status').textContent='keyonly mismatch name='+JSON.stringify(name)+' agree='+agree;} });
+</script></body></html>
