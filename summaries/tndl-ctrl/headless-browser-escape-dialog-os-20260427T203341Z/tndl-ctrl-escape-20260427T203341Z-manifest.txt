@@ -1,0 +1,11 @@
+Tendril headless Firefox Escape-key modal dialog + OS workflow validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-escape-20260427T203341Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-escape-dialog-os-20260427T203341Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a local HTML dialog page, open the modal with Tendril click, dismiss it using Escape, verify the browser title changed from the dialog cancel handler, then drive XTerm to create an ASCII OS proof file.
+browser_proof=Tendril Escape Dialog Submitted
+os_proof=escape-dialog-os-verified

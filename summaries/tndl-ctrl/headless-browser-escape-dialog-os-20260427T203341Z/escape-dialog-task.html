@@ -1,0 +1,11 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Tendril Escape Dialog Waiting</title>
+<style>body{font-family:sans-serif;margin:48px;font-size:24px}button{font-size:30px;padding:20px 32px;margin-top:32px}dialog{font-size:28px;padding:32px;border:5px solid #1f2937;border-radius:12px}#status{margin-top:28px;border:3px solid #333;padding:16px;min-height:40px}</style></head><body>
+<h1>Tendril Escape dialog task</h1><p>Open the modal dialog, then close it with Escape.</p>
+<button id="open" onclick="document.getElementById('modal').showModal(); document.title='Tendril Escape Dialog Open'; document.getElementById('status').textContent='dialog-open';">Open modal dialog</button>
+<dialog id="modal"><p>Press Escape to dismiss this dialog.</p><button onclick="document.getElementById('modal').close('button')">Close by button</button></dialog>
+<div id="status">waiting</div>
+<script>
+const modal=document.getElementById('modal');
+modal.addEventListener('cancel', () => { document.body.dataset.cancelled='yes'; document.title='Tendril Escape Dialog Submitted'; document.getElementById('status').textContent='escape-dialog-browser-ok'; });
+modal.addEventListener('close', () => { if (modal.returnValue === 'button') { document.title='Tendril Escape Dialog Button Closed'; } });
+</script></body></html>
