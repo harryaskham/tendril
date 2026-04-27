@@ -1,0 +1,11 @@
+Tendril headless Firefox middle-click + OS workflow validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-mclick-20260427T120610Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-middleclick-os-20260427T120610Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a local page, deliver Tendril mclick to a page target, verify Firefox title/status via list/capture, then drive XTerm to create an OS proof file.
+browser_proof=Tendril Middle Click Hit
+os_proof=middleclick-os-verified

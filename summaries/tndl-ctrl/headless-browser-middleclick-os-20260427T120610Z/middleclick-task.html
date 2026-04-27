@@ -1,0 +1,22 @@
+<!doctype html>
+<html><head><meta charset="utf-8" /><title>Tendril Middle Click Waiting</title>
+<style>body{font-family:sans-serif;margin:48px;font-size:24px}.target{margin-top:30px;width:620px;height:180px;border:4px solid #333;background:#eef;display:flex;align-items:center;justify-content:center;font-weight:bold}#result{margin-top:24px;padding:16px;border:3px solid #333;min-height:48px}</style>
+</head><body>
+<h1>Tendril middle-click task</h1>
+<p id="status">Waiting for Tendril middle click.</p>
+<div id="target" class="target">Middle-click inside this target</div>
+<div id="result">No middle click observed yet.</div>
+<script>
+const target = document.getElementById('target');
+function mark(event) {
+  if (event.button === 1) {
+    event.preventDefault();
+    document.title = 'Tendril Middle Click Hit';
+    document.getElementById('status').textContent = 'middle-click-browser-ok';
+    document.getElementById('result').textContent = `${event.type}; button=${event.button}; client=${event.clientX},${event.clientY}`;
+  }
+}
+for (const name of ['mousedown','mouseup','auxclick']) target.addEventListener(name, mark);
+target.addEventListener('click', event => { if (event.button !== 1) document.getElementById('result').textContent = `non-middle click button=${event.button}`; });
+</script>
+</body></html>
