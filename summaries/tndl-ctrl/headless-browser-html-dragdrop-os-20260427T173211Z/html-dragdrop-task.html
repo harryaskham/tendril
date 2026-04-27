@@ -1,0 +1,11 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Tendril HTML DragDrop Waiting</title>
+<style>body{font-family:sans-serif;margin:48px;font-size:24px}.row{display:flex;gap:120px;align-items:center;margin-top:48px}.card{width:240px;height:130px;background:#ffd76a;border:4px solid #8a5b00;border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:bold;user-select:none}.zone{width:420px;height:220px;border:6px dashed #3459c7;border-radius:14px;display:flex;align-items:center;justify-content:center;background:#eef2ff}#status{margin-top:40px;border:3px solid #333;padding:16px;min-height:40px}</style></head><body>
+<h1>Tendril HTML drag and drop task</h1><p>Drag the yellow card into the blue drop zone.</p>
+<div class="row"><div id="card" class="card" draggable="true">Drag me 😀</div><div id="drop" class="zone">Drop here</div></div>
+<div id="status">waiting</div>
+<script>
+const card=document.getElementById('card'); const drop=document.getElementById('drop');
+card.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain','tendril-card'); document.body.dataset.dragstart='yes'; });
+drop.addEventListener('dragover', e => { e.preventDefault(); document.body.dataset.dragover='yes'; });
+drop.addEventListener('drop', e => { e.preventDefault(); const data=e.dataTransfer.getData('text/plain'); document.body.dataset.drop=data; if(data==='tendril-card'){ drop.textContent='Dropped Tendril card 😀'; document.getElementById('status').textContent='html-dragdrop-browser-ok'; document.title='Tendril HTML DragDrop Dropped'; } else { document.getElementById('status').textContent='drop mismatch '+data; document.title='Tendril HTML DragDrop Mismatch'; } });
+</script></body></html>

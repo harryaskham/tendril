@@ -1,0 +1,11 @@
+Tendril headless Firefox HTML5 drag-and-drop + OS workflow validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-htmldrag-20260427T173211Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-html-dragdrop-os-20260427T173211Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a local draggable-card page, use Tendril drag(...) from card center into drop zone, verify browser title changed after real HTML5 drop, then drive XTerm to create an OS proof file.
+browser_proof=Tendril HTML DragDrop Dropped
+os_proof=html-dragdrop-os-verified
