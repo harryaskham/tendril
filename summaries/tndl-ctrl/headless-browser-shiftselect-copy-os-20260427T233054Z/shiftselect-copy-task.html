@@ -1,0 +1,8 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Tendril ShiftSelect Waiting</title>
+<style>body{font-family:sans-serif;margin:48px;font-size:24px}input,button,label{font-size:28px;margin:12px 0;display:block}input{width:760px;padding:14px}button{padding:16px 28px}#status{margin-top:24px;border:3px solid #333;padding:16px;min-height:40px}</style></head><body>
+<h1>Tendril keyboard selection copy task</h1><p>Type source text, use Shift+Left to select the suffix, copy it, paste it into destination, then submit.</p>
+<form id="form"><label>Source <input id="source" autofocus type="text" placeholder="select suffix here"></label><label>Destination <input id="dest" type="text" placeholder="paste selection here"></label><button id="submit" type="submit">Verify selected copy</button></form>
+<div id="status">waiting</div>
+<script>
+document.getElementById('form').addEventListener('submit', e => { e.preventDefault(); const source=document.getElementById('source').value; const dest=document.getElementById('dest').value; if(source==='prefix target' && dest==='target'){document.title='Tendril ShiftSelect Submitted'; document.getElementById('status').textContent='shiftselect-browser-ok';}else{document.title='Tendril ShiftSelect Mismatch'; document.getElementById('status').textContent='source='+JSON.stringify(source)+' dest='+JSON.stringify(dest);} });
+</script></body></html>

@@ -1,0 +1,11 @@
+Tendril headless Firefox Shift+Arrow selection copy + OS workflow validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-shiftselect-20260427T233054Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-shiftselect-copy-os-20260427T233054Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a local two-field form, type source text, hold Shift while tapping Left six times to select a suffix, copy it with Ctrl+C, paste it into destination with Ctrl+V, submit via keyboard, verify browser title, record Tendril clipboard get output, then drive XTerm to create an ASCII OS proof file.
+browser_proof=Tendril ShiftSelect Submitted
+os_proof=shiftselect-browser-os-verified
