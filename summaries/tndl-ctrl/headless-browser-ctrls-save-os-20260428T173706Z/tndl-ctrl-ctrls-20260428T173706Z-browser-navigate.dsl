@@ -1,0 +1,1 @@
+lclick(650,66),wait(150ms),hold(ctrl),a,release(ctrl),send("file:///home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-ctrls-save-os-20260428T173706Z/ctrls-save-task.html"),Return,wait(2200ms)

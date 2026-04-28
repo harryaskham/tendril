@@ -1,0 +1,15 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Tendril CtrlS Waiting</title>
+<style>
+body{font-family:sans-serif;margin:44px 60px;background:#f8fafc;color:#0f172a}h1{font-size:42px;margin:0 0 16px}p{font-size:23px}.panel{margin-top:28px;border:5px solid #334155;background:white;border-radius:16px;padding:28px;width:900px;font-size:25px}.row{margin:18px 0}.row label{display:block;margin-bottom:8px;font-weight:700}.row textarea{width:800px;height:145px;font-size:26px;border:3px solid #64748b;border-radius:8px;padding:12px}.hint{font-size:20px;color:#475569}.summary{margin-top:26px;border:4px solid #334155;padding:18px;width:920px;font-size:25px;background:white;white-space:pre-wrap}.ok{border-color:#047857;background:#ecfdf5;color:#047857;font-weight:700}</style></head>
+<body>
+<h1>Tendril browser Ctrl-S shortcut task</h1>
+<p>Type a Unicode note and use the web-app Ctrl-S shortcut. The page prevents the browser save dialog and verifies the note.</p>
+<div class="panel"><div class="row"><label for="note">Draft note</label><textarea id="note"></textarea></div><div class="hint">Expected: Clinical café note π 😀 ✓</div></div>
+<div id="summary" class="summary">waiting</div>
+<script>
+const expected='Clinical café note π 😀 ✓';
+const note=document.getElementById('note');
+document.addEventListener('keydown', e=>{ if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='s'){ e.preventDefault(); const ok=note.value===expected; const s=document.getElementById('summary'); s.textContent=ok?'ctrls-browser-ok: '+note.value:'ctrls mismatch: '+note.value; s.className=ok?'summary ok':'summary'; document.title=ok?'Tendril CtrlS Submitted':'Tendril CtrlS Mismatch'; }});
+</script>
+</body></html>
