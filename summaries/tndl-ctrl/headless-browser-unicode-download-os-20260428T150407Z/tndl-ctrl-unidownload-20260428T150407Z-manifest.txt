@@ -1,0 +1,13 @@
+Tendril headless Firefox Unicode download filename workflow plus XTerm OS-control validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-unidownload-20260428T150407Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-unicode-download-os-20260428T150407Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Capture Firefox, navigate by clicking the visible address bar and typing a local HTML page, click a Blob download link whose download filename is café-π-✓-report.txt, then run an XTerm Python verifier that reads HOME/Downloads and confirms both Unicode filename and UTF-8 contents.
+expected_filename=café-π-✓-report.txt
+expected_contents=download unicode café π ✓ 😀
+os_proof=unicode-download-os-proof: ok
+note=Prior invalid attempts missed the button, failed to navigate off the smoke page, or hit the intentional Ctrl+L navigation guard; all were discarded as controller test errors.

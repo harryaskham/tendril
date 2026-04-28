@@ -1,0 +1,12 @@
+{
+  "home": "/run/user/1000/tendril-headless/tndl-ctrl-unidownload-20260428T150407Z/home",
+  "downloads": "/run/user/1000/tendril-headless/tndl-ctrl-unidownload-20260428T150407Z/home/Downloads",
+  "expected_filename": "café-π-✓-report.txt",
+  "path": "/run/user/1000/tendril-headless/tndl-ctrl-unidownload-20260428T150407Z/home/Downloads/café-π-✓-report.txt",
+  "exists": true,
+  "files": [
+    "café-π-✓-report.txt"
+  ],
+  "contents": "download unicode café π ✓ 😀\n",
+  "matches": true
+}

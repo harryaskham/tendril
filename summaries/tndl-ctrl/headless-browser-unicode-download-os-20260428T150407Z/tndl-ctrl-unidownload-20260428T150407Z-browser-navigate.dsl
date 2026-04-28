@@ -1,0 +1,1 @@
+lclick(650,66),wait(150ms),hold(ctrl),a,release(ctrl),send("file:///home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-unicode-download-os-20260428T150407Z/unicode-download-task.html"),Return,wait(2200ms)

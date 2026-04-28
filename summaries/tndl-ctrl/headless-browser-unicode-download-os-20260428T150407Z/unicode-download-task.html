@@ -1,0 +1,26 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Tendril Unicode Download Waiting</title>
+<style>
+body{font-family:sans-serif;margin:44px 60px;background:#f8fafc;color:#0f172a}h1{font-size:42px;margin:0 0 16px}p{font-size:23px}.panel{margin-top:28px;border:5px solid #334155;background:white;border-radius:16px;padding:28px;width:850px;font-size:25px}.download{display:inline-block;margin-top:18px;font-size:28px;padding:16px 26px;border-radius:10px;background:#2563eb;color:white;text-decoration:none}.summary{margin-top:26px;border:4px solid #334155;padding:18px;width:880px;font-size:25px;background:white;white-space:pre-wrap}.ok{border-color:#047857;background:#ecfdf5;color:#047857;font-weight:700}</style></head>
+<body>
+<h1>Tendril Unicode download filename task</h1>
+<p>Click the download link, then verify the Unicode filename and contents from XTerm.</p>
+<div class="panel">
+  <div>Expected filename: <strong>café-π-✓-report.txt</strong></div>
+  <div>Expected contents: <strong>download unicode café π ✓ 😀</strong></div>
+  <a id="download" class="download" download="café-π-✓-report.txt" href="#">Download Unicode report</a>
+</div>
+<div id="summary" class="summary">waiting for download click</div>
+<script>
+const content = 'download unicode café π ✓ 😀\n';
+const blob = new Blob([content], {type: 'text/plain;charset=utf-8'});
+const link = document.getElementById('download');
+link.href = URL.createObjectURL(blob);
+link.addEventListener('click', () => {
+  document.title = 'Tendril Unicode Download Clicked';
+  const s = document.getElementById('summary');
+  s.textContent = 'download-click-browser-ok: café-π-✓-report.txt';
+  s.className = 'summary ok';
+});
+</script>
+</body></html>
