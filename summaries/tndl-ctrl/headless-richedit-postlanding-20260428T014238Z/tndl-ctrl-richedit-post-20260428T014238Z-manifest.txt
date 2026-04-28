@@ -1,0 +1,10 @@
+Tendril headless Firefox contenteditable rich editor post-landing validation for bd-ecac53.
+status=failed
+bead=bd-ecac53
+artifact_dir=summaries/tndl-ctrl/headless-richedit-postlanding-20260428T014238Z
+workflow=Re-ran the original failing rich-editor workflow from summaries/tndl-ctrl/headless-browser-richedit-os-20260427T183122Z against current main after bd-ecac53 landed: navigate Firefox to the original contenteditable page, use Ctrl-B, send Unicode bold text, toggle bold off, send Unicode plain text, click Verify.
+expected_browser_proof=Tendril RichEdit Submitted
+expected_text=Bold 😀 Café plain π — ✓
+actual_browser_title=Tendril RichEdit Mismatch — Mozilla Firefox
+actual_visible_text=plain π — ✓
+notes=Run envelope shows bd-ecac53 temporary X11 Unicode key mapping path was used, not the old clipboard fallback, but the original repro page still lost the first bold Unicode segment and retained only the second plain segment.
