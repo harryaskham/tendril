@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tendril RichEdit Waiting</title>
+  <style>
+    body { font-family: sans-serif; margin: 48px; font-size: 24px; }
+    #editor { font-size: 28px; width: 1250px; height: 190px; border: 4px solid #555; border-radius: 10px; padding: 18px; white-space: pre-wrap; }
+    button { font-size: 28px; padding: 16px 28px; margin-top: 22px; }
+    #status { margin-top: 24px; border: 3px solid #333; padding: 16px; min-height: 40px; white-space: pre-wrap; }
+    .ok { color: #047857; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <h1>Tendril rich text editor task</h1>
+  <p>Use Ctrl-B to enter bold Unicode text, then plain Unicode text.</p>
+  <div id="editor" contenteditable="true" role="textbox" aria-label="rich editor"></div>
+  <button id="verify" type="button">Verify rich edit</button>
+  <div id="status">waiting</div>
+  <script>
+    const editor = document.getElementById('editor');
+    const status = document.getElementById('status');
+    const expected = 'Bold 😀 Café plain π — ✓';
+    editor.addEventListener('keydown', event => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'b') {
+        event.preventDefault();
+        document.execCommand('bold');
+      }
+    });
+    document.getElementById('verify').addEventListener('click', () => {
+      const html = editor.innerHTML;
+      const text = editor.textContent;
+      const hasBold = /<(b|strong)(\s|>)/i.test(html);
+      document.body.dataset.html = html;
+      document.body.dataset.text = text;
+      document.body.dataset.richEditOk = String(hasBold && text === expected);
+      if (hasBold && text === expected) {
+        document.title = 'Tendril RichEdit Submitted';
+        status.textContent = 'richedit-browser-ok';
+        status.className = 'ok';
+      } else {
+        document.title = 'Tendril RichEdit Mismatch';
+        status.textContent = 'rich edit mismatch text=' + JSON.stringify(text) + ' html=' + html;
+        status.className = '';
+      }
+    });
+  </script>
+</body>
+</html>

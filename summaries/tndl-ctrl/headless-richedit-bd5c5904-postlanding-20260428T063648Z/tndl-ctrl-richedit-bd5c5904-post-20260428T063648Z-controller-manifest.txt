@@ -1,0 +1,6 @@
+Controller post-validation for bd-5c5904 rich-editor Unicode fix.
+status=passed
+bead=bd-5c5904
+artifact_dir=summaries/tndl-ctrl/headless-richedit-bd5c5904-postlanding-20260428T063648Z
+workflow=Ran scripts/tendril-headless.sh richedit-unicode-send-smoke on current main after bd-5c5904 closed. The smoke records the original minimal Firefox Ctrl-B limitation separately, then validates a real rich-editor-style contenteditable page that intercepts Ctrl-B and preserves repeated Unicode send(...) content plus bold markup.
+expected_text=Bold 😀 Café plain π — ✓

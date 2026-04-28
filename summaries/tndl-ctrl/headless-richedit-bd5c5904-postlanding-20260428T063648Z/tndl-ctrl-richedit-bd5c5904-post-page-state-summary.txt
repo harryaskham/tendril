@@ -1,0 +1,14 @@
+tndl-ctrl-richedit-bd5c5904-post-20260428T063648Z-richedit-original-page-state.json
+ok= False
+title= Tendril RichEdit Mismatch
+text=  plain π — ✓
+hasBold= False
+note= The original minimal page has no Ctrl-B handler. On Firefox/Linux, Ctrl-B is browser chrome (Bookmarks sidebar) rather than a reliable native contenteditable bold command; real rich editors normally intercept the shortcut.
+
+tndl-ctrl-richedit-bd5c5904-post-20260428T063648Z-richedit-unicode-page-state.json
+ok= True
+title= Tendril RichEdit Submitted
+text= Bold 😀 Café plain π — ✓
+hasBold= True
+note= None
+

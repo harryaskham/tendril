@@ -1,0 +1,15 @@
+{
+  "expected": "Bold 😀 Café plain π — ✓",
+  "filename": "tendril-headless-firefox-richedit-unicode-state",
+  "helper": "tendril-headless firefox-richedit-unicode-state",
+  "ok": true,
+  "state": {
+    "hasBold": true,
+    "html": "<b>Bold 😀 Café</b> plain π — ✓",
+    "richEditOk": "true",
+    "status": "richedit-browser-ok",
+    "text": "Bold 😀 Café plain π — ✓",
+    "title": "Tendril RichEdit Submitted"
+  },
+  "transport": "firefox-marionette"
+}
