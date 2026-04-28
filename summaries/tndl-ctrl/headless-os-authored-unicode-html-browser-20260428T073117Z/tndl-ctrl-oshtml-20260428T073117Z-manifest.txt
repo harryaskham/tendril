@@ -1,0 +1,12 @@
+Tendril headless XTerm-to-Firefox OS-authored Unicode HTML validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-oshtml-20260428T073117Z
+artifact_dir=summaries/tndl-ctrl/headless-os-authored-unicode-html-browser-20260428T073117Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Use Tendril send into XTerm to create an HTML file containing Unicode proof text and a readback proof file, then use Tendril to navigate Firefox to that OS-authored file and capture the rendered page.
+expected_browser_title=Tendril OS Authored Unicode Submitted
+expected_os_proof=os-html-proof: OS-authored Unicode ✓ Café π 😀
+note=Prior invalid attempt generated DSL with unsupported JSON-style Unicode escape sequences; this corrected run emits literal Unicode in the send string.
