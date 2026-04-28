@@ -1,0 +1,12 @@
+Tendril headless Firefox custom context-menu workflow plus XTerm OS-control validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-customctx-20260428T100307Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-custom-contextmenu-os-20260428T100307Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a local page with a custom JavaScript context menu, right-click the ticket card, click the Unicode menu action, verify submitted title/result, then write and read back an OS proof file through XTerm.
+expected_browser_title=Tendril Custom Context Submitted
+expected_browser_result=custom-context-browser-ok: Mark café follow-up ✓
+os_proof=custom-context-os-proof: browser custom context menu verified

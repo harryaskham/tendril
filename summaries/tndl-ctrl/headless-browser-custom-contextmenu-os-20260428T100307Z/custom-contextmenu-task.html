@@ -1,0 +1,17 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Tendril Custom Context Waiting</title>
+<style>
+body{font-family:sans-serif;margin:44px 60px;background:#f8fafc;color:#0f172a}h1{font-size:44px;margin:0 0 16px}p{font-size:23px}.card{margin-top:28px;width:620px;border:5px solid #334155;border-radius:16px;background:white;padding:28px;font-size:30px}.menu{position:fixed;display:none;background:white;border:4px solid #0f172a;border-radius:10px;box-shadow:0 16px 40px #0005;z-index:10;min-width:300px}.item{font-size:26px;padding:14px 18px;border-bottom:1px solid #cbd5e1}.item:last-child{border-bottom:0}.item:hover{background:#fde68a}.summary{margin-top:26px;border:4px solid #334155;padding:18px;width:760px;font-size:26px;background:white}.ok{border-color:#047857;background:#ecfdf5;color:#047857;font-weight:700}</style></head>
+<body>
+<h1>Tendril custom context menu task</h1>
+<p>Right-click the card, then choose the Unicode menu action.</p>
+<div id="card" class="card">Ticket row: Patient café follow-up</div>
+<div id="summary" class="summary">waiting</div>
+<div id="menu" class="menu" role="menu"><div class="item" data-action="archive">Archive ticket</div><div class="item" data-action="mark">Mark café follow-up ✓</div><div class="item" data-action="schedule">Schedule π review 😀</div></div>
+<script>
+const card=document.getElementById('card'), menu=document.getElementById('menu'), summary=document.getElementById('summary');
+card.addEventListener('contextmenu', e=>{e.preventDefault();menu.style.display='block';menu.style.left=e.clientX+'px';menu.style.top=e.clientY+'px';document.body.dataset.contextOpened='true';});
+document.addEventListener('click', e=>{if(!menu.contains(e.target)) menu.style.display='none';});
+menu.addEventListener('click', e=>{const item=e.target.closest('.item'); if(!item)return; const action=item.dataset.action; menu.style.display='none'; if(action==='mark'){summary.textContent='custom-context-browser-ok: Mark café follow-up ✓';summary.className='summary ok';document.body.dataset.contextResult=summary.textContent;document.title='Tendril Custom Context Submitted';}else{summary.textContent='custom context mismatch: '+item.textContent;document.title='Tendril Custom Context Mismatch';}});
+</script>
+</body></html>
