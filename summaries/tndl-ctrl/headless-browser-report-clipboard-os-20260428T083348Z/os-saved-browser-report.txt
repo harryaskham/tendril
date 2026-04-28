@@ -1,0 +1,4 @@
+REPORT: Patient café follow-up
+NOTES: Follow up ✓ π 😀
+Actions: check vitals
+STATUS: browser-generated ✓

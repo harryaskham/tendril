@@ -1,0 +1,12 @@
+Tendril headless Firefox browser-generated report clipboard to XTerm OS-file validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-report-20260428T083348Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-report-clipboard-os-20260428T083348Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Use Tendril to fill a Firefox form with Unicode, generate a report, select and copy the report from the browser, read it through Tendril clipboard get, then use Tendril send into XTerm to save the same report as an OS file and verify byte-for-byte readback.
+expected_browser_title=Tendril Report Submitted
+expected_report=REPORT: Patient café follow-up / NOTES: Follow up ✓ π 😀 / Actions: check vitals / STATUS: browser-generated ✓
+note=Prior invalid attempt clicked labels instead of fields and was discarded as a coordinate error.

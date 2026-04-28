@@ -1,0 +1,6 @@
+cat > '/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-report-clipboard-os-20260428T083348Z/os-saved-browser-report.txt' <<'REPORT'
+REPORT: Patient café follow-up
+NOTES: Follow up ✓ π 😀
+Actions: check vitals
+STATUS: browser-generated ✓
+REPORT

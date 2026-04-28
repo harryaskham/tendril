@@ -1,0 +1,1 @@
+send("cat > '/home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-report-clipboard-os-20260428T083348Z/os-saved-browser-report.txt' <<'REPORT'\nREPORT: Patient café follow-up\nNOTES: Follow up ✓ π 😀\nActions: check vitals\nSTATUS: browser-generated ✓\nREPORT"),Return,wait(1200ms)

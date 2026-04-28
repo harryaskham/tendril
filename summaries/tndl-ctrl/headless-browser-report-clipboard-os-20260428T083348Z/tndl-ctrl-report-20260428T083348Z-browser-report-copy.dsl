@@ -1,0 +1,1 @@
+lclick(150,320),wait(100ms),send("Patient café follow-up"),wait(100ms),lclick(150,435),wait(100ms),send("Follow up ✓ π 😀\nActions: check vitals"),wait(100ms),lclick(990,545),wait(500ms),lclick(150,690),wait(100ms),hold(ctrl),a,release(ctrl),wait(100ms),hold(ctrl),c,release(ctrl),wait(700ms)
