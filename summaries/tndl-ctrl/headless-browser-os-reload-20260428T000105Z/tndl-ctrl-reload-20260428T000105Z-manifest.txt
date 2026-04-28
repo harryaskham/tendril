@@ -1,0 +1,12 @@
+Tendril headless Firefox reload-after-OS-file-update workflow validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-reload-20260428T000105Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-os-reload-20260428T000105Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a local HTML file, verify V1 title, drive XTerm to replace the live HTML file with a V2 version and write an OS proof file, return to Firefox and refresh with Ctrl+R, verify the browser title changed to V2.
+browser_before=Tendril Reload V1
+browser_after=Tendril Reload V2
+os_proof=os-file-update-for-browser-reload
