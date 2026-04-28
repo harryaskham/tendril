@@ -1,0 +1,12 @@
+Tendril headless Firefox keyboard tablist workflow plus XTerm OS-control validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-tablist-20260428T183735Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-tablist-keyboard-os-20260428T183735Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox by clicking the visible address bar, focus a web-app ARIA tablist, use Right/Right/Return keyboard input to select the Unicode plan tab, verify page title/summary, then write and read back an OS proof file through XTerm.
+expected_browser_title=Tendril Tablist Submitted
+expected_browser_result=tablist-browser-ok: Unicode care plan: café π ✓ 😀
+os_proof=tablist-os-proof: keyboard tablist verified
