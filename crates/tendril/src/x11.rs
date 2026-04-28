@@ -39,6 +39,7 @@ const DRAG_MOTION_STEP_PX: u64 = 16;
 const DRAG_MIN_STEPS: u64 = 6;
 const DRAG_MAX_STEPS: u64 = 96;
 const X11_UNICODE_PASTE_SERVE_MS: u64 = 1_500;
+const X11_TEMPORARY_KEYSYM_SETTLE_MS: u64 = 200;
 
 const XK_BACK_SPACE: u32 = 0xff08;
 const XK_TAB: u32 = 0xff09;
@@ -1547,6 +1548,17 @@ fn type_text(
                 serde_json::json!("Release held modifiers before send(...) when entering non-ASCII text on X11, or paste with an explicit clipboard workflow."),
             ));
         }
+        if is_x11_temporary_keysym_unicode_target(request) {
+            return type_text_via_temporary_x11_keysyms(
+                connection,
+                keyboard_map,
+                text,
+                character,
+                held_modifiers,
+                action_index,
+                action,
+            );
+        }
         return paste_text_via_x11_selection(
             connection,
             keyboard_map,
@@ -1582,6 +1594,130 @@ fn type_text(
 fn first_unmapped_text_character(keyboard_map: &KeyboardMap, text: &str) -> Option<char> {
     text.chars()
         .find(|character| keyboard_map.stroke_for_char(*character).is_none())
+}
+
+fn type_text_via_temporary_x11_keysyms(
+    connection: &X11Connection,
+    keyboard_map: &KeyboardMap,
+    text: &str,
+    unmapped_character: char,
+    held_modifiers: &HashSet<ModifierKey>,
+    action_index: Option<usize>,
+    action: Option<&str>,
+) -> Result<Vec<String>, TendrilError> {
+    let mut remapped_count = 0usize;
+    for character in text.chars() {
+        if let Some(stroke) = keyboard_map.stroke_for_char(character) {
+            send_key_stroke(
+                connection,
+                keyboard_map,
+                stroke,
+                held_modifiers,
+                action_index,
+                action,
+            )?;
+        } else {
+            send_temporary_x11_keysym_character(
+                connection,
+                keyboard_map,
+                character,
+                held_modifiers,
+                action_index,
+                action,
+            )?;
+            remapped_count += 1;
+        }
+    }
+
+    Ok(vec![format!(
+        "X11 send(...) temporarily mapped a keycode for {remapped_count} Unicode character(s) because character `{unmapped_character}` is not present in the active keyboard map; this preserves rich-editor caret state without replacing existing content."
+    )])
+}
+
+fn send_temporary_x11_keysym_character(
+    connection: &X11Connection,
+    keyboard_map: &KeyboardMap,
+    character: char,
+    held_modifiers: &HashSet<ModifierKey>,
+    action_index: Option<usize>,
+    action: Option<&str>,
+) -> Result<(), TendrilError> {
+    let keycode = keyboard_map.temporary_unicode_keycode();
+    let original = keyboard_map.keysyms_for_keycode(keycode).ok_or_else(|| {
+        input_execution_error(
+            "unicode_keycode_not_available",
+            "no X11 keycode is available for temporary Unicode keysym mapping",
+            action_index,
+            action,
+        )
+    })?;
+    let mut replacement = vec![0; usize::from(keyboard_map.keysyms_per_keycode)];
+    if let Some(first) = replacement.first_mut() {
+        *first = keysym_for_char(character);
+    }
+
+    change_single_key_mapping(
+        connection,
+        keycode,
+        keyboard_map.keysyms_per_keycode,
+        &replacement,
+        action_index,
+        action,
+    )?;
+    std::thread::sleep(std::time::Duration::from_millis(
+        X11_TEMPORARY_KEYSYM_SETTLE_MS,
+    ));
+    let send_result = send_key_stroke(
+        connection,
+        keyboard_map,
+        KeyStroke {
+            keycode,
+            shift: false,
+        },
+        held_modifiers,
+        action_index,
+        action,
+    );
+
+    let restore_result = change_single_key_mapping(
+        connection,
+        keycode,
+        keyboard_map.keysyms_per_keycode,
+        &original,
+        action_index,
+        action,
+    );
+    send_result?;
+    restore_result?;
+    std::thread::sleep(reliability_delay());
+    Ok(())
+}
+
+fn change_single_key_mapping(
+    connection: &X11Connection,
+    keycode: u8,
+    keysyms_per_keycode: u8,
+    keysyms: &[u32],
+    action_index: Option<usize>,
+    action: Option<&str>,
+) -> Result<(), TendrilError> {
+    connection
+        .conn
+        .change_keyboard_mapping(1, keycode, keysyms_per_keycode, keysyms)
+        .map_err(|error| {
+            input_execution_error(
+                "unicode_keycode_mapping_failed",
+                format!("failed to temporarily change the X11 keyboard mapping: {error}"),
+                action_index,
+                action,
+            )
+        })?;
+    flush_x11_input(
+        connection,
+        action_index,
+        action,
+        "temporary Unicode key mapping",
+    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1797,11 +1933,7 @@ fn is_terminal_paste_attempt(attempt: X11UnicodePasteAttempt) -> bool {
 }
 
 fn is_x11_terminal_target(request: &InputRequest) -> bool {
-    let mut haystack = request.target_name.to_ascii_lowercase();
-    if let Some(app_name) = &request.app_name {
-        haystack.push(' ');
-        haystack.push_str(&app_name.to_ascii_lowercase());
-    }
+    let haystack = x11_target_haystack(request);
 
     [
         "xterm",
@@ -1821,6 +1953,25 @@ fn is_x11_terminal_target(request: &InputRequest) -> bool {
     ]
     .iter()
     .any(|token| haystack.contains(token))
+}
+
+fn is_x11_temporary_keysym_unicode_target(request: &InputRequest) -> bool {
+    if is_x11_terminal_target(request) {
+        return false;
+    }
+    let haystack = x11_target_haystack(request);
+    ["firefox", "librewolf", "thunderbird"]
+        .iter()
+        .any(|token| haystack.contains(token))
+}
+
+fn x11_target_haystack(request: &InputRequest) -> String {
+    let mut haystack = request.target_name.to_ascii_lowercase();
+    if let Some(app_name) = &request.app_name {
+        haystack.push(' ');
+        haystack.push_str(&app_name.to_ascii_lowercase());
+    }
+    haystack
 }
 
 fn clipboard_selection_name(selection: ClipboardSelection) -> &'static str {
@@ -2321,10 +2472,8 @@ impl KeyboardMap {
     }
 
     fn stroke_for_keysym(&self, keysym: u32) -> Option<KeyStroke> {
-        let per_keycode = usize::from(self.keysyms_per_keycode);
         for keycode in self.min_keycode..=self.max_keycode {
-            let start = usize::from(keycode.saturating_sub(self.min_keycode)) * per_keycode;
-            let keysyms = self.keysyms.get(start..start + per_keycode)?;
+            let keysyms = self.keysyms_for_keycode(keycode)?;
             if keysyms.first().copied() == Some(keysym) {
                 return Some(KeyStroke {
                     keycode,
@@ -2345,6 +2494,27 @@ impl KeyboardMap {
             }
         }
         None
+    }
+
+    fn keysyms_for_keycode(&self, keycode: u8) -> Option<Vec<u32>> {
+        if keycode < self.min_keycode || keycode > self.max_keycode {
+            return None;
+        }
+        let per_keycode = usize::from(self.keysyms_per_keycode);
+        let start = usize::from(keycode.saturating_sub(self.min_keycode)) * per_keycode;
+        self.keysyms
+            .get(start..start + per_keycode)
+            .map(<[u32]>::to_vec)
+    }
+
+    fn temporary_unicode_keycode(&self) -> u8 {
+        (self.min_keycode..=self.max_keycode)
+            .rev()
+            .find(|keycode| {
+                self.keysyms_for_keycode(*keycode)
+                    .is_some_and(|keysyms| keysyms.iter().all(|keysym| *keysym == 0))
+            })
+            .unwrap_or(self.max_keycode)
     }
 }
 
@@ -2505,8 +2675,9 @@ mod tests {
         DRAG_MIN_STEPS, KeyStroke, KeyboardMap, X11OccludingWindow, X11PasteShortcut,
         X11UnicodePasteAttempt, X11WindowBounds, X11WindowCaptureFallbackReason, XK_INSERT,
         capture_png_is_solid_black, decode_class_name, decode_text_property, drag_motion_points,
-        first_unmapped_text_character, is_x11_terminal_target, key_name_to_keysym, keysym_for_char,
-        parse_window_id, windows_overlap, x11_unicode_paste_attempts,
+        first_unmapped_text_character, is_x11_temporary_keysym_unicode_target,
+        is_x11_terminal_target, key_name_to_keysym, keysym_for_char, parse_window_id,
+        windows_overlap, x11_unicode_paste_attempts,
     };
 
     #[test]
@@ -2596,10 +2767,27 @@ mod tests {
     }
 
     #[test]
-    fn non_terminal_targets_keep_browser_clipboard_paste_attempt() {
-        let request = sample_input_request("firefox", Some("firefox"));
+    fn firefox_targets_use_temporary_keysyms_before_clipboard_paste() {
+        let request = sample_input_request("Tendril RichEdit — Mozilla Firefox", Some("firefox"));
 
         assert!(!is_x11_terminal_target(&request));
+        assert!(is_x11_temporary_keysym_unicode_target(&request));
+    }
+
+    #[test]
+    fn terminal_targets_do_not_use_temporary_keysyms_even_with_browser_title() {
+        let request = sample_input_request("xterm running firefox docs", Some("XTerm"));
+
+        assert!(is_x11_terminal_target(&request));
+        assert!(!is_x11_temporary_keysym_unicode_target(&request));
+    }
+
+    #[test]
+    fn generic_non_terminal_targets_keep_browser_clipboard_paste_attempt() {
+        let request = sample_input_request("Example Editor", Some("generic-app"));
+
+        assert!(!is_x11_terminal_target(&request));
+        assert!(!is_x11_temporary_keysym_unicode_target(&request));
         assert_eq!(
             x11_unicode_paste_attempts(&request),
             vec![X11UnicodePasteAttempt {

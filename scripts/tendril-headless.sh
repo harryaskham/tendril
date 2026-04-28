@@ -50,6 +50,8 @@ Commands:
              Prove Firefox↔OS text transfer through Tendril's explicit X11 clipboard helper.
   unicode-send-smoke
              Prove send(...) enters non-ASCII Unicode text into a Firefox field on X11.
+  richedit-unicode-send-smoke
+             Prove repeated Unicode send(...) calls preserve existing Firefox contenteditable rich-editor content.
   xterm-unicode-command-smoke
              Prove send(...) enters and executes a Unicode shell command in XTerm on X11.
   selection-clipboard-smoke
@@ -106,6 +108,9 @@ Firefox/X11 clipboard smoke:
 
 Firefox/X11 Unicode send smoke:
   scripts/tendril-headless.sh --browser firefox --tendril-bin ./target/debug/tendril unicode-send-smoke
+
+Firefox/X11 contenteditable rich-editor Unicode send smoke:
+  scripts/tendril-headless.sh --browser firefox --tendril-bin ./target/debug/tendril richedit-unicode-send-smoke
 
 XTerm/X11 Unicode shell-command smoke:
   scripts/tendril-headless.sh --browser firefox --tendril-bin ./target/debug/tendril xterm-unicode-command-smoke
@@ -198,7 +203,7 @@ dsl_escape() {
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      start|env|inspect|reset|stop|smoke|firefox-upload|file-upload-smoke|clipboard-smoke|unicode-send-smoke|xterm-unicode-command-smoke|selection-clipboard-smoke|page-text-clipboard-smoke|canvas-drag-smoke|contextmenu-smoke|doubleclick-smoke|hover-smoke|scroll-smoke)
+      start|env|inspect|reset|stop|smoke|firefox-upload|file-upload-smoke|clipboard-smoke|unicode-send-smoke|richedit-unicode-send-smoke|xterm-unicode-command-smoke|selection-clipboard-smoke|page-text-clipboard-smoke|canvas-drag-smoke|contextmenu-smoke|doubleclick-smoke|hover-smoke|scroll-smoke)
         if [[ -n "$COMMAND" ]]; then
           fail "only one command may be provided"
         fi
@@ -1003,6 +1008,61 @@ write_unicode_send_smoke_page() {
       document.body.dataset.unicodeOk = String(input.value === expected);
       status.textContent = input.value === expected ? 'unicode-send-browser-ok' : 'unicode-send-browser-mismatch';
       status.className = input.value === expected ? 'ok' : '';
+    });
+  </script>
+</body>
+</html>
+EOF_HTML
+}
+
+write_richedit_unicode_send_smoke_page() {
+  local dir="$1"
+  cat >"$dir/richedit-unicode-send-task.html" <<'EOF_HTML'
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tendril RichEdit Waiting</title>
+  <style>
+    body { font-family: sans-serif; margin: 48px; font-size: 24px; }
+    #editor { font-size: 28px; width: 1250px; height: 190px; border: 4px solid #555; border-radius: 10px; padding: 18px; white-space: pre-wrap; }
+    button { font-size: 28px; padding: 16px 28px; margin-top: 22px; }
+    #status { margin-top: 24px; border: 3px solid #333; padding: 16px; min-height: 40px; white-space: pre-wrap; }
+    .ok { color: #047857; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <h1>Tendril rich text editor task</h1>
+  <p>Use Ctrl-B to enter bold Unicode text, then plain Unicode text.</p>
+  <div id="editor" contenteditable="true" role="textbox" aria-label="rich editor"></div>
+  <button id="verify" type="button">Verify rich edit</button>
+  <div id="status">waiting</div>
+  <script>
+    const editor = document.getElementById('editor');
+    const status = document.getElementById('status');
+    const expected = 'Bold 😀 Café plain π — ✓';
+    editor.addEventListener('keydown', event => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'b') {
+        event.preventDefault();
+        document.execCommand('bold');
+      }
+    });
+    document.getElementById('verify').addEventListener('click', () => {
+      const html = editor.innerHTML;
+      const text = editor.textContent;
+      const hasBold = /<(b|strong)(\s|>)/i.test(html);
+      document.body.dataset.html = html;
+      document.body.dataset.text = text;
+      document.body.dataset.richEditOk = String(hasBold && text === expected);
+      if (hasBold && text === expected) {
+        document.title = 'Tendril RichEdit Submitted';
+        status.textContent = 'richedit-browser-ok';
+        status.className = 'ok';
+      } else {
+        document.title = 'Tendril RichEdit Mismatch';
+        status.textContent = 'rich edit mismatch text=' + JSON.stringify(text) + ' html=' + html;
+        status.className = '';
+      }
     });
   </script>
 </body>
@@ -2085,7 +2145,7 @@ import json, sys
 payload=json.loads(sys.argv[1])
 assert payload["status"] == "success", payload
 notes="\n".join(payload["data"].get("notes") or [])
-assert "transient CLIPBOARD paste fallback" in notes, notes
+assert "transient CLIPBOARD paste fallback" in notes or "temporarily mapped a keycode" in notes, notes
 assert payload["data"].get("action_count") == 6, payload["data"]
 ' "$unicode_run"
 
@@ -2193,6 +2253,208 @@ EOF_MANIFEST
   git_add_artifacts "$artifact_dir"
 
   log "Unicode send smoke passed; artifacts are under $artifact_dir"
+  if [[ "$started_here" == "true" ]]; then
+    stop_env
+    trap - EXIT
+  fi
+}
+
+run_richedit_unicode_send_smoke() {
+  ensure_name_safe
+  if [[ -z "$BROWSER_BIN" ]]; then
+    BROWSER_BIN="firefox"
+  fi
+  local tendril_program
+  tendril_program="${TENDRIL_BIN%% *}"
+  [[ -x "$tendril_program" || "$(command -v "$tendril_program" 2>/dev/null || true)" ]] || fail "Tendril binary not found: $TENDRIL_BIN; pass --tendril-bin ./target/debug/tendril or --tendril-bin 'nix run .#tendril --'"
+
+  local artifact_dir
+  artifact_dir="$(resolve_artifact_dir)"
+  ensure_artifact_dir_safe "$artifact_dir"
+  mkdir -p "$artifact_dir"
+  write_richedit_unicode_send_smoke_page "$artifact_dir"
+  local richedit_url expected_text
+  richedit_url="file://$artifact_dir/richedit-unicode-send-task.html"
+  expected_text="Bold 😀 Café plain π — ✓"
+
+  local started_here="false"
+  if ! state_alive; then
+    start_env >/dev/null
+    started_here="true"
+  else
+    log "using existing environment '$NAME' on DISPLAY=${DISPLAY}"
+  fi
+  trap 'if [[ "${started_here:-false}" == "true" ]]; then stop_env; fi' EXIT
+
+  local dir list_json display_id window_id navigate_json before_capture richedit_run page_state_json after_capture
+  dir="${TENDRIL_HEADLESS_RUNTIME_DIR:-$(runtime_dir)}"
+
+  log "waiting for Tendril to see a ${WIDTH}x${HEIGHT} Firefox window"
+  if ! list_json="$(wait_for_targets)"; then
+    diagnose_browser_log "$dir/logs/browser.log"
+    preserve_runtime_logs "$dir" "$artifact_dir"
+    fail "Tendril did not discover expected headless Firefox targets"
+  fi
+  printf '%s\n' "$list_json" >"$artifact_dir/${NAME}-richedit-unicode-list-initial.json"
+
+  display_id="$(python3 -c '
+import json, sys
+width=int(sys.argv[1]); height=int(sys.argv[2]); payload=json.load(sys.stdin)
+for target in payload["data"]["targets"]:
+    bounds=target.get("bounds", {})
+    if target.get("kind") == "display" and bounds.get("width") == width and bounds.get("height") == height:
+        print(target["id"]); break
+else:
+    raise SystemExit(1)
+' "$WIDTH" "$HEIGHT" <<<"$list_json")"
+
+  window_id="$(python3 -c '
+import json, sys
+browser_pid=sys.argv[1]
+payload=json.load(sys.stdin)
+for target in payload["data"]["targets"]:
+    haystack=" ".join(str(target.get(k) or "") for k in ("name", "title", "app_name")).lower()
+    if target.get("kind") == "window" and ((browser_pid and str(target.get("process_id") or "") == browser_pid) or "firefox" in haystack):
+        print(target["id"]); break
+else:
+    raise SystemExit("no Firefox window found")
+' "${TENDRIL_HEADLESS_BROWSER_PID:-}" <<<"$list_json")"
+
+  log "navigating Firefox to contenteditable rich-editor Unicode smoke page through Marionette preflight"
+  NAVIGATE_URL="$richedit_url" \
+    HELPER_OUTPUT="$artifact_dir/${NAME}-richedit-unicode-marionette-navigate.json" \
+    run_firefox_navigate_helper
+  navigate_json="$(cat "$artifact_dir/${NAME}-richedit-unicode-marionette-navigate.json")"
+  python3 -c '
+import json, sys
+payload=json.loads(sys.argv[1])
+assert payload["status"] == "success", payload
+assert "Tendril RichEdit Waiting" in (payload.get("page", {}).get("title") or "")
+' "$navigate_json"
+
+  log "capturing contenteditable rich-editor page before input"
+  before_capture="$(run_tendril --json --window "$window_id" capture --max-width "$WIDTH" --max-height "$HEIGHT" -o "$artifact_dir/${NAME}-richedit-unicode-before.png")"
+  printf '%s\n' "$before_capture" >"$artifact_dir/${NAME}-richedit-unicode-before-capture.json"
+
+  log "typing rich-editor Unicode proof through repeated Tendril send(...) calls"
+  richedit_run="$(run_tendril --json --window "$window_id" run "lclick(130,365),wait(150ms),hold(ctrl),b,release(ctrl),wait(100ms),send(\"Bold 😀 Café\"),wait(250ms),hold(ctrl),b,release(ctrl),wait(100ms),send(\" plain π — ✓\"),wait(400ms),lclick(180,590),wait(800ms)")"
+  printf '%s\n' "$richedit_run" >"$artifact_dir/${NAME}-richedit-unicode-run.json"
+  python3 -c '
+import json, sys
+payload=json.loads(sys.argv[1])
+assert payload["status"] == "success", payload
+notes="\n".join(payload["data"].get("notes") or [])
+assert "temporarily mapped a keycode" in notes or "transient CLIPBOARD paste fallback" in notes, notes
+assert payload["data"].get("action_count") == 16, payload["data"]
+' "$richedit_run"
+
+  log "reading Firefox rich-editor page state through Marionette for exact Unicode and bold assertion"
+  python3 - "${TENDRIL_HEADLESS_MARIONETTE_PORT:-}" "$expected_text" >"$artifact_dir/${NAME}-richedit-unicode-page-state.json" <<'PY'
+import json
+import socket
+import sys
+
+port = int(sys.argv[1])
+expected = sys.argv[2]
+
+
+def recv_message(sock):
+    header = b""
+    while b":" not in header:
+        chunk = sock.recv(1)
+        if not chunk:
+            raise RuntimeError("Marionette socket closed before frame header")
+        header += chunk
+    length = int(header[:-1])
+    payload = b""
+    while len(payload) < length:
+        chunk = sock.recv(length - len(payload))
+        if not chunk:
+            raise RuntimeError("Marionette socket closed before frame payload")
+        payload += chunk
+    return json.loads(payload.decode("utf-8"))
+
+
+def send(sock, payload):
+    data = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    sock.sendall(str(len(data)).encode("ascii") + b":" + data)
+
+
+def command(sock, message_id, name, params):
+    send(sock, [0, message_id, name, params])
+    response = recv_message(sock)
+    if not (isinstance(response, list) and len(response) == 4 and response[0] == 1 and response[1] == message_id):
+        raise RuntimeError(f"unexpected Marionette response to {name}: {response!r}")
+    if response[2] is not None:
+        raise RuntimeError(f"Marionette {name} failed: {response[2]!r}")
+    return response[3]
+
+
+with socket.create_connection(("127.0.0.1", port), timeout=10) as sock:
+    sock.settimeout(10)
+    hello = recv_message(sock)
+    if not isinstance(hello, dict) or hello.get("applicationType") != "gecko":
+        raise RuntimeError(f"unexpected Marionette hello: {hello!r}")
+    command(sock, 1, "WebDriver:NewSession", {})
+    script = """
+const editor = document.getElementById('editor');
+const html = editor ? editor.innerHTML : null;
+const text = editor ? editor.textContent : null;
+return {
+  title: document.title,
+  text,
+  html,
+  hasBold: /<(b|strong)(\\s|>)/i.test(html || ''),
+  richEditOk: document.body.dataset.richEditOk || null,
+  status: document.getElementById('status') ? document.getElementById('status').textContent : null,
+};
+"""
+    params = {"script": script, "args": [], "newSandbox": True, "sandbox": "tendril-richedit-unicode", "line": 1}
+    state = command(sock, 2, "WebDriver:ExecuteScript", params)
+    value = state.get("value", state)
+
+result = {
+    "filename": "tendril-headless-firefox-richedit-unicode-state",
+    "helper": "tendril-headless firefox-richedit-unicode-state",
+    "transport": "firefox-marionette",
+    "expected": expected,
+    "state": value,
+    "ok": isinstance(value, dict) and value.get("text") == expected and value.get("hasBold") is True and value.get("richEditOk") == "true",
+}
+print(json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False))
+if not result["ok"]:
+    raise SystemExit(1)
+PY
+  page_state_json="$(cat "$artifact_dir/${NAME}-richedit-unicode-page-state.json")"
+  python3 -c '
+import json, sys
+payload=json.loads(sys.argv[1])
+assert payload["ok"] is True, payload
+assert payload["state"]["text"] == payload["expected"], payload
+assert payload["state"]["hasBold"] is True, payload
+' "$page_state_json"
+
+  log "capturing verified contenteditable rich-editor page through Tendril"
+  after_capture="$(run_tendril --json --display "$display_id" capture --max-width "$WIDTH" --max-height "$HEIGHT" -o "$artifact_dir/${NAME}-richedit-unicode-after-display.png")"
+  printf '%s\n' "$after_capture" >"$artifact_dir/${NAME}-richedit-unicode-after-display-capture.json"
+
+  cat >"$artifact_dir/${NAME}-richedit-unicode-manifest.txt" <<EOF_MANIFEST
+Tendril headless Firefox contenteditable rich-editor Unicode send smoke passed.
+name=$NAME
+display=$DISPLAY
+browser=${TENDRIL_HEADLESS_BROWSER:-}
+browser_window=$window_id
+marionette_port=${TENDRIL_HEADLESS_MARIONETTE_PORT:-}
+resolution=${WIDTH}x${HEIGHT}x${DEPTH}
+runtime_dir=$dir
+richedit_url=$richedit_url
+expected_text=$expected_text
+workflow=Tendril clicked a contenteditable editor, toggled bold with Ctrl-B, sent a Unicode bold segment, toggled bold off, sent a second Unicode plain segment, clicked Verify, and Marionette read back preserved text plus bold markup.
+artifacts=$artifact_dir
+EOF_MANIFEST
+  git_add_artifacts "$artifact_dir"
+
+  log "contenteditable rich-editor Unicode send smoke passed; artifacts are under $artifact_dir"
   if [[ "$started_here" == "true" ]]; then
     stop_env
     trap - EXIT
@@ -4137,6 +4399,7 @@ case "$COMMAND" in
   file-upload-smoke) run_file_upload_smoke ;;
   clipboard-smoke) run_clipboard_smoke ;;
   unicode-send-smoke) run_unicode_send_smoke ;;
+  richedit-unicode-send-smoke) run_richedit_unicode_send_smoke ;;
   xterm-unicode-command-smoke) run_xterm_unicode_command_smoke ;;
   selection-clipboard-smoke) run_selection_clipboard_smoke ;;
   page-text-clipboard-smoke) run_page_text_clipboard_smoke ;;
