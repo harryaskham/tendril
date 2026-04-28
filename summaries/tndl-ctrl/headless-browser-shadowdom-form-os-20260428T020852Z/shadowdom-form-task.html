@@ -1,0 +1,52 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Tendril Shadow Waiting</title>
+  <style>
+    body { font-family: sans-serif; margin: 36px 50px; }
+    h1 { font-size: 44px; margin: 0 0 20px; }
+    p { font-size: 22px; }
+    shadow-task { display: block; width: 900px; min-height: 250px; }
+    #status { margin-top: 24px; border: 3px solid #333; padding: 14px; font-size: 24px; white-space: pre-wrap; }
+    .ok { color: #047857; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <h1>Tendril shadow DOM form task</h1>
+  <p>Click into a form rendered inside a web component shadow root and submit it.</p>
+  <shadow-task id="task"></shadow-task>
+  <div id="status">waiting</div>
+  <script>
+    const expected = 'shadow dom control verified';
+    class ShadowTask extends HTMLElement {
+      connectedCallback() {
+        const root = this.attachShadow({mode: 'open'});
+        root.innerHTML = `<style>
+          .panel{border:5px solid #555;border-radius:10px;padding:32px 38px;width:820px;min-height:185px;}
+          label,input,button{font-family:sans-serif;font-size:26px;}
+          input{display:block;width:650px;padding:10px;margin-top:10px;}
+          button{display:block;margin-top:22px;padding:12px 24px;}
+        </style><div class="panel"><label for="shadow-input">Shadow task input</label><input id="shadow-input"><button id="submit" type="button">Submit shadow value</button></div>`;
+        root.getElementById('submit').addEventListener('click', () => {
+          this.dispatchEvent(new CustomEvent('shadow-submit', {bubbles: true, detail: {value: root.getElementById('shadow-input').value}}));
+        });
+      }
+    }
+    customElements.define('shadow-task', ShadowTask);
+    const status = document.getElementById('status');
+    document.getElementById('task').addEventListener('shadow-submit', event => {
+      document.body.dataset.shadowValue = event.detail.value;
+      if (event.detail.value === expected) {
+        document.title = 'Tendril Shadow Submitted';
+        status.textContent = 'shadow-browser-ok';
+        status.className = 'ok';
+      } else {
+        document.title = 'Tendril Shadow Mismatch';
+        status.textContent = 'shadow mismatch value=' + JSON.stringify(event.detail.value);
+        status.className = '';
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+Tendril headless Firefox open shadow DOM form plus XTerm OS-control validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-shadow-20260428T020852Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-shadowdom-form-os-20260428T020852Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a local page containing a custom element with an open shadow root, click inside the shadow-root input, send ASCII task text, click the shadow-root submit button, verify the parent browser window title changed to Tendril Shadow Submitted, then write and read back an OS proof file through XTerm.
+expected_browser_proof=Tendril Shadow Submitted
+expected_text=shadow dom control verified
+os_proof=shadow-os-proof: browser shadow DOM control verified

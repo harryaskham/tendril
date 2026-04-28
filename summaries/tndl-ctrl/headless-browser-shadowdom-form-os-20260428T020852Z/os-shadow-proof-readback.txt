@@ -1,0 +1,1 @@
+shadow-os-proof: browser shadow DOM control verified
