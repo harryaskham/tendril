@@ -1,0 +1,11 @@
+Tendril headless Firefox web-app split-pane drag plus XTerm OS-control validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-splitpane-20260428T031046Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-splitpane-drag-os-20260428T031046Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a local web-app split-pane page, drag the vertical divider to widen the left pane, verify the browser title changed to Tendril SplitPane Submitted, then write and read back an OS proof file through XTerm.
+expected_browser_proof=Tendril SplitPane Submitted
+os_proof=splitpane-os-proof: browser split-pane drag verified
