@@ -1,0 +1,8 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Tendril ClearReplace Waiting</title>
+<style>body{font-family:sans-serif;margin:48px;font-size:24px}input,button,label{font-size:28px;margin:12px 0;display:block}input{width:820px;padding:14px}button{padding:16px 28px}#status{margin-top:24px;border:3px solid #333;padding:16px;min-height:40px}</style></head><body>
+<h1>Tendril clear-and-replace task</h1><p>Type temporary text, select all, delete it, type the replacement, and submit.</p>
+<form id="form"><label>Editable field <input id="value" autofocus type="text" placeholder="clear and replace here"></label><button id="submit" type="submit">Verify replacement</button></form>
+<div id="status">waiting</div>
+<script>
+document.getElementById('form').addEventListener('submit', e => { e.preventDefault(); const value=document.getElementById('value').value; if(value==='Replacement Agent Text'){document.title='Tendril ClearReplace Submitted'; document.getElementById('status').textContent='clearreplace-browser-ok';}else{document.title='Tendril ClearReplace Mismatch'; document.getElementById('status').textContent='value='+JSON.stringify(value);} });
+</script></body></html>

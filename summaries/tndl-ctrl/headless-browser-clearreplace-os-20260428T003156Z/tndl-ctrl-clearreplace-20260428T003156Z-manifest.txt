@@ -1,0 +1,11 @@
+Tendril headless Firefox Ctrl+A Delete clear-and-replace + OS workflow validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-clearreplace-20260428T003156Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-clearreplace-os-20260428T003156Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a local form, type temporary text in an input, select all with Ctrl+A, delete with Delete, type replacement text, submit via keyboard, verify browser title, then drive XTerm to create an ASCII OS proof file.
+browser_proof=Tendril ClearReplace Submitted
+os_proof=clearreplace-browser-os-verified
