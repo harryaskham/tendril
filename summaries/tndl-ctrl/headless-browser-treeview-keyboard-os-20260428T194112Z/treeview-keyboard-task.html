@@ -1,0 +1,21 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Tendril Treeview Waiting</title>
+<style>
+body{font-family:sans-serif;margin:44px 60px;background:#f8fafc;color:#0f172a}h1{font-size:42px;margin:0 0 16px}p{font-size:23px}.panel{margin-top:28px;border:5px solid #334155;background:white;border-radius:16px;padding:28px;width:980px;font-size:25px}.tree{border:3px solid #334155;border-radius:10px;padding:16px;width:760px}.item{font-size:27px;padding:10px 14px;border-radius:8px;margin:4px 0}.item[aria-selected=true]{background:#2563eb;color:white}.item:focus{outline:5px solid #f59e0b}.child{margin-left:34px}.summary{margin-top:26px;border:4px solid #334155;padding:18px;width:980px;font-size:25px;background:white;white-space:pre-wrap}.ok{border-color:#047857;background:#ecfdf5;color:#047857;font-weight:700}</style></head>
+<body>
+<h1>Tendril keyboard treeview task</h1>
+<p>Use keyboard arrows to expand nested tree items, select the Unicode care leaf, and verify the result.</p>
+<div class="panel"><div id="tree" class="tree" role="tree" aria-label="Care tree"></div></div>
+<div id="summary" class="summary">waiting</div>
+<script>
+const treeData=[{id:'care',label:'Care plan',children:[{id:'vitals',label:'Vitals summary'},{id:'follow',label:'Follow-up',children:[{id:'unicode',label:'Café π review ✓ 😀'}]}]}];
+let expanded=new Set(), selected=null, focusId='care';
+const tree=document.getElementById('tree'), summary=document.getElementById('summary');
+function flatten(nodes=treeData, level=0, out=[]){for(const n of nodes){out.push({...n,level}); if(n.children&&expanded.has(n.id)) flatten(n.children,level+1,out);} return out;}
+function render(){const items=flatten(); tree.innerHTML=''; for(const item of items){const div=document.createElement('div'); div.id='item-'+item.id; div.className='item '+(item.level?'child':''); div.role='treeitem'; div.tabIndex=item.id===focusId?0:-1; div.setAttribute('aria-selected',String(selected===item.id)); if(item.children) div.setAttribute('aria-expanded',String(expanded.has(item.id))); div.textContent=(item.children?(expanded.has(item.id)?'▾ ':'▸ '):'  ')+item.label; div.addEventListener('click',()=>{focusId=item.id; focusCurrent();}); div.addEventListener('keydown',onKey); tree.appendChild(div);} setTimeout(()=>{const el=document.getElementById('item-'+focusId); if(el) el.focus();},0);}
+function focusCurrent(){render();}
+function select(id){selected=id; if(id==='unicode'){summary.textContent='treeview-browser-ok: Café π review ✓ 😀'; summary.className='summary ok'; document.title='Tendril Treeview Submitted';} render();}
+function onKey(e){const items=flatten(); const idx=items.findIndex(i=>i.id===focusId); const cur=items[idx]; if(e.key==='ArrowDown'){e.preventDefault(); if(idx<items.length-1) focusId=items[idx+1].id; focusCurrent();} else if(e.key==='ArrowUp'){e.preventDefault(); if(idx>0) focusId=items[idx-1].id; focusCurrent();} else if(e.key==='ArrowRight'){e.preventDefault(); if(cur.children&&!expanded.has(cur.id)){expanded.add(cur.id);} else if(cur.children&&expanded.has(cur.id)){focusId=cur.children[0].id;} focusCurrent();} else if(e.key==='ArrowLeft'){e.preventDefault(); if(cur.children&&expanded.has(cur.id)){expanded.delete(cur.id);} focusCurrent();} else if(e.key==='Enter'||e.key===' '){e.preventDefault(); select(cur.id);} }
+render();
+</script>
+</body></html>

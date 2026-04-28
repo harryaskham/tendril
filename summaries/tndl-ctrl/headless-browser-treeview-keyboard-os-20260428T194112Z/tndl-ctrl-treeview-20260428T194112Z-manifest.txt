@@ -1,0 +1,12 @@
+Tendril headless Firefox keyboard treeview workflow plus XTerm OS-control validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-treeview-20260428T194112Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-treeview-keyboard-os-20260428T194112Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox by clicking the visible address bar, focus an ARIA treeview, use Right/Down/Down/Right/Down/Return keyboard input to expand nested parents and select the Unicode care leaf, verify page title/summary, then write and read back an OS proof file through XTerm.
+expected_browser_title=Tendril Treeview Submitted
+expected_browser_result=treeview-browser-ok: Café π review ✓ 😀
+os_proof=treeview-os-proof: keyboard treeview verified
