@@ -1,0 +1,21 @@
+{
+  "helper": "tendril-headless firefox-marionette-navigate",
+  "marionette": {
+    "hello": {
+      "applicationType": "gecko",
+      "marionetteProtocol": 3
+    },
+    "port": 62092,
+    "sessionId": "827fc291-7049-4b35-9640-71723882008f"
+  },
+  "page": {
+    "bodyText": "Tendril rich text editor task\n\nUse Ctrl-B to enter bold Unicode text, then plain Unicode text.\n\nVerify rich edit\nwaiting",
+    "title": "Tendril RichEdit Waiting",
+    "url": "file:///home/harry/.cacophony/agents/tendril/ndjcy4zw5fpizbv6/checkout/summaries/ndjcy4zw5fpizbv6/bd-5c5904-richedit-final/richedit-original-repro-task.html"
+  },
+  "request": {
+    "navigate_url": "file:///home/harry/.cacophony/agents/tendril/ndjcy4zw5fpizbv6/checkout/summaries/ndjcy4zw5fpizbv6/bd-5c5904-richedit-final/richedit-original-repro-task.html"
+  },
+  "status": "success",
+  "transport": "firefox-marionette"
+}

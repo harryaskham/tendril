@@ -1,0 +1,15 @@
+Tendril headless Firefox contenteditable rich-editor Unicode send smoke passed.
+name=bd5c5904final
+display=:90
+browser=/nix/store/7vnya051q0xr2mdwxp48sh70xzim4fpa-firefox-149.0/bin/firefox
+browser_window=0x600016
+marionette_port=62092
+resolution=1920x1080x24
+runtime_dir=/run/user/1000/tendril-headless/bd5c5904final
+richedit_url=file:///home/harry/.cacophony/agents/tendril/ndjcy4zw5fpizbv6/checkout/summaries/ndjcy4zw5fpizbv6/bd-5c5904-richedit-final/richedit-unicode-send-task.html
+expected_text=Bold 😀 Café plain π — ✓
+workflow=Tendril first runs the original minimal repro page without a Ctrl-B handler and records Firefox/Linux's native shortcut behavior, then runs a real rich-editor-style page that intercepts Ctrl-B, sends Unicode bold and plain segments, clicks Verify, and Marionette reads back preserved text plus bold markup.
+original_richedit_url=file:///home/harry/.cacophony/agents/tendril/ndjcy4zw5fpizbv6/checkout/summaries/ndjcy4zw5fpizbv6/bd-5c5904-richedit-final/richedit-original-repro-task.html
+original_probe_artifact=bd5c5904final-richedit-original-page-state.json
+firefox_shortcut_note=The original minimal page has no Ctrl-B handler. On Firefox/Linux, Ctrl-B is browser chrome (Bookmarks sidebar) rather than a reliable native contenteditable bold command; real rich editors normally intercept the shortcut.
+artifacts=/home/harry/.cacophony/agents/tendril/ndjcy4zw5fpizbv6/checkout/summaries/ndjcy4zw5fpizbv6/bd-5c5904-richedit-final

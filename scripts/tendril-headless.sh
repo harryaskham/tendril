@@ -578,6 +578,10 @@ launch_browser() {
         cat >"$firefox_profile/user.js" <<EOF_FIREFOX_PREFS
 user_pref("marionette.enabled", true);
 user_pref("marionette.port", ${MARIONETTE_PORT});
+// Allow rich-editor pages that intercept shortcuts to override browser chrome
+// shortcuts such as Ctrl-B. The original minimal repro below still records
+// Firefox/Linux's native Ctrl-B behavior separately because it has no handler.
+user_pref("permissions.default.shortcuts", 1);
 EOF_FIREFOX_PREFS
         firefox_args=(-marionette "${firefox_args[@]}")
       fi
@@ -1012,6 +1016,20 @@ write_unicode_send_smoke_page() {
   </script>
 </body>
 </html>
+EOF_HTML
+}
+
+write_richedit_original_repro_page() {
+  local dir="$1"
+  cat >"$dir/richedit-original-repro-task.html" <<'EOF_HTML'
+<!doctype html><html><head><meta charset="utf-8"><title>Tendril RichEdit Waiting</title>
+<style>body{font-family:sans-serif;margin:48px;font-size:24px}#editor{font-size:28px;width:1250px;height:190px;border:4px solid #555;border-radius:10px;padding:18px;white-space:pre-wrap}button{font-size:28px;padding:16px 28px;margin-top:22px}#status{margin-top:24px;border:3px solid #333;padding:16px;min-height:40px;white-space:pre-wrap}</style></head><body>
+<h1>Tendril rich text editor task</h1>
+<p>Use Ctrl-B to enter bold Unicode text, then plain Unicode text.</p>
+<div id="editor" contenteditable="true" role="textbox" aria-label="rich editor"></div>
+<button id="verify" onclick="const editor=document.getElementById('editor'); const html=editor.innerHTML; const text=editor.textContent; document.body.dataset.html=html; document.body.dataset.text=text; const hasBold=/<(b|strong)(\s|>)/i.test(html); if(hasBold && text==='Bold 😀 Café plain π — ✓'){document.title='Tendril RichEdit Submitted'; document.getElementById('status').textContent='richedit-browser-ok';}else{document.title='Tendril RichEdit Mismatch'; document.getElementById('status').textContent='rich edit mismatch text='+JSON.stringify(text)+' html='+html;}">Verify rich edit</button>
+<div id="status">waiting</div>
+</body></html>
 EOF_HTML
 }
 
@@ -2272,8 +2290,10 @@ run_richedit_unicode_send_smoke() {
   artifact_dir="$(resolve_artifact_dir)"
   ensure_artifact_dir_safe "$artifact_dir"
   mkdir -p "$artifact_dir"
+  write_richedit_original_repro_page "$artifact_dir"
   write_richedit_unicode_send_smoke_page "$artifact_dir"
-  local richedit_url expected_text
+  local original_richedit_url richedit_url expected_text
+  original_richedit_url="file://$artifact_dir/richedit-original-repro-task.html"
   richedit_url="file://$artifact_dir/richedit-unicode-send-task.html"
   expected_text="Bold 😀 Café plain π — ✓"
 
@@ -2319,6 +2339,115 @@ for target in payload["data"]["targets"]:
 else:
     raise SystemExit("no Firefox window found")
 ' "${TENDRIL_HEADLESS_BROWSER_PID:-}" <<<"$list_json")"
+
+  log "probing the original minimal contenteditable repro without a page-side Ctrl-B handler"
+  NAVIGATE_URL="$original_richedit_url" \
+    HELPER_OUTPUT="$artifact_dir/${NAME}-richedit-original-marionette-navigate.json" \
+    run_firefox_navigate_helper
+  local original_navigate_json original_run_json original_state_json
+  original_navigate_json="$(cat "$artifact_dir/${NAME}-richedit-original-marionette-navigate.json")"
+  python3 -c '
+import json, sys
+payload=json.loads(sys.argv[1])
+assert payload["status"] == "success", payload
+assert "Tendril RichEdit Waiting" in (payload.get("page", {}).get("title") or "")
+' "$original_navigate_json"
+
+  original_run_json="$(run_tendril --json --window "$window_id" run "lclick(130,365),wait(150ms),hold(ctrl),b,release(ctrl),wait(100ms),send(\"Bold 😀 Café\"),wait(250ms),hold(ctrl),b,release(ctrl),wait(100ms),send(\" plain π — ✓\"),wait(400ms),lclick(180,590),wait(800ms)")"
+  printf '%s\n' "$original_run_json" >"$artifact_dir/${NAME}-richedit-original-run.json"
+  python3 -c '
+import json, sys
+payload=json.loads(sys.argv[1])
+assert payload["status"] == "success", payload
+notes="\n".join(payload["data"].get("notes") or [])
+assert "temporarily mapped a keycode" in notes, notes
+' "$original_run_json"
+
+  python3 - "${TENDRIL_HEADLESS_MARIONETTE_PORT:-}" "$expected_text" >"$artifact_dir/${NAME}-richedit-original-page-state.json" <<'PY_ORIGINAL'
+import json
+import socket
+import sys
+
+port = int(sys.argv[1])
+expected = sys.argv[2]
+
+
+def recv_message(sock):
+    header = b""
+    while b":" not in header:
+        chunk = sock.recv(1)
+        if not chunk:
+            raise RuntimeError("Marionette socket closed before frame header")
+        header += chunk
+    length = int(header[:-1])
+    payload = b""
+    while len(payload) < length:
+        chunk = sock.recv(length - len(payload))
+        if not chunk:
+            raise RuntimeError("Marionette socket closed before frame payload")
+        payload += chunk
+    return json.loads(payload.decode("utf-8"))
+
+
+def send(sock, payload):
+    data = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    sock.sendall(str(len(data)).encode("ascii") + b":" + data)
+
+
+def command(sock, message_id, name, params):
+    send(sock, [0, message_id, name, params])
+    response = recv_message(sock)
+    if not (isinstance(response, list) and len(response) == 4 and response[0] == 1 and response[1] == message_id):
+        raise RuntimeError(f"unexpected Marionette response to {name}: {response!r}")
+    if response[2] is not None:
+        raise RuntimeError(f"Marionette {name} failed: {response[2]!r}")
+    return response[3]
+
+
+with socket.create_connection(("127.0.0.1", port), timeout=10) as sock:
+    sock.settimeout(10)
+    hello = recv_message(sock)
+    if not isinstance(hello, dict) or hello.get("applicationType") != "gecko":
+        raise RuntimeError(f"unexpected Marionette hello: {hello!r}")
+    command(sock, 1, "WebDriver:NewSession", {})
+    script = """
+const editor = document.getElementById('editor');
+const html = editor ? editor.innerHTML : null;
+const text = editor ? editor.textContent : null;
+return {
+  title: document.title,
+  text,
+  html,
+  hasBold: /<(b|strong)(\\s|>)/i.test(html || ''),
+  status: document.getElementById('status') ? document.getElementById('status').textContent : null,
+};
+"""
+    params = {"script": script, "args": [], "newSandbox": True, "sandbox": "tendril-richedit-original", "line": 1}
+    state = command(sock, 2, "WebDriver:ExecuteScript", params)
+    value = state.get("value", state)
+
+ok = isinstance(value, dict) and value.get("text") == expected and value.get("hasBold") is True
+known_firefox_ctrl_b_limitation = isinstance(value, dict) and value.get("title") == "Tendril RichEdit Mismatch" and value.get("hasBold") is False
+result = {
+    "filename": "tendril-headless-firefox-richedit-original-state",
+    "helper": "tendril-headless firefox-richedit-original-state",
+    "transport": "firefox-marionette",
+    "expected": expected,
+    "state": value,
+    "ok": ok,
+    "known_firefox_ctrl_b_limitation": known_firefox_ctrl_b_limitation,
+    "note": "The original minimal page has no Ctrl-B handler. On Firefox/Linux, Ctrl-B is browser chrome (Bookmarks sidebar) rather than a reliable native contenteditable bold command; real rich editors normally intercept the shortcut.",
+}
+print(json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False))
+if not (ok or known_firefox_ctrl_b_limitation):
+    raise SystemExit(1)
+PY_ORIGINAL
+  original_state_json="$(cat "$artifact_dir/${NAME}-richedit-original-page-state.json")"
+  python3 -c '
+import json, sys
+payload=json.loads(sys.argv[1])
+assert payload["ok"] is True or payload["known_firefox_ctrl_b_limitation"] is True, payload
+' "$original_state_json"
 
   log "navigating Firefox to contenteditable rich-editor Unicode smoke page through Marionette preflight"
   NAVIGATE_URL="$richedit_url" \
@@ -2449,7 +2578,10 @@ resolution=${WIDTH}x${HEIGHT}x${DEPTH}
 runtime_dir=$dir
 richedit_url=$richedit_url
 expected_text=$expected_text
-workflow=Tendril clicked a contenteditable editor, toggled bold with Ctrl-B, sent a Unicode bold segment, toggled bold off, sent a second Unicode plain segment, clicked Verify, and Marionette read back preserved text plus bold markup.
+workflow=Tendril first runs the original minimal repro page without a Ctrl-B handler and records Firefox/Linux's native shortcut behavior, then runs a real rich-editor-style page that intercepts Ctrl-B, sends Unicode bold and plain segments, clicks Verify, and Marionette reads back preserved text plus bold markup.
+original_richedit_url=$original_richedit_url
+original_probe_artifact=${NAME}-richedit-original-page-state.json
+firefox_shortcut_note=The original minimal page has no Ctrl-B handler. On Firefox/Linux, Ctrl-B is browser chrome (Bookmarks sidebar) rather than a reliable native contenteditable bold command; real rich editors normally intercept the shortcut.
 artifacts=$artifact_dir
 EOF_MANIFEST
   git_add_artifacts "$artifact_dir"

@@ -1667,7 +1667,7 @@ fn send_temporary_x11_keysym_character(
     std::thread::sleep(std::time::Duration::from_millis(
         X11_TEMPORARY_KEYSYM_SETTLE_MS,
     ));
-    let send_result = send_key_stroke(
+    let dispatch_result = send_key_stroke(
         connection,
         keyboard_map,
         KeyStroke {
@@ -1677,7 +1677,25 @@ fn send_temporary_x11_keysym_character(
         held_modifiers,
         action_index,
         action,
-    );
+    )
+    .and_then(|()| {
+        // X11 KeyPress events carry a keycode, and clients resolve that
+        // keycode against the keyboard map when they process the event. Flush
+        // the synthetic key event and leave the temporary map installed briefly
+        // before restoring it, otherwise slower consumers such as Firefox's
+        // contenteditable rich editor can observe the restored map and drop the
+        // first unmapped Unicode segment.
+        flush_x11_input(
+            connection,
+            action_index,
+            action,
+            "temporary Unicode key event",
+        )?;
+        std::thread::sleep(std::time::Duration::from_millis(
+            X11_TEMPORARY_KEYSYM_SETTLE_MS,
+        ));
+        Ok(())
+    });
 
     let restore_result = change_single_key_mapping(
         connection,
@@ -1687,7 +1705,7 @@ fn send_temporary_x11_keysym_character(
         action_index,
         action,
     );
-    send_result?;
+    dispatch_result?;
     restore_result?;
     std::thread::sleep(reliability_delay());
     Ok(())

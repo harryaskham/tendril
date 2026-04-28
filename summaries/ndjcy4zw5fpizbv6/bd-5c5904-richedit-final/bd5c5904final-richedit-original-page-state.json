@@ -1,0 +1,16 @@
+{
+  "expected": "Bold 😀 Café plain π — ✓",
+  "filename": "tendril-headless-firefox-richedit-original-state",
+  "helper": "tendril-headless firefox-richedit-original-state",
+  "known_firefox_ctrl_b_limitation": true,
+  "note": "The original minimal page has no Ctrl-B handler. On Firefox/Linux, Ctrl-B is browser chrome (Bookmarks sidebar) rather than a reliable native contenteditable bold command; real rich editors normally intercept the shortcut.",
+  "ok": false,
+  "state": {
+    "hasBold": false,
+    "html": " plain π — ✓",
+    "status": "rich edit mismatch text=\" plain π — ✓\" html= plain π — ✓",
+    "text": " plain π — ✓",
+    "title": "Tendril RichEdit Mismatch"
+  },
+  "transport": "firefox-marionette"
+}
