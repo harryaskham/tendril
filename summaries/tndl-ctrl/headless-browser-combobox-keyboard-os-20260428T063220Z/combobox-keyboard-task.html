@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Tendril Combo Waiting</title>
+<style>
+body{font-family:sans-serif;margin:38px 54px}h1{font-size:44px;margin:0 0 18px}p{font-size:22px}.field{position:relative;width:560px}label{font-size:26px;font-weight:700;display:block;margin-bottom:8px}input{font-size:28px;padding:12px;width:520px;border:3px solid #333;border-radius:8px}.list{position:absolute;top:82px;left:0;width:548px;border:3px solid #333;background:white;display:none;z-index:5}.option{font-size:27px;padding:12px 16px;border-bottom:1px solid #ddd}.option:last-child{border-bottom:0}.active{background:#fde68a}button{font-size:28px;padding:15px 28px;margin-top:120px}#status{margin-top:24px;border:3px solid #333;padding:14px;font-size:24px;white-space:pre-wrap}.ok{color:#047857;font-weight:700}</style></head>
+<body>
+<h1>Tendril keyboard combobox task</h1>
+<p>Type a prefix, use Down and Enter to choose an option, then submit.</p>
+<div class="field"><label for="fruit">Fruit</label><input id="fruit" role="combobox" aria-expanded="false" autocomplete="off" aria-controls="options"><div id="options" role="listbox" class="list"></div></div>
+<button id="verify" type="button">Verify combobox</button><div id="status">waiting</div>
+<script>
+const choices=['Apple','Apricot','Banana','Blueberry','Cherry','Date','Fig','Grape'];
+const input=document.getElementById('fruit'), list=document.getElementById('options'), status=document.getElementById('status'); let filtered=[], active=-1;
+function render(){list.innerHTML=''; filtered.forEach((c,i)=>{const d=document.createElement('div');d.className='option'+(i===active?' active':'');d.role='option';d.textContent=c;d.addEventListener('mousedown',e=>{e.preventDefault();choose(i);});list.appendChild(d);});list.style.display=filtered.length?'block':'none';input.setAttribute('aria-expanded',filtered.length?'true':'false');}
+function update(){const q=input.value.toLowerCase();filtered=choices.filter(c=>c.toLowerCase().startsWith(q));active=filtered.length?0:-1;render();}
+function choose(i){if(i>=0&&i<filtered.length){input.value=filtered[i];filtered=[];active=-1;render();}}
+input.addEventListener('input',update);
+input.addEventListener('keydown',e=>{if(e.key==='ArrowDown'&&filtered.length){e.preventDefault();active=(active+1)%filtered.length;render();}else if(e.key==='ArrowUp'&&filtered.length){e.preventDefault();active=(active+filtered.length-1)%filtered.length;render();}else if(e.key==='Enter'&&active>=0){e.preventDefault();choose(active);}else if(e.key==='Escape'){filtered=[];active=-1;render();}});
+document.getElementById('verify').addEventListener('click',()=>{if(input.value==='Apricot'){document.title='Tendril Combo Submitted';status.textContent='combo-browser-ok selected='+input.value;status.className='ok';}else{document.title='Tendril Combo Mismatch';status.textContent='combo mismatch selected='+input.value;}});
+</script>
+</body></html>

@@ -1,0 +1,12 @@
+Tendril headless Firefox keyboard-driven ARIA-style combobox plus XTerm OS-control validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-combo-20260428T063220Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-combobox-keyboard-os-20260428T063220Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a local combobox page, click the input, type Ap, use Down and Enter to select Apricot, click Verify, then write and read back an OS proof file through XTerm.
+expected_browser_proof=Tendril Combo Submitted
+os_proof=combo-os-proof: browser keyboard combobox verified
+note=Prior invalid attempt selected Apricot but clicked above Verify; this corrected run clicked inside the button and passed.
