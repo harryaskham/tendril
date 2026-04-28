@@ -1,0 +1,30 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Tendril Menubar Waiting</title>
+<style>
+body{font-family:sans-serif;margin:44px 60px;background:#f8fafc;color:#0f172a}h1{font-size:42px;margin:0 0 16px}p{font-size:23px}.app{margin-top:28px;border:5px solid #334155;background:white;border-radius:16px;padding:28px;width:1060px;font-size:25px}.menubar{display:flex;gap:10px;border:3px solid #334155;border-radius:10px;padding:12px;background:#e2e8f0}.top{font-size:27px;padding:12px 22px;border:3px solid #64748b;border-radius:9px;background:white}.top[aria-expanded=true],.top:focus{outline:5px solid #f59e0b;background:#dbeafe}.menu{margin-top:12px;border:3px solid #334155;border-radius:10px;width:520px;background:#fff;padding:8px;display:none}.menu.open{display:block}.item{font-size:27px;padding:12px 16px;border-radius:8px;margin:4px}.item:focus{outline:5px solid #f59e0b;background:#2563eb;color:white}.summary{margin-top:26px;border:4px solid #334155;padding:18px;width:1060px;font-size:25px;background:white;white-space:pre-wrap}.ok{border-color:#047857;background:#ecfdf5;color:#047857;font-weight:700}</style></head>
+<body>
+<h1>Tendril keyboard menubar task</h1>
+<p>Use keyboard navigation to move across a browser menubar, open a menu, select a Unicode item, and verify the action.</p>
+<div class="app">
+  <div class="menubar" role="menubar" aria-label="Application menu">
+    <button id="top-file" class="top" role="menuitem" aria-haspopup="true" aria-expanded="false" tabindex="0" data-menu="menu-file">File</button>
+    <button id="top-edit" class="top" role="menuitem" aria-haspopup="true" aria-expanded="false" tabindex="-1" data-menu="menu-edit">Edit</button>
+    <button id="top-tools" class="top" role="menuitem" aria-haspopup="true" aria-expanded="false" tabindex="-1" data-menu="menu-tools">Tools</button>
+  </div>
+  <div id="menu-file" class="menu" role="menu"><div class="item" role="menuitem" tabindex="-1">New report</div><div class="item" role="menuitem" tabindex="-1">Save draft</div></div>
+  <div id="menu-edit" class="menu" role="menu"><div class="item" role="menuitem" tabindex="-1">Copy note</div><div class="item" role="menuitem" tabindex="-1">Paste note</div></div>
+  <div id="menu-tools" class="menu" role="menu"><div class="item" role="menuitem" tabindex="-1">Run audit</div><div id="unicode-action" class="item" role="menuitem" tabindex="-1">Unicode audit café π ✓ 😀</div></div>
+</div>
+<div id="summary" class="summary">waiting</div>
+<script>
+const tops=[...document.querySelectorAll('.top')]; const menus=[...document.querySelectorAll('.menu')]; const summary=document.getElementById('summary');
+let openMenu=null;
+function closeMenus(){menus.forEach(m=>m.classList.remove('open')); tops.forEach(t=>t.setAttribute('aria-expanded','false')); openMenu=null;}
+function focusTop(i){tops.forEach((t,n)=>t.tabIndex=n===i?0:-1); closeMenus(); tops[i].focus();}
+function openFor(top){closeMenus(); const m=document.getElementById(top.dataset.menu); m.classList.add('open'); top.setAttribute('aria-expanded','true'); openMenu=m; const first=m.querySelector('[role=menuitem]'); first.tabIndex=0; first.focus();}
+function focusItem(m,i){const items=[...m.querySelectorAll('[role=menuitem]')]; items.forEach((it,n)=>it.tabIndex=n===i?0:-1); items[i].focus();}
+function choose(el){if(el.id==='unicode-action'){summary.textContent='menubar-browser-ok: Unicode audit café π ✓ 😀'; summary.className='summary ok'; document.title='Tendril Menubar Submitted';} else {summary.textContent='selected: '+el.textContent;} closeMenus();}
+tops.forEach((top,i)=>{top.addEventListener('click',()=>{tops.forEach((t,n)=>t.tabIndex=n===i?0:-1); top.focus();}); top.addEventListener('keydown',e=>{if(e.key==='ArrowRight'){e.preventDefault(); focusTop((i+1)%tops.length);} else if(e.key==='ArrowLeft'){e.preventDefault(); focusTop((i+tops.length-1)%tops.length);} else if(e.key==='ArrowDown'||e.key==='Enter'||e.key===' '){e.preventDefault(); openFor(top);}});});
+menus.forEach(m=>m.addEventListener('keydown',e=>{const items=[...m.querySelectorAll('[role=menuitem]')]; const i=items.indexOf(document.activeElement); const topIndex=tops.findIndex(t=>t.dataset.menu===m.id); if(e.key==='ArrowDown'){e.preventDefault(); focusItem(m,(i+1)%items.length);} else if(e.key==='ArrowUp'){e.preventDefault(); focusItem(m,(i+items.length-1)%items.length);} else if(e.key==='ArrowRight'){e.preventDefault(); focusTop((topIndex+1)%tops.length);} else if(e.key==='ArrowLeft'){e.preventDefault(); focusTop((topIndex+tops.length-1)%tops.length);} else if(e.key==='Enter'||e.key===' '){e.preventDefault(); choose(document.activeElement);} else if(e.key==='Escape'){e.preventDefault(); focusTop(topIndex);}}));
+</script>
+</body></html>

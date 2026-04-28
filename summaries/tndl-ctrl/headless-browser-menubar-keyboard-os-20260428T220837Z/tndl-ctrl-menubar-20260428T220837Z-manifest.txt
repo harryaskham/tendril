@@ -1,0 +1,12 @@
+Tendril headless Firefox keyboard menubar workflow plus XTerm OS-control validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-menubar-20260428T220837Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-menubar-keyboard-os-20260428T220837Z
+browser_window=0x600016
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox by clicking the visible address bar, focus an ARIA menubar, use Right/Right/Down/Down/Return keyboard input to open Tools and select the Unicode audit item, verify page title/summary, then write and read back an OS proof file through XTerm.
+expected_browser_title=Tendril Menubar Submitted
+expected_browser_result=menubar-browser-ok: Unicode audit café π ✓ 😀
+os_proof=menubar-os-proof: keyboard menubar verified
