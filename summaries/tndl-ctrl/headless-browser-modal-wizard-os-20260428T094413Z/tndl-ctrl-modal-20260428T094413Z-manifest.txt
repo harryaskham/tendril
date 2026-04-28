@@ -1,0 +1,13 @@
+Tendril headless Firefox modal wizard workflow plus XTerm OS-control validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-modal-20260428T094413Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-modal-wizard-os-20260428T094413Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a local modal wizard, click Open ticket wizard, capture-verified click the modal title field, type Unicode title, click the note field, type Unicode note, click Save, verify submitted title, then write and read back an OS proof file through XTerm.
+expected_browser_title=Tendril Modal Submitted
+expected_browser_result=modal-browser-ok with Café triage ✓ and Check vitals π 😀
+os_proof=modal-os-proof: browser modal wizard verified
+note=Two earlier invalid attempts were discarded: one relied on modal focus timing and one used the wrong Open button coordinate. This corrected run targets visible controls directly.

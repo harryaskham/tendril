@@ -1,0 +1,14 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Tendril Modal Waiting</title>
+<style>
+body{font-family:sans-serif;margin:44px 60px;background:#f8fafc;color:#0f172a}h1{font-size:44px;margin:0 0 16px}p{font-size:23px}button{font-size:27px;padding:14px 28px;border-radius:8px}.summary{margin-top:28px;border:4px solid #334155;padding:18px;width:780px;font-size:25px;background:white;white-space:pre-wrap}.ok{border-color:#047857;background:#ecfdf5;color:#047857;font-weight:700}.modal{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center}.box{background:white;border:5px solid #0f172a;border-radius:14px;width:760px;padding:24px;box-shadow:0 20px 50px #0005}label{display:block;font-size:24px;font-weight:700;margin-top:14px}input,textarea{font-size:25px;padding:10px;border:3px solid #334155;border-radius:8px;width:710px}textarea{height:110px}.row{display:flex;gap:16px;margin-top:20px}</style></head>
+<body>
+<h1>Tendril modal wizard task</h1><p>Open the wizard, fill Unicode fields, then save.</p><button id="open">Open ticket wizard</button><div id="summary" class="summary">waiting</div>
+<div id="modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="box"><h2 id="modal-title">New ticket</h2><label for="ticket-title">Title</label><input id="ticket-title" autocomplete="off"><label for="ticket-note">Note</label><textarea id="ticket-note"></textarea><div class="row"><button id="save">Save ticket</button><button id="cancel">Cancel</button></div></div></div>
+<script>
+const expectedTitle='Café triage ✓'; const expectedNote='Check vitals π 😀';
+const open=document.getElementById('open'), modal=document.getElementById('modal'), title=document.getElementById('ticket-title'), note=document.getElementById('ticket-note'), summary=document.getElementById('summary');
+function show(){modal.style.display='flex';title.value='';note.value='';setTimeout(()=>title.focus(),30);} function close(){modal.style.display='none';open.focus();}
+open.addEventListener('click',show);document.getElementById('cancel').addEventListener('click',close);document.getElementById('save').addEventListener('click',()=>{const value=`ticket-title=${title.value}\nticket-note=${note.value}`;document.body.dataset.ticket=value;if(title.value===expectedTitle&&note.value===expectedNote){summary.textContent='modal-browser-ok\n'+value;summary.className='summary ok';document.title='Tendril Modal Submitted';}else{summary.textContent='modal mismatch\n'+value;document.title='Tendril Modal Mismatch';}close();});modal.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();close();}});
+</script>
+</body></html>
