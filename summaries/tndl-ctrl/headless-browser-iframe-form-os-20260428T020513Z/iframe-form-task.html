@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Tendril Iframe Waiting</title>
+  <style>
+    body { font-family: sans-serif; margin: 36px 50px; }
+    h1 { font-size: 44px; margin: 0 0 20px; }
+    p { font-size: 22px; }
+    iframe { width: 900px; height: 320px; border: 5px solid #555; border-radius: 10px; }
+    #status { margin-top: 20px; border: 3px solid #333; padding: 14px; font-size: 24px; white-space: pre-wrap; }
+    .ok { color: #047857; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <h1>Tendril iframe form task</h1>
+  <p>Click into the iframe, type the task phrase, submit, and verify parent-page state.</p>
+  <iframe id="task-frame" title="iframe task" srcdoc='<!doctype html><html><head><meta charset="utf-8"><style>body{font-family:sans-serif;margin:38px;} label,input,button{font-size:26px;} input{width:650px;padding:10px;margin-top:10px;} button{display:block;margin-top:22px;padding:12px 24px;}</style></head><body><label for="task-input">Iframe task input</label><br><input id="task-input" autofocus><button id="submit" type="button">Submit iframe value</button><script>document.getElementById("submit").addEventListener("click",()=>{ parent.postMessage({kind:"iframe-submit", value:document.getElementById("task-input").value}, "*"); });</script></body></html>'></iframe>
+  <div id="status">waiting</div>
+  <script>
+    const expected = 'iframe control verified';
+    const status = document.getElementById('status');
+    window.addEventListener('message', event => {
+      if (!event.data || event.data.kind !== 'iframe-submit') return;
+      document.body.dataset.iframeValue = event.data.value;
+      if (event.data.value === expected) {
+        document.title = 'Tendril Iframe Submitted';
+        status.textContent = 'iframe-browser-ok';
+        status.className = 'ok';
+      } else {
+        document.title = 'Tendril Iframe Mismatch';
+        status.textContent = 'iframe mismatch value=' + JSON.stringify(event.data.value);
+        status.className = '';
+      }
+    });
+  </script>
+</body>
+</html>

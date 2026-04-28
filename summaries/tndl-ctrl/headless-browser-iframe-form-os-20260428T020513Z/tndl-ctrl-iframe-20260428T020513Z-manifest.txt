@@ -1,0 +1,12 @@
+Tendril headless Firefox iframe form plus XTerm OS-control validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-iframe-20260428T020513Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-iframe-form-os-20260428T020513Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a local page containing a same-page iframe, click inside the iframe input, send ASCII task text, click the iframe submit button, verify the parent browser window title changed to Tendril Iframe Submitted, then write and read back an OS proof file through XTerm.
+expected_browser_proof=Tendril Iframe Submitted
+expected_text=iframe control verified
+os_proof=iframe-os-proof: browser iframe control verified
