@@ -1,0 +1,13 @@
+Tendril Firefox file-upload helper plus XTerm OS-control controller validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-fileupload-helper-os-20260428T203049Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-fileupload-helper-os-20260428T203049Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+smoke_manifest=summaries/tndl-ctrl/headless-browser-fileupload-helper-os-20260428T203049Z/tndl-ctrl-fileupload-helper-os-20260428T203049Z-fileupload-manifest.txt
+workflow=Run packaged file-upload-smoke against Firefox in an isolated headless desktop, verify the helper-uploaded page through Tendril capture, then drive XTerm through Tendril to write and read back an OS proof file.
+expected_upload_text=tendril-file-upload-control-ok
+native_chooser_note=Headless Firefox still exposes no separate native chooser target; this validates the documented Marionette helper workflow from closed bd-9881b7.
+os_proof=fileupload-helper-os-proof: upload helper verified with OS control

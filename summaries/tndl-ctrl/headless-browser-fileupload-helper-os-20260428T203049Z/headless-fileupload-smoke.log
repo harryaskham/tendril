@@ -1,0 +1,9 @@
+[tendril-headless] using existing environment 'tndl-ctrl-fileupload-helper-os-20260428T203049Z' on DISPLAY=:90
+[tendril-headless] waiting for Tendril to see a 1920x1080 Firefox window
+[tendril-headless] navigating Firefox to file-upload smoke page through Marionette preflight
+[tendril-headless] capturing upload form before native chooser click
+[tendril-headless] clicking the native Firefox file input Browse control with Tendril
+[tendril-headless] dismissing any browser-modal chooser state before helper upload
+[tendril-headless] uploading proof file through Firefox Marionette helper
+[tendril-headless] capturing verified uploaded page through Tendril
+[tendril-headless] file-upload smoke passed; artifacts are under /home/harry/.cacophony/agents/tendril/helsinki-tendril-tndl-ctrl/checkout/summaries/tndl-ctrl/headless-browser-fileupload-helper-os-20260428T203049Z
