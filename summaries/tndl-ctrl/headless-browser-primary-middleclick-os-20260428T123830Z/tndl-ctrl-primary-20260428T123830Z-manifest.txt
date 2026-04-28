@@ -1,0 +1,12 @@
+Tendril headless Firefox browser PRIMARY selection to XTerm middle-click OS-control validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-primary-20260428T123830Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-primary-middleclick-os-20260428T123830Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a local page containing a short shell command, drag-select the command text in the browser with Tendril drag, middle-click paste that PRIMARY selection into XTerm with Tendril mclick, press Return, then read back the OS file created by the browser-originated command.
+selected_command=echo ok>/tmp/p123830
+os_proof=ok
+note=Prior invalid attempts were discarded as controller test errors: one used unsupported drag duration syntax; one selected only a partial path. This run uses a short command so the entire text is visibly selected and pasted.
