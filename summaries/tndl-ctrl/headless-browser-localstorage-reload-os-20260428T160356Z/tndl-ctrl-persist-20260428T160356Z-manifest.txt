@@ -1,0 +1,13 @@
+Tendril headless Firefox localStorage persistence reload workflow plus XTerm OS-control validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-persist-20260428T160356Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-localstorage-reload-os-20260428T160356Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox by clicking the visible address bar, explicitly click title and note fields, fill a Unicode draft, save it to localStorage, reload the browser by clicking the visible reload button, verify restored values via page title/summary, then write and read back an OS proof file through XTerm.
+expected_browser_title=Tendril Persistence Submitted
+expected_browser_result=persistence-browser-ok: Café persisted ✓ / Reload kept π 😀 state
+os_proof=persistence-os-proof: localStorage reload verified
+note=Prior invalid attempt used bad field coordinates/Tab sequence and was discarded as a controller test error.

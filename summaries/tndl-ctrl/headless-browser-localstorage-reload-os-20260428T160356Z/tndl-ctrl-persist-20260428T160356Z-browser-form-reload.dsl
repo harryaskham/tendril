@@ -1,0 +1,1 @@
+lclick(230,415),wait(150ms),send("Café persisted ✓"),wait(150ms),lclick(230,575),wait(150ms),send("Reload kept π 😀 state"),wait(150ms),lclick(175,695),wait(700ms),lclick(99,66),wait(1800ms),lclick(405,695),wait(700ms)
