@@ -1,0 +1,10 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Tendril Toast Waiting</title>
+<style>
+body{font-family:sans-serif;margin:44px 60px;background:#f8fafc;color:#0f172a}h1{font-size:44px;margin:0 0 16px}p{font-size:23px}.item{margin-top:30px;border:5px solid #334155;background:white;border-radius:16px;padding:24px;width:720px;display:flex;justify-content:space-between;align-items:center;font-size:28px}.item.archived{opacity:.35;text-decoration:line-through}button{font-size:26px;padding:13px 24px;border-radius:8px}.summary{margin-top:28px;border:4px solid #334155;padding:18px;width:780px;font-size:25px;background:white;white-space:pre-wrap}.ok{border-color:#047857;background:#ecfdf5;color:#047857;font-weight:700}.toast{position:fixed;left:60px;bottom:60px;background:#111827;color:white;border-radius:12px;padding:18px 22px;font-size:26px;display:none;box-shadow:0 14px 35px #0005}.toast button{margin-left:24px;background:#fde68a;color:#111827;border:0}</style></head>
+<body>
+<h1>Tendril toast undo task</h1><p>Archive the Unicode task, then click Undo in the transient toast.</p><div id="item" class="item"><span>Task: café follow-up ✓ π 😀</span><button id="archive">Archive</button></div><div id="summary" class="summary">waiting</div><div id="toast" class="toast">Task archived <button id="undo">Undo</button></div>
+<script>
+const item=document.getElementById('item'), toast=document.getElementById('toast'), summary=document.getElementById('summary'); let archived=false; function render(){item.classList.toggle('archived', archived);document.body.dataset.archived=String(archived);} document.getElementById('archive').addEventListener('click',()=>{archived=true;render();toast.style.display='block';summary.textContent='archived waiting for undo';document.title='Tendril Toast Archived';}); document.getElementById('undo').addEventListener('click',()=>{archived=false;render();toast.style.display='none';summary.textContent='toast-browser-ok: café follow-up restored ✓ π 😀';summary.className='summary ok';document.title='Tendril Toast Submitted';}); render();
+</script>
+</body></html>

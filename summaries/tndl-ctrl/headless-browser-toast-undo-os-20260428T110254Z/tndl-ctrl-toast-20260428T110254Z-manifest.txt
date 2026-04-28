@@ -1,0 +1,13 @@
+Tendril headless Firefox transient toast undo workflow plus XTerm OS-control validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-toast-20260428T110254Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-toast-undo-os-20260428T110254Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a local page with a task row and transient toast, click Archive, click Undo inside the toast, verify submitted title/result, then write and read back an OS proof file through XTerm.
+expected_browser_title=Tendril Toast Submitted
+expected_browser_result=toast-browser-ok: café follow-up restored ✓ π 😀
+os_proof=toast-os-proof: browser toast undo verified
+note=Prior invalid attempts missed the Archive or Undo button and were discarded as coordinate errors; this corrected run targets the visible Undo button.
