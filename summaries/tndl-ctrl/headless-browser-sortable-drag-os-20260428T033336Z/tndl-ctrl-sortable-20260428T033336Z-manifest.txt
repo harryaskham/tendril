@@ -1,0 +1,11 @@
+Tendril headless Firefox sortable card drag plus XTerm OS-control validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-sortable-20260428T033336Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-sortable-drag-os-20260428T033336Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a local sortable-card web app, drag the Alpha card below Beta, verify the browser title changed to Tendril Sortable Submitted, then write and read back an OS proof file through XTerm.
+expected_browser_proof=Tendril Sortable Submitted
+os_proof=sortable-os-proof: browser sortable drag verified

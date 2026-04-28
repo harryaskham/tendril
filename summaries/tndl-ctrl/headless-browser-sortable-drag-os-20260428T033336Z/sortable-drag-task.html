@@ -1,0 +1,18 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Tendril Sortable Waiting</title>
+<style>
+body{font-family:sans-serif;margin:36px 50px}h1{font-size:44px;margin:0 0 20px}p{font-size:22px}#board{width:720px;border:5px solid #555;border-radius:10px;padding:22px;background:#fafafa}.card{font-size:28px;padding:22px 26px;margin:14px;border:3px solid #333;border-radius:8px;background:#eef6ff;touch-action:none;user-select:none;cursor:grab}.dragging{background:#fde68a;cursor:grabbing}#status{margin-top:24px;border:3px solid #333;padding:14px;font-size:24px;white-space:pre-wrap}.ok{color:#047857;font-weight:700}</style></head>
+<body>
+<h1>Tendril sortable card task</h1><p>Drag the Alpha card below Beta to reorder the list.</p>
+<div id="board"><div id="alpha" class="card">Alpha task card</div><div id="beta" class="card">Beta task card</div></div>
+<div id="status">waiting</div>
+<script>
+const board=document.getElementById('board'), alpha=document.getElementById('alpha'), beta=document.getElementById('beta'), status=document.getElementById('status');
+let dragging=false, startY=0;
+function verify(){const order=[...board.querySelectorAll('.card')].map(e=>e.id).join(',');document.body.dataset.order=order;if(order==='beta,alpha'){document.title='Tendril Sortable Submitted';status.textContent='sortable-browser-ok order='+order;status.className='ok';}}
+alpha.addEventListener('pointerdown',e=>{dragging=true;startY=e.clientY;alpha.classList.add('dragging');alpha.setPointerCapture(e.pointerId);e.preventDefault();});
+alpha.addEventListener('pointermove',e=>{if(!dragging)return;if(e.clientY-startY>80 && alpha.previousElementSibling!==beta){board.insertBefore(beta,alpha);verify();}});
+alpha.addEventListener('pointerup',e=>{if(!dragging)return;dragging=false;alpha.classList.remove('dragging');if(e.clientY-startY>80 && alpha.previousElementSibling!==beta)board.insertBefore(beta,alpha);verify();});
+</script>
+</body></html>
