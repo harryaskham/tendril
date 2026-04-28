@@ -1,0 +1,11 @@
+Tendril headless Firefox nested scroll panel plus XTerm OS-control validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-nestedscroll-20260428T021802Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-nested-scroll-os-20260428T021802Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a page with a scrollable inner panel, use scroll(x,y,dy) over that panel to reveal a hidden button, click the revealed button, verify the browser title changed to Tendril Nested Scroll Submitted, then write and read back an OS proof file through XTerm.
+expected_browser_proof=Tendril Nested Scroll Submitted
+os_proof=nested-scroll-os-proof: browser nested scroll verified
