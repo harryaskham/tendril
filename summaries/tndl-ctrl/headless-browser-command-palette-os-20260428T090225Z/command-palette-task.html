@@ -1,0 +1,29 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Tendril Command Waiting</title>
+<style>
+body{font-family:sans-serif;margin:44px 60px;background:#f8fafc;color:#0f172a}h1{font-size:44px;margin:0 0 16px}p{font-size:23px}.hint{border:3px solid #334155;border-radius:10px;padding:18px;width:760px;background:white;font-size:24px}.task{margin-top:24px;padding:18px;border:4px solid #047857;background:#ecfdf5;width:760px;font-size:28px}.modal{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:flex-start;justify-content:center;padding-top:180px}.box{background:white;border:5px solid #0f172a;border-radius:14px;width:720px;padding:20px;box-shadow:0 20px 50px #0005}.box input{font-size:28px;padding:12px;border:3px solid #334155;border-radius:8px;width:690px}.option{font-size:27px;padding:12px 14px;border-bottom:1px solid #cbd5e1}.active{background:#fde68a}.ok{font-weight:700;color:#047857}</style></head>
+<body tabindex="0">
+<h1>Tendril command palette task</h1>
+<p>Press Ctrl+K, search for cafe, move to the Unicode action, and run it.</p>
+<div class="hint">Keyboard target: page body. Expected action: Create café follow-up ✓.</div>
+<div id="result" class="task" style="display:none"></div>
+<div id="modal" class="modal"><div class="box"><input id="search" aria-label="Command search" placeholder="Search commands"><div id="options"></div></div></div>
+<script>
+const commands=[
+  {name:'Open settings', value:'settings'},
+  {name:'Create café follow-up ✓', value:'cafe'},
+  {name:'Archive old message', value:'archive'},
+  {name:'Schedule π review 😀', value:'pi'}
+];
+let filtered=commands.slice(), active=0;
+const modal=document.getElementById('modal'), input=document.getElementById('search'), options=document.getElementById('options'), result=document.getElementById('result');
+function render(){options.innerHTML='';filtered.forEach((cmd,i)=>{const div=document.createElement('div');div.className='option'+(i===active?' active':'');div.textContent=cmd.name;options.appendChild(div);});}
+function openPalette(){modal.style.display='flex';filtered=commands.slice();active=0;input.value='';render();setTimeout(()=>input.focus(),20);}
+function closePalette(){modal.style.display='none';document.body.focus();}
+function choose(){const cmd=filtered[active];if(!cmd)return;if(cmd.value==='cafe'){result.style.display='block';result.textContent='command-browser-ok: Create café follow-up ✓';document.body.dataset.commandResult=result.textContent;document.title='Tendril Command Submitted';}else{result.style.display='block';result.textContent='command mismatch: '+cmd.name;document.title='Tendril Command Mismatch';}closePalette();}
+document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openPalette();}else if(modal.style.display==='flex'&&e.key==='Escape'){e.preventDefault();closePalette();}});
+input.addEventListener('input',()=>{const q=input.value.toLowerCase();filtered=commands.filter(c=>c.name.toLowerCase().includes(q)||c.value.includes(q));active=0;render();});
+input.addEventListener('keydown',e=>{if(e.key==='ArrowDown'&&filtered.length){e.preventDefault();active=(active+1)%filtered.length;render();}else if(e.key==='ArrowUp'&&filtered.length){e.preventDefault();active=(active+filtered.length-1)%filtered.length;render();}else if(e.key==='Enter'){e.preventDefault();choose();}});
+document.body.focus();
+</script>
+</body></html>

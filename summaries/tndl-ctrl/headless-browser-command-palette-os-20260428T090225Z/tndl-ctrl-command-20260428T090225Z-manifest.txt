@@ -1,0 +1,12 @@
+Tendril headless Firefox command-palette shortcut plus XTerm OS-control validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-command-20260428T090225Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-command-palette-os-20260428T090225Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a local command-palette web app, click the body, press Ctrl+K, type caf, press Enter to select the Unicode action, verify the page title/result, then write and read back an OS proof file through XTerm.
+expected_browser_title=Tendril Command Submitted
+expected_browser_result=command-browser-ok: Create café follow-up ✓
+os_proof=command-os-proof: browser command palette verified
