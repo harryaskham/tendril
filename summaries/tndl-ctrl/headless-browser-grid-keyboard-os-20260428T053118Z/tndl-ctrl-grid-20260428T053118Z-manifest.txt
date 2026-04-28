@@ -1,0 +1,12 @@
+Tendril headless Firefox spreadsheet-like grid keyboard plus XTerm OS-control validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-grid-20260428T053118Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-grid-keyboard-os-20260428T053118Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a local spreadsheet-like grid, click A1, type Alpha, use Tab to B1, type Beta, use Down to B2, type Gamma, click Verify, then write and read back an OS proof file through XTerm.
+expected_browser_proof=Tendril Grid Submitted
+os_proof=grid-os-proof: browser grid keyboard verified
+note=Earlier invalid attempt used unsupported token ArrowDown; this passed with documented X11 token Down.
