@@ -1,0 +1,11 @@
+[tendril-headless] starting Xvfb :90 at 1920x1080x24
+[tendril-headless] starting window manager: openbox
+[tendril-headless] starting browser: /home/harry/.nix-profile/bin/firefox
+[tendril-headless] started environment 'tndl-ctrl-undo-20260428T010101Z'; logs are under /run/user/1000/tendril-headless/tndl-ctrl-undo-20260428T010101Z/logs
+export DISPLAY=:90
+export XDG_SESSION_TYPE=x11
+export TENDRIL_HEADLESS_NAME=tndl-ctrl-undo-20260428T010101Z
+export TENDRIL_HEADLESS_RUNTIME_DIR=/run/user/1000/tendril-headless/tndl-ctrl-undo-20260428T010101Z
+export TENDRIL_HEADLESS_WIDTH=1920
+export TENDRIL_HEADLESS_HEIGHT=1080
+export TENDRIL_HEADLESS_MARIONETTE_PORT=62090

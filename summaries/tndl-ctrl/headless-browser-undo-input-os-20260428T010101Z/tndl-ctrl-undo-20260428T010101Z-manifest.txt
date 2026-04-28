@@ -1,0 +1,11 @@
+Tendril headless Firefox Ctrl+Z undo input + OS workflow validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-undo-20260428T010101Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-undo-input-os-20260428T010101Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a local form, type temporary text into an input, undo it with Ctrl+Z, type final text, submit via keyboard, verify browser title, then drive XTerm to create an ASCII OS proof file.
+browser_proof=Tendril Undo Submitted
+os_proof=undo-browser-os-verified
