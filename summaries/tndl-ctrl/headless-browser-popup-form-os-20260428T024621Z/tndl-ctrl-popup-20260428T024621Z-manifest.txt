@@ -1,0 +1,14 @@
+Tendril headless Firefox multi-window popup form plus XTerm OS-control validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-popup-20260428T024621Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-popup-form-os-20260428T024621Z
+parent_window=0x600004
+popup_window=0x600026
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a local parent page, click a button that opens a popup, rediscover the popup via tendril list, capture and control the popup window by id, type and submit a popup form, verify both popup and parent Firefox titles changed, then write and read back an OS proof file through XTerm.
+expected_popup_proof=Tendril Popup Submitted
+expected_parent_proof=Tendril Popup Parent Submitted
+expected_text=popup control verified
+os_proof=popup-os-proof: multi-window browser control verified
