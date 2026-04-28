@@ -1,0 +1,13 @@
+Tendril headless XTerm PRIMARY selection to Firefox middle-click paste workflow plus OS-control validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-xtermprimary-20260428T170434Z
+artifact_dir=summaries/tndl-ctrl/headless-xterm-primary-browser-os-20260428T170434Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a local verification page, print xterm-primary-ok in XTerm, drag-select the terminal text to seed X11 PRIMARY, middle-click paste it into a Firefox input, use keyboard Tab/Return to verify in-browser, then write and read back an OS proof file through XTerm.
+expected_browser_title=Tendril XTerm Primary Submitted
+expected_browser_result=xterm-primary-browser-ok: xterm-primary-ok
+os_proof=xterm-primary-os-proof: terminal selection pasted into browser
+note=Prior invalid attempt pasted correctly but clicked just above the Verify button and was discarded as a controller coordinate error; this run verifies with keyboard Tab/Return.

@@ -1,0 +1,1 @@
+xterm-primary-os-proof: terminal selection pasted into browser
