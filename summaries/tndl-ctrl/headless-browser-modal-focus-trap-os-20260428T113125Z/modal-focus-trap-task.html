@@ -1,0 +1,26 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Tendril Focus Modal Waiting</title>
+<style>
+body{font-family:sans-serif;margin:44px 60px;background:#f8fafc;color:#0f172a}h1{font-size:42px;margin:0 0 16px}p{font-size:23px}button,input,textarea{font-size:25px}button{padding:13px 24px;border-radius:8px}.summary{margin-top:26px;border:4px solid #334155;padding:18px;width:860px;font-size:25px;background:white;white-space:pre-wrap}.ok{border-color:#047857;background:#ecfdf5;color:#047857;font-weight:700}.backdrop{position:fixed;inset:0;background:#0008;display:none;align-items:center;justify-content:center}.dialog{width:720px;background:white;border:6px solid #1e293b;border-radius:16px;padding:28px;box-shadow:0 18px 50px #0009}.row{margin:18px 0}.row label{display:block;font-size:24px;margin-bottom:6px}.row input[type=text],.row textarea{width:660px;border:3px solid #64748b;border-radius:8px;padding:10px}.row textarea{height:110px}.checkrow{font-size:24px}.checkrow input{width:24px;height:24px}.actions{text-align:right;margin-top:20px}.actions button{margin-left:12px}.focus-note{font-size:20px;color:#475569}</style></head>
+<body>
+<h1>Tendril keyboard-only modal focus trap task</h1>
+<p>Open the modal, cycle focus with Tab inside the trap, then fill and submit without mouse clicks inside the dialog.</p>
+<button id="open">Open focus-trap modal</button>
+<div id="summary" class="summary">waiting</div>
+<div id="backdrop" class="backdrop" role="presentation"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+<h2 id="dialog-title">Create follow-up</h2>
+<div class="focus-note">Focusable order: title, note, urgent, save. Tab wraps inside the dialog.</div>
+<div class="row"><label for="titleField">Title</label><input id="titleField" type="text"></div>
+<div class="row"><label for="noteField">Note</label><textarea id="noteField"></textarea></div>
+<label class="checkrow"><input id="urgentField" type="checkbox"> Urgent ✓</label>
+<div class="actions"><button id="save">Save follow-up</button></div>
+</div></div>
+<script>
+const openBtn=document.getElementById('open'), backdrop=document.getElementById('backdrop'), title=document.getElementById('titleField'), note=document.getElementById('noteField'), urgent=document.getElementById('urgentField'), save=document.getElementById('save'), summary=document.getElementById('summary');
+const focusables=[title,note,urgent,save]; let tabWraps=0;
+function openModal(){backdrop.style.display='flex'; document.title='Tendril Focus Modal Open'; setTimeout(()=>title.focus(),40)}
+openBtn.addEventListener('click',openModal);
+backdrop.addEventListener('keydown', e=>{ if(e.key!=='Tab') return; const i=focusables.indexOf(document.activeElement); if(e.shiftKey && i===0){e.preventDefault(); focusables[focusables.length-1].focus(); tabWraps++;} else if(!e.shiftKey && i===focusables.length-1){e.preventDefault(); focusables[0].focus(); tabWraps++;} });
+save.addEventListener('click',()=>{const goodTitle='Café modal trap ✓'; const goodNote='Keyboard-only note π 😀'; const good=title.value===goodTitle && note.value===goodNote && urgent.checked && tabWraps>=1; summary.textContent=good ? `focus-modal-browser-ok: ${title.value} / ${note.value} / urgent=${urgent.checked} / wraps=${tabWraps}` : `focus-modal mismatch: title=${title.value} note=${note.value} urgent=${urgent.checked} wraps=${tabWraps}`; summary.className=good?'summary ok':'summary'; document.title=good?'Tendril Focus Modal Submitted':'Tendril Focus Modal Mismatch'; backdrop.style.display='none'; document.body.dataset.modalResult=summary.textContent;});
+</script>
+</body></html>

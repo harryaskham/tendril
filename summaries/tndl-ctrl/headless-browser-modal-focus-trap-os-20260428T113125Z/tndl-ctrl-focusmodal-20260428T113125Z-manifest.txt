@@ -1,0 +1,12 @@
+Tendril headless Firefox keyboard-only modal focus-trap workflow plus XTerm OS-control validation.
+status=passed
+bead=bd-c82db3
+name=tndl-ctrl-focusmodal-20260428T113125Z
+artifact_dir=summaries/tndl-ctrl/headless-browser-modal-focus-trap-os-20260428T113125Z
+browser_window=0x600004
+xterm_window=0x40000c
+display_id=1
+workflow=Navigate Firefox to a local page with a modal focus trap, click the launcher, cycle Tab across the focus trap until it wraps back to the title field, fill Unicode title and note with keyboard input, toggle urgent with Space, save with Return, then write and read back an OS proof file through XTerm.
+expected_browser_title=Tendril Focus Modal Submitted
+expected_browser_result=focus-modal-browser-ok: Café modal trap ✓ / Keyboard-only note π 😀 / urgent=true / wraps=1
+os_proof=focus-modal-os-proof: keyboard trap modal verified
