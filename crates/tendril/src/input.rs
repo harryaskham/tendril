@@ -4,8 +4,9 @@ use serde_json::json;
 
 use crate::error::TendrilError;
 use crate::model::{
-    Bounds, CoordinateTransform, InputAction, MAX_SCROLL_TICKS, ModifierKey, MouseButton, RunInput,
-    RunInputPayload, RunOutput, TargetSelector,
+    Bounds, CoordinateTransform, ElementDescriptor, ElementListInput, InputAction,
+    MAX_SCROLL_TICKS, ModifierKey, MouseButton, RunInput, RunInputPayload, RunOutput,
+    TargetSelector,
 };
 use crate::platform::{
     AdapterInfo, CaptureTargetKind, DesktopSession, InputRequest as PlatformInputRequest,
@@ -99,6 +100,7 @@ pub(crate) fn execute_run(
 
     let adapter_info = adapter.info();
     let (text, actions) = normalize_payload(&input.payload);
+    let actions = resolve_element_actions(adapter, &input.target, &target, actions)?;
     validate_actions_for_target(&target, &actions)?;
     reject_unsafe_browser_navigation_chord(&adapter_info, &target, &actions)?;
 
@@ -303,6 +305,7 @@ fn vulnerable_ctrl_l_navigation(actions: &[InputAction]) -> Option<(usize, &str)
         for (action_index, action) in significant_actions.iter().skip(start + 3).copied() {
             match action {
                 InputAction::Click { .. }
+                | InputAction::ElementClick { .. }
                 | InputAction::DoubleClick { .. }
                 | InputAction::Drag { .. }
                 | InputAction::Scroll { .. } => break,
@@ -401,6 +404,77 @@ fn summarize_navigation_text(text: &str) -> String {
     preview
 }
 
+fn resolve_element_actions(
+    adapter: &dyn PlatformAdapter,
+    selector: &TargetSelector,
+    target: &PlatformTargetDescriptor,
+    actions: Vec<InputAction>,
+) -> Result<Vec<InputAction>, TendrilError> {
+    if !actions
+        .iter()
+        .any(|action| matches!(action, InputAction::ElementClick { .. }))
+    {
+        return Ok(actions);
+    }
+
+    let output = adapter.list_elements(&ElementListInput {
+        target: Some(selector.clone()),
+        include_offscreen: false,
+    })?;
+
+    actions
+        .into_iter()
+        .map(|action| match action {
+            InputAction::ElementClick { id } => {
+                element_click_to_pointer_action(&id, target, &output.elements)
+            }
+            other => Ok(other),
+        })
+        .collect()
+}
+
+fn element_click_to_pointer_action(
+    id: &str,
+    target: &PlatformTargetDescriptor,
+    elements: &[ElementDescriptor],
+) -> Result<InputAction, TendrilError> {
+    let element = elements
+        .iter()
+        .find(|element| element.id == id)
+        .ok_or_else(|| {
+            TendrilError::target_not_found("element", id).with_detail_entry(
+                "remediation",
+                json!("Run `tendril --window <id> list-elements --json` again and use one of the returned snapshot-local element ids."),
+            )
+        })?;
+    let bounds = element.bounds.as_ref().ok_or_else(|| {
+        TendrilError::unsupported_capability(
+            "element_bounds_unavailable",
+            format!(
+                "element `{id}` ({}) did not expose bounds usable for click dispatch",
+                element.name
+            ),
+            Some(json!({
+                "element_id": id,
+                "element_name": element.name,
+                "element_role": element.role,
+            })),
+        )
+    })?;
+
+    let center_x = bounds
+        .x
+        .saturating_add(i32::try_from(bounds.width / 2).unwrap_or(i32::MAX));
+    let center_y = bounds
+        .y
+        .saturating_add(i32::try_from(bounds.height / 2).unwrap_or(i32::MAX));
+    Ok(InputAction::Click {
+        button: MouseButton::Left,
+        x: center_x.saturating_sub(target.bounds.x),
+        y: center_y.saturating_sub(target.bounds.y),
+    })
+}
+
 fn ensure_input_supported(target: &PlatformTargetDescriptor) -> Result<(), TendrilError> {
     if target.input_supported {
         Ok(())
@@ -434,7 +508,8 @@ fn validate_actions_for_target(
             | InputAction::Hold { .. }
             | InputAction::Release { .. }
             | InputAction::Send { .. }
-            | InputAction::Wait { .. } => {}
+            | InputAction::Wait { .. }
+            | InputAction::ElementClick { .. } => {}
             InputAction::Click { x, y, .. } => {
                 validate_relative_point(*x, *y, &target.bounds, action_index, "click")?;
             }
@@ -875,6 +950,11 @@ fn parse_action_segment(segment: &str, action_index: usize) -> Result<InputActio
                 duration_ms: parse_duration_ms(argument, action_index, segment)?,
             })
         }
+        "click" | "press" | "element" => {
+            let argument = expect_single_argument(inner, action_index, segment)?;
+            let id = parse_element_id(argument, action_index, segment)?;
+            Ok(InputAction::ElementClick { id })
+        }
         "lclick" | "rclick" | "mclick" => {
             let arguments = split_arguments(inner, action_index, segment)?;
             if arguments.len() != 2 {
@@ -965,6 +1045,28 @@ fn parse_action_segment(segment: &str, action_index: usize) -> Result<InputActio
             Some("parse"),
         )),
     }
+}
+
+fn parse_element_id(
+    argument: &str,
+    action_index: usize,
+    segment: &str,
+) -> Result<String, TendrilError> {
+    let trimmed = argument.trim();
+    let id = if trimmed.starts_with('"') {
+        parse_quoted_string(trimmed, action_index, segment)?
+    } else {
+        trimmed.to_owned()
+    };
+    if id.trim().is_empty() {
+        return Err(dsl_error(
+            "element click requires a non-empty id",
+            Some(action_index),
+            Some(segment),
+            Some("validate"),
+        ));
+    }
+    Ok(id)
 }
 
 fn expect_single_argument<'a>(
@@ -1548,6 +1650,27 @@ mod tests {
                 y: 200,
                 dy: -3,
             }
+        );
+    }
+
+    #[test]
+    fn parser_accepts_element_click_actions() {
+        let actions = parse_dsl_sequence(r#"click(33),press("sidebar-new-note"),element(foo/bar)"#)
+            .expect("element click DSL should parse");
+
+        assert_eq!(
+            actions,
+            vec![
+                InputAction::ElementClick {
+                    id: "33".to_owned(),
+                },
+                InputAction::ElementClick {
+                    id: "sidebar-new-note".to_owned(),
+                },
+                InputAction::ElementClick {
+                    id: "foo/bar".to_owned(),
+                },
+            ]
         );
     }
 

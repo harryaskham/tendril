@@ -1232,6 +1232,12 @@ fn dispatch_action(
             Some(action_index),
             Some(label),
         ),
+        InputAction::ElementClick { .. } => Err(input_execution_error(
+            "unresolved_element_click_action",
+            "click(<element-id>) should be resolved to target coordinates before reaching the X11 input adapter".to_owned(),
+            Some(action_index),
+            Some(label),
+        )),
     }
 }
 
@@ -2364,6 +2370,7 @@ fn action_label(action: &InputAction) -> String {
         InputAction::DoubleClick { x, y } => format!("dblclick({x},{y})"),
         InputAction::Drag { x0, y0, x1, y1 } => format!("drag({x0},{y0},{x1},{y1})"),
         InputAction::Scroll { x, y, dy } => format!("scroll({x},{y},{dy})"),
+        InputAction::ElementClick { id } => format!("click({id})"),
     }
 }
 

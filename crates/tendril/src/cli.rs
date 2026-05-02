@@ -39,7 +39,7 @@ impl TendrilCli {
     #[must_use]
     pub fn agent_help() -> String {
         format!(
-            "Tendril is a stateless desktop inspection and control CLI for agents.\n\nWorkflow:\n  1. list targets:   tendril list --json\n  2. capture state:  tendril --window <id> capture --json\n  3. save to file:   tendril --window <id> capture -o /tmp/screen.png\n  4. run input:      tendril --window <id> run 'send(\"hello\")'\n  5. read clipboard: tendril clipboard get --json\n  6. reuse a target: eval \"$(tendril --window <id> alias --name desk)\"\n\nCommands:\n  list       Discover windows and displays\n  capture    Capture a screenshot from a window or display\n  run        Type text or execute an input sequence against a target\n  clipboard  Read or serve Linux/X11 text selections for deterministic browser↔OS transfer\n  alias      Emit a shell helper that pre-fills --window/--display\n  listen     Probe supported audio capture paths\n  mcp        Serve Tendril over MCP stdio\n\nUse --json for machine-readable success/error envelopes.\nUse -o/--output on capture to save the image directly to a file.\nUse --help on any subcommand for detailed flags.\n\n{WORKFLOW_HINT}\n"
+            "Tendril is a stateless desktop inspection and control CLI for agents.\n\nWorkflow:\n  1. list targets:   tendril list --json\n  2. list elements:  tendril --window <id> list-elements --json\n  3. capture state:  tendril --window <id> capture --json\n  4. save to file:   tendril --window <id> capture -o /tmp/screen.png\n  5. run input:      tendril --window <id> run 'send(\"hello\")'\n  6. click element:  tendril --window <id> run 'click(33)'\n  7. read clipboard: tendril clipboard get --json\n  8. reuse a target: eval \"$(tendril --window <id> alias --name desk)\"\n\nCommands:\n  list           Discover windows and displays\n  list-elements  Discover UI elements for a window/display or globally\n  capture        Capture a screenshot from a window or display\n  run            Type text or execute an input sequence against a target\n  clipboard      Read or serve Linux/X11 text selections for deterministic browser↔OS transfer\n  alias          Emit a shell helper that pre-fills --window/--display\n  listen         Probe supported audio capture paths\n  mcp            Serve Tendril over MCP stdio\n\nUse --json for machine-readable success/error envelopes.\nUse -o/--output on capture to save the image directly to a file.\nUse --help on any subcommand for detailed flags.\n\n{WORKFLOW_HINT}\n"
         )
     }
 }
@@ -49,6 +49,9 @@ impl TendrilCli {
 pub enum Command {
     /// Discover windows, displays, and other future targets.
     List(ListCommand),
+    /// List lower-level UI elements for a window/display or globally.
+    #[command(name = "list-elements")]
+    ListElements(ElementListCommand),
     /// Capture a screenshot from a window or display target.
     Capture(CaptureCommand),
     /// Execute input against a target.
@@ -74,6 +77,7 @@ impl Command {
     pub fn name(&self) -> &'static str {
         match self {
             Self::List(_) => "list",
+            Self::ListElements(_) => "list-elements",
             Self::Capture(_) => "capture",
             Self::Run(_) => "run",
             Self::Listen(_) => "listen",
@@ -86,6 +90,14 @@ impl Command {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Args, Serialize, Deserialize, JsonSchema)]
 pub struct ListCommand {}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Args, Serialize, Deserialize, JsonSchema)]
+pub struct ElementListCommand {
+    /// Include elements outside the target bounds when the platform backend reports them.
+    #[arg(long)]
+    #[serde(default)]
+    pub include_offscreen: bool,
+}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Args, Serialize, Deserialize, JsonSchema)]
 pub struct CaptureCommand {
@@ -134,7 +146,7 @@ pub struct RunCommand {
     #[arg(long = "lock-path")]
     pub lock_path: Option<PathBuf>,
 
-    /// Text or DSL input definition, e.g. `send("hi")`, `lclick(10,20)`, `hover(10,20)`, `dblclick(10,20)`, or `scroll(10,20,3)`.
+    /// Text or DSL input definition, e.g. `send("hi")`, `lclick(10,20)`, `hover(10,20)`, `dblclick(10,20)`, `scroll(10,20,3)`, or `click(33)` for an element from list-elements.
     pub input_definition: Option<String>,
 
     /// Restore the window/app focus that was active before the run, when the

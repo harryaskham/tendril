@@ -17,7 +17,10 @@ use crate::capture::{current_timestamp, read_and_remove_temp_capture, unique_tem
 use crate::discovery;
 use crate::error::TendrilError;
 use crate::input::{relative_point_to_absolute, reliability_delay};
-use crate::model::{Bounds, FocusSnapshot, InputAction, ModifierKey, MouseButton, ScaleFactor};
+use crate::model::{
+    Bounds, ElementListInput, ElementListOutput, FocusSnapshot, InputAction, ModifierKey,
+    MouseButton, ScaleFactor,
+};
 use crate::wayland_input;
 use crate::x11;
 
@@ -148,6 +151,7 @@ pub enum Capability {
     InputControl,
     AudioLoopbackCapture,
     AudioInputCapture,
+    ElementDiscovery,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -304,6 +308,7 @@ pub enum AdapterOperation {
     InputControl,
     PermissionCheck,
     AudioProbe,
+    ElementDiscovery,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Error)]
@@ -716,6 +721,11 @@ pub trait PlatformAdapter:
     + AudioCapabilityProbe
 {
     fn info(&self) -> AdapterInfo;
+
+    fn list_elements(&self, input: &ElementListInput) -> Result<ElementListOutput, TendrilError> {
+        let inventory = self.discover_targets(&TargetDiscoveryRequest)?;
+        crate::elements::discover_elements(&self.info(), &inventory, input)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -2160,6 +2170,13 @@ fn dispatch_macos_action(
             Some(action_index),
             Some(label),
         )),
+        InputAction::ElementClick { .. } => Err(input_execution_error(
+            "unresolved_element_click_action",
+            "click(<element-id>) should be resolved to target coordinates before reaching the macOS input adapter".to_owned(),
+            "dispatch",
+            Some(action_index),
+            Some(label),
+        )),
     }
 }
 
@@ -2445,6 +2462,13 @@ fn dispatch_windows_action_with_runtime(
         InputAction::Scroll { .. } => Err(input_execution_error(
             "unsupported_scroll_action",
             "scroll(...) is currently implemented for Linux/X11 input delivery; this adapter does not yet support native wheel injection".to_owned(),
+            "dispatch",
+            Some(action_index),
+            Some(label),
+        )),
+        InputAction::ElementClick { .. } => Err(input_execution_error(
+            "unresolved_element_click_action",
+            "click(<element-id>) should be resolved to target coordinates before reaching the Windows input adapter".to_owned(),
             "dispatch",
             Some(action_index),
             Some(label),

@@ -4,6 +4,7 @@ pub mod clipboard;
 pub mod commands;
 pub mod config;
 pub mod discovery;
+pub mod elements;
 pub mod error;
 pub mod execution_lock;
 pub mod input;

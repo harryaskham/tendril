@@ -106,6 +106,7 @@ fn cli_and_mcp_stdio_return_equivalent_structured_payloads() {
         tool_names,
         vec![
             "list",
+            "list_elements",
             "capture",
             "run",
             "listen",

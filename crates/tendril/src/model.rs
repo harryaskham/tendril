@@ -165,6 +165,60 @@ pub struct ListOutput {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ElementListInput {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<TargetSelector>,
+    #[serde(default)]
+    pub include_offscreen: bool,
+}
+
+impl ElementListInput {
+    pub fn validate(&self) -> Result<(), TendrilError> {
+        if let Some(target) = &self.target {
+            validate_identifier(target.id(), target.kind())
+                .map_err(|error| error.with_code("invalid_list_elements_input"))?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ElementDescriptor {
+    /// Stable within the current target snapshot. Pass this value to
+    /// `tendril run 'click(<id>)'` to activate the element without manually
+    /// choosing screenshot coordinates.
+    pub id: String,
+    pub role: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bounds: Option<Bounds>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<TargetSelector>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub path: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub app_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub process_id: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ElementListOutput {
+    pub adapter: AdapterInfo,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<TargetSelector>,
+    pub elements: Vec<ElementDescriptor>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CaptureInput {
     pub target: TargetSelector,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -340,6 +394,15 @@ pub enum InputAction {
         y: i32,
         dy: i32,
     },
+    /// Activate an element returned by `tendril list-elements`.
+    ///
+    /// The DSL form is `click(<id>)`, `press(<id>)`, or `element(<id>)`.
+    /// Tendril resolves the element from platform metadata for the target and
+    /// dispatches an activation/click without the caller choosing pixels by
+    /// hand.
+    ElementClick {
+        id: String,
+    },
 }
 
 impl InputAction {
@@ -372,6 +435,11 @@ impl InputAction {
                 .with_code("invalid_run_input")
                 .with_field("actions"),
             ),
+            Self::ElementClick { id } if id.trim().is_empty() => Err(TendrilError::validation(
+                "element click action requires a non-empty element id",
+            )
+            .with_code("invalid_run_input")
+            .with_field("actions")),
             _ => Ok(()),
         }
     }

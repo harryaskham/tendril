@@ -285,6 +285,13 @@ fn dispatch_action(
             Some(action_index),
             Some(label),
         )),
+        InputAction::ElementClick { .. } => Err(input_execution_error(
+            "unresolved_element_click_action",
+            "click(<element-id>) should be resolved to target coordinates before reaching the Wayland input adapter".to_owned(),
+            "dispatch",
+            Some(action_index),
+            Some(label),
+        )),
     }
 }
 
@@ -561,6 +568,7 @@ fn request_has_pointer(request: &InputRequest) -> bool {
                 | InputAction::DoubleClick { .. }
                 | InputAction::Drag { .. }
                 | InputAction::Scroll { .. }
+                | InputAction::ElementClick { .. }
         )
     })
 }

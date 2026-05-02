@@ -12,8 +12,8 @@ use tracing::info;
 use crate::capture::{execute_capture, render_capture_human};
 use crate::cli::{
     AliasCommand, CaptureCommand, ClipboardCommand, ClipboardGetCommand, ClipboardSetCommand,
-    ClipboardSubcommand, Command, ListCommand, ListenCommand, McpSubcommand, RunCommand,
-    TendrilCli, WORKFLOW_HINT,
+    ClipboardSubcommand, Command, ElementListCommand, ListCommand, ListenCommand, McpSubcommand,
+    RunCommand, TendrilCli, WORKFLOW_HINT,
 };
 use crate::clipboard::{
     ClipboardGetInput, ClipboardSelection, ClipboardSetInput, DEFAULT_CLIPBOARD_SERVE_MS,
@@ -31,8 +31,8 @@ use crate::listen::{
 };
 use crate::model::{
     AliasInput, AliasOutput, AudioFormat, AudioSourceKind, AudioSourceSelector, CapabilitySet,
-    CaptureInput, ListInput, ListOutput, ListenInput, RunInput, RunInputPayload, ShellKind,
-    TargetDescriptor, TargetKind, TargetSelector,
+    CaptureInput, ElementListInput, ElementListOutput, ListInput, ListOutput, ListenInput,
+    RunInput, RunInputPayload, ShellKind, TargetDescriptor, TargetKind, TargetSelector,
 };
 use crate::platform::{
     AdapterContext, AdapterInfo, AudioCapabilityReport, AudioProbeRequest,
@@ -75,6 +75,14 @@ pub struct RunRequest {
     pub target: TargetScope,
     #[serde(flatten)]
     pub options: RunCommand,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ElementListRequest {
+    #[serde(flatten)]
+    pub target: TargetScope,
+    #[serde(flatten)]
+    pub options: ElementListCommand,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -291,6 +299,17 @@ fn dispatch_cli_command(
                 render_list_human,
             ))
         }
+        Command::ListElements(command) => {
+            let input = build_element_list_input(&target_scope_from_cli(cli), command)?;
+            let adapter = adapter_for_context(AdapterContext::detect());
+            let output = execute_list_elements(&input, adapter.as_ref())?;
+            Ok(render_command_output(
+                "list-elements",
+                cli.json,
+                output,
+                render_list_elements_human,
+            ))
+        }
         Command::Capture(command) => {
             let input = build_capture_input(&target_scope_from_cli(cli), command, config)?;
             info!(
@@ -380,6 +399,16 @@ fn build_tool_router() -> ToolRouter<CommandContext> {
             let input = validate_list_command(&command)?;
             let adapter = context.adapter();
             execute_list_with_adapter(&input, adapter.as_ref())
+        },
+    );
+    router.add_typed_tool(
+        "list_elements",
+        "Discover lower-level UI elements for a display/window target or globally.",
+        |context: &CommandContext, command: ElementListRequest| {
+            let input = build_element_list_input(&command.target, &command.options)?;
+            let adapter = context.adapter();
+            serde_json::to_value(execute_list_elements(&input, adapter.as_ref())?)
+                .map_err(|error| TendrilError::serialization(error.to_string()))
         },
     );
     router.add_typed_tool(
@@ -490,6 +519,13 @@ fn execute_list_with_adapter(
     })
 }
 
+fn execute_list_elements(
+    input: &ElementListInput,
+    adapter: &dyn PlatformAdapter,
+) -> Result<ElementListOutput, TendrilError> {
+    adapter.list_elements(input)
+}
+
 fn model_target_from_platform(target: crate::platform::TargetDescriptor) -> TargetDescriptor {
     TargetDescriptor {
         id: target.id,
@@ -530,6 +566,7 @@ where
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn build_help_output() -> HelpOutput {
     HelpOutput {
         help: TendrilCli::agent_help(),
@@ -538,6 +575,10 @@ fn build_help_output() -> HelpOutput {
             HelpWorkflowStep {
                 command: "tendril list --json".to_owned(),
                 description: "Discover actionable window and display targets.".to_owned(),
+            },
+            HelpWorkflowStep {
+                command: "tendril --window <id> list-elements --json".to_owned(),
+                description: "Discover clickable UI elements without choosing screenshot pixels.".to_owned(),
             },
             HelpWorkflowStep {
                 command: "tendril --window <id> capture --json".to_owned(),
@@ -560,6 +601,10 @@ fn build_help_output() -> HelpOutput {
             HelpCommandSummary {
                 name: "list".to_owned(),
                 description: "Discover windows and displays.".to_owned(),
+            },
+            HelpCommandSummary {
+                name: "list-elements".to_owned(),
+                description: "Discover lower-level UI elements for target-aware control.".to_owned(),
             },
             HelpCommandSummary {
                 name: "capture".to_owned(),
@@ -592,6 +637,14 @@ fn build_help_output() -> HelpOutput {
                 command: "tendril list --json".to_owned(),
             },
             HelpExample {
+                description: "Inspect target elements".to_owned(),
+                command: "tendril --window <id> list-elements --json".to_owned(),
+            },
+            HelpExample {
+                description: "Click a discovered element".to_owned(),
+                command: "tendril --window <id> run 'click(33)'".to_owned(),
+            },
+            HelpExample {
                 description: "Capture a chosen target".to_owned(),
                 command: "tendril --window <id> capture --json".to_owned(),
             },
@@ -620,9 +673,52 @@ fn build_help_output() -> HelpOutput {
             "Use --json for machine-readable success and error envelopes.".to_owned(),
             "Use -o/--output on capture to save the decoded image directly to a file; combine with --json to also get the JSON envelope.".to_owned(),
             "Alias helpers are plain shell wrappers around explicit tendril arguments; Tendril does not store session state.".to_owned(),
+            "Element ids are snapshot-local and should be refreshed with list-elements when the UI changes.".to_owned(),
             "On Linux/X11, clipboard selections are owned by a live process; `clipboard set` intentionally stays alive for --serve-ms so browser/terminal paste requests can complete deterministically.".to_owned(),
         ],
     }
+}
+
+fn render_list_elements_human(output: &ElementListOutput) -> String {
+    let mut rendered = format!(
+        "platform: {:?} / {:?}\nelements: {}\n",
+        output.adapter.platform,
+        output.adapter.session,
+        output.elements.len()
+    );
+    if !output.notes.is_empty() {
+        let _ = writeln!(rendered, "notes: {}", output.notes.join(" "));
+    }
+    for element in &output.elements {
+        let bounds = element.bounds.as_ref().map_or_else(
+            || "bounds=<none>".to_owned(),
+            |bounds| {
+                format!(
+                    "{}x{}+{}+{}",
+                    bounds.width, bounds.height, bounds.x, bounds.y
+                )
+            },
+        );
+        let path = if element.path.is_empty() {
+            element.name.clone()
+        } else {
+            element.path.join("/")
+        };
+        let _ = writeln!(
+            rendered,
+            "- {}: {}<{}> {} actions={}",
+            element.id,
+            element.role,
+            path,
+            bounds,
+            if element.actions.is_empty() {
+                "none".to_owned()
+            } else {
+                element.actions.join(",")
+            }
+        );
+    }
+    rendered
 }
 
 fn render_list_human(output: &ListOutput) -> String {
@@ -677,6 +773,18 @@ fn render_list_human(output: &ListOutput) -> String {
     }
 
     rendered
+}
+
+fn build_element_list_input(
+    target: &TargetScope,
+    command: &ElementListCommand,
+) -> Result<ElementListInput, TendrilError> {
+    let input = ElementListInput {
+        target: optional_target(target)?,
+        include_offscreen: command.include_offscreen,
+    };
+    input.validate()?;
+    Ok(input)
 }
 
 fn build_capture_input(
@@ -1206,6 +1314,14 @@ fn required_target(
         })
 }
 
+fn optional_target(target: &TargetScope) -> Result<Option<TargetSelector>, TendrilError> {
+    selected_target(target).map_err(|error| {
+        error
+            .with_code("invalid_list_elements_input")
+            .with_field("target")
+    })
+}
+
 fn selected_target(target: &TargetScope) -> Result<Option<TargetSelector>, TendrilError> {
     match (&target.window, &target.display) {
         (Some(_), Some(_)) => Err(TendrilError::validation(
@@ -1368,11 +1484,12 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::{
-        AliasRequest, CaptureRequest, ClipboardGetRequest, ClipboardSetRequest, ListenRequest,
-        RunRequest, TargetScope, build_alias_input, build_capture_input, build_clipboard_get_input,
-        build_clipboard_set_input, build_listen_input, build_listen_response, build_mcp_server,
-        build_run_input, dispatch, dispatch_listen_command, execute_alias,
-        execute_list_with_adapter, render_command_output, render_list_human,
+        AliasRequest, CaptureRequest, ClipboardGetRequest, ClipboardSetRequest, ElementListRequest,
+        ListenRequest, RunRequest, TargetScope, build_alias_input, build_capture_input,
+        build_clipboard_get_input, build_clipboard_set_input, build_listen_input,
+        build_listen_response, build_mcp_server, build_run_input, dispatch,
+        dispatch_listen_command, execute_alias, execute_list_elements, execute_list_with_adapter,
+        render_command_output, render_list_elements_human, render_list_human,
     };
     use crate::capture::{execute_capture, render_capture_human};
     use crate::cli::{
@@ -1387,7 +1504,8 @@ mod tests {
     use crate::error::TendrilError;
     use crate::input::{execute_run, render_run_human};
     use crate::model::{
-        AudioFormat, AudioSourceKind, Bounds, CaptureInput, RunInput, ShellKind, TargetSelector,
+        AudioFormat, AudioSourceKind, Bounds, CaptureInput, ElementListInput, RunInput, ShellKind,
+        TargetSelector,
     };
     use crate::platform::{
         AdapterContext, AdapterInfo, AudioBackend, AudioCapabilityProbe, AudioCapabilityReport,
@@ -1670,14 +1788,18 @@ mod tests {
                 );
                 assert_eq!(
                     value["data"]["workflow_steps"][1]["command"],
-                    "tendril --window <id> capture --json"
+                    "tendril --window <id> list-elements --json"
                 );
                 assert_eq!(
                     value["data"]["workflow_steps"][2]["command"],
-                    "tendril --window <id> capture -o /tmp/screen.png"
+                    "tendril --window <id> capture --json"
                 );
                 assert_eq!(
                     value["data"]["workflow_steps"][3]["command"],
+                    "tendril --window <id> capture -o /tmp/screen.png"
+                );
+                assert_eq!(
+                    value["data"]["workflow_steps"][4]["command"],
                     "tendril --window <id> run 'send(\"hello\")'"
                 );
             }
@@ -1783,6 +1905,7 @@ mod tests {
             names,
             vec![
                 "list",
+                "list_elements",
                 "capture",
                 "run",
                 "listen",
@@ -1799,6 +1922,10 @@ mod tests {
             .iter()
             .find(|tool| tool.name == "list")
             .expect("list tool should be registered");
+        let list_elements = tools
+            .iter()
+            .find(|tool| tool.name == "list_elements")
+            .expect("list_elements tool should be registered");
         let capture = tools
             .iter()
             .find(|tool| tool.name == "capture")
@@ -1824,6 +1951,11 @@ mod tests {
             list.input_schema,
             serde_json::to_value(schemars::schema_for!(ListCommand))
                 .expect("list schema should serialize")
+        );
+        assert_eq!(
+            list_elements.input_schema,
+            serde_json::to_value(schemars::schema_for!(ElementListRequest))
+                .expect("list_elements schema should serialize")
         );
         assert_eq!(
             capture.input_schema,
@@ -2013,6 +2145,43 @@ mod tests {
 
         assert_eq!(response["result"]["isError"], false);
         assert_eq!(mcp_structured_content(&response), cli_json);
+    }
+
+    #[test]
+    fn mcp_list_elements_success_payload_matches_cli_json() {
+        let adapter = fake_adapter();
+        let context = mcp_context(adapter.clone());
+        let response = tool_call_response(
+            &context,
+            "list_elements",
+            &json!({
+                "window": "window-1"
+            }),
+        );
+
+        let cli_output = execute_list_elements(
+            &ElementListInput {
+                target: Some(TargetSelector::Window {
+                    id: "window-1".to_owned(),
+                }),
+                include_offscreen: false,
+            },
+            adapter.as_ref(),
+        )
+        .expect("list-elements output should build");
+        let cli_json = expect_json_output(render_command_output(
+            "list_elements",
+            true,
+            cli_output,
+            render_list_elements_human,
+        ));
+
+        assert_eq!(response["result"]["isError"], false);
+        assert_eq!(mcp_structured_content(&response), cli_json);
+        assert_eq!(
+            response["result"]["structuredContent"]["data"]["elements"][0]["id"],
+            "1"
+        );
     }
 
     #[test]

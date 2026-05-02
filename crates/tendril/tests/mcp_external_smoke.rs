@@ -85,6 +85,7 @@ fn external_client_smoke_script_verifies_stdio_contract_against_built_binary() {
         tool_names,
         vec![
             "list",
+            "list_elements",
             "capture",
             "run",
             "listen",
@@ -93,9 +94,16 @@ fn external_client_smoke_script_verifies_stdio_contract_against_built_binary() {
         ]
     );
 
+    let list_elements_tool = tool(tools, "list_elements");
     let capture_tool = tool(tools, "capture");
     let run_tool = tool(tools, "run");
     let listen_tool = tool(tools, "listen");
+
+    let list_elements_properties = property_names(&list_elements_tool["inputSchema"]);
+    assert_eq!(
+        list_elements_properties,
+        vec!["display", "include_offscreen", "window"]
+    );
 
     let capture_properties = property_names(&capture_tool["inputSchema"]);
     assert_eq!(
