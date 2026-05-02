@@ -21,7 +21,7 @@ For the Pi/Cacophony-facing launch contract, environment assumptions, and stable
 
 ## Shared transport contract
 
-The in-repo `mcp-cli` crate provides the reusable pieces for:
+The `crates/mcp-cli` git submodule (`https://github.com/harryaskham/mcp-cli`) provides the reusable pieces for:
 
 - stable success and error envelopes,
 - tool metadata and JSON Schema generation,

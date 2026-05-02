@@ -33,6 +33,23 @@
         "type": "github"
       }
     },
+    "mcp-cli": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1777749855,
+        "narHash": "sha256-aEWGvQh5YklD8l8bylHGIakhYovabHmPHtbGPjXM/1w=",
+        "owner": "harryaskham",
+        "repo": "mcp-cli",
+        "rev": "9e2f1fc3fe71cd757cea3cbd4943b2b60525a548",
+        "type": "github"
+      },
+      "original": {
+        "owner": "harryaskham",
+        "repo": "mcp-cli",
+        "rev": "9e2f1fc3fe71cd757cea3cbd4943b2b60525a548",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1775423009,
@@ -53,6 +70,7 @@
       "inputs": {
         "crane": "crane",
         "flake-utils": "flake-utils",
+        "mcp-cli": "mcp-cli",
         "nixpkgs": "nixpkgs"
       }
     },

@@ -4,6 +4,10 @@
   inputs = {
     crane.url = "github:ipetkov/crane";
     flake-utils.url = "github:numtide/flake-utils";
+    mcp-cli = {
+      url = "github:harryaskham/mcp-cli/9e2f1fc3fe71cd757cea3cbd4943b2b60525a548";
+      flake = false;
+    };
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   };
 
@@ -11,6 +15,7 @@
     { self
     , crane
     , flake-utils
+    , mcp-cli
     , nixpkgs
     ,
     }:
@@ -65,7 +70,18 @@
           }
         );
         craneLib = crane.mkLib pkgs;
-        src = craneLib.cleanCargoSource ./.;
+        parentSrc = craneLib.cleanCargoSource ./.;
+        fullParentSrc = lib.cleanSource ./.;
+        graftMcpCli = name: baseSrc: pkgs.runCommand name { } ''
+          cp -r ${baseSrc} "$out"
+          chmod -R u+w "$out"
+          rm -rf "$out/crates/mcp-cli"
+          mkdir -p "$out/crates"
+          cp -r ${mcp-cli} "$out/crates/mcp-cli"
+          chmod -R u+w "$out/crates/mcp-cli"
+        '';
+        src = graftMcpCli "tendril-source-with-mcp-cli" parentSrc;
+        fullSrc = graftMcpCli "tendril-full-source-with-mcp-cli" fullParentSrc;
         commonArgs = {
           inherit src;
           strictDeps = true;
@@ -185,7 +201,7 @@
 
         fmt = pkgs.runCommand "tendril-fmt-check" { nativeBuildInputs = [ pkgs.cargo pkgs.rustfmt ]; } ''
           export HOME="$TMPDIR"
-          cp -r ${./.} source
+          cp -r ${fullSrc} source
           chmod -R +w source
           cd source
           cargo fmt --all -- --check
@@ -194,7 +210,7 @@
 
         docs = pkgs.runCommand "tendril-docs-check" { nativeBuildInputs = [ pkgs.mdbook ]; } ''
           export HOME="$TMPDIR"
-          cp -r ${./.} source
+          cp -r ${fullSrc} source
           chmod -R +w source
           cd source
           mdbook build docs

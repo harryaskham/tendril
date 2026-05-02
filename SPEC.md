@@ -29,10 +29,10 @@ Tendril will be a Rust workspace with the following logical components:
    - Emits agent-friendly help when run with no arguments.
 
 2. **`mcp-cli` library crate**
-   - Lives inside this repo initially.
+   - Lives in the standalone `https://github.com/harryaskham/mcp-cli` repository and is pinned into this workspace as `crates/mcp-cli` via git submodule.
    - Provides generic reusable machinery for exposing CLI commands as MCP tools over stdio.
    - Provides generic `--json` support for machine-readable success/error envelopes.
-   - Must be designed so it can later move to its own repository with minimal API breakage.
+   - Must remain application-agnostic so other CLI projects can consume it without Tendril-specific dependencies.
 
 3. **core command/domain layer**
    - Defines typed command inputs, output models, validation rules, and serialization.
@@ -135,7 +135,7 @@ The initial CLI surface will include:
 ### Rust and workspace
 
 - Primary language: Rust.
-- Use a Rust workspace if multiple crates are required (`tendril`, `mcp-cli`, and any shared support crates).
+- Use a Rust workspace if multiple crates are required (`tendril`, the pinned `mcp-cli` submodule, and any shared support crates).
 - Favor stable Rust unless a specific unstable feature is justified and approved.
 
 ### Nix flake
@@ -231,7 +231,7 @@ Expose Tendril’s command surface as MCP tools.
 - `tendril mcp stdio` starts an MCP server over stdio.
 - Initial MCP tool set includes discovery, capture, and input execution.
 - MCP and CLI use one shared typed command model.
-- Generic support should live in the in-repo `mcp-cli` crate.
+- Generic support should live in the pinned `mcp-cli` submodule crate, not in Tendril-specific modules.
 
 #### Acceptance criteria
 - MCP tool schemas match the effective CLI input model for the same operations.

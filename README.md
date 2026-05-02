@@ -41,7 +41,7 @@ Nix formatting tools.
 Useful repo-local commands:
 
 ```bash
-./scripts/bootstrap.sh                 # install hooks + allow/load direnv
+./scripts/bootstrap.sh                 # initialize submodules, install hooks, allow/load direnv
 nix build .#tendril .#mcp-cli          # build workspace packages
 ./scripts/pre-merge.sh                 # fmt + clippy + tests + flake checks
 nix develop --command ./scripts/build-docs.sh
@@ -50,7 +50,7 @@ nix develop --command ./scripts/build-docs.sh
 ## Workspace layout
 
 - `crates/tendril`: the Tendril CLI
-- `crates/mcp-cli`: reusable JSON-envelope and MCP stdio support
+- `crates/mcp-cli`: reusable JSON-envelope and MCP stdio support, pinned as a git submodule from `https://github.com/harryaskham/mcp-cli`
 - `docs/`: mdBook-based documentation site source
 - `flake.nix`: dev shell, packages, checks, and reproducible build outputs
 - `.cacophony/config.yaml`: project bootstrap plus managed build/test defaults

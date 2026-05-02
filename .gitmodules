@@ -1,0 +1,3 @@
+[submodule "crates/mcp-cli"]
+	path = crates/mcp-cli
+	url = https://github.com/harryaskham/mcp-cli
