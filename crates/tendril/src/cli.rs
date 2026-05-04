@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::{ArgAction, Args, Parser, Subcommand};
+use clap::{ArgAction, Args, Parser, Subcommand, ValueEnum};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -48,7 +48,7 @@ impl TendrilCli {
     #[must_use]
     pub fn agent_help() -> String {
         format!(
-            "Tendril is a stateless desktop inspection and control CLI for agents.\n\nWorkflow:\n  1. list targets:   tendril list --json\n  2. remote targets: tendril --remote me@box list --json\n  3. list elements:  tendril --window <id> list-elements --json\n  4. capture state:  tendril --window <id> capture --json\n  5. save to file:   tendril --window <id> capture -o /tmp/screen.png\n  6. run input:      tendril --window <id> run 'send(\"hello\")'\n  7. click element:  tendril --window <id> run 'click(33)'\n  8. read clipboard: tendril clipboard get --json\n  9. reuse a target: eval \"$(tendril --window <id> alias --name desk)\"\n\nCommands:\n  list           Discover windows and displays\n  list-elements  Discover UI elements for a window/display or globally\n  capture        Capture a screenshot from a window or display\n  run            Type text or execute an input sequence against a target\n  clipboard      Read or serve Linux/X11 text selections for deterministic browser↔OS transfer\n  alias          Emit a shell helper that pre-fills --window/--display\n  listen         Probe supported audio capture paths\n  mcp            Serve Tendril over MCP stdio\n\nUse --json for machine-readable success/error envelopes.\nUse --remote user@host to proxy any invocation over ssh; Linux remotes auto-discover X11/Wayland session variables when SSH did not inherit them.\nUse -o/--output on capture to save the image directly to a file.\nUse --help on any subcommand for detailed flags.\n\n{WORKFLOW_HINT}\n"
+            "Tendril is a stateless desktop inspection and control CLI for agents.\n\nWorkflow:\n  1. list targets:   tendril list --json\n  2. remote targets: tendril --remote me@box list --json\n  3. list elements:  tendril --window <id> list-elements --json\n  4. capture state:  tendril --window <id> capture --json\n  5. save to file:   tendril --window <id> capture -o /tmp/screen.png\n  6. run input:      tendril --window <id> run 'send(\"hello\")'\n  7. click element:  tendril --window <id> run 'click(33)'\n  8. read clipboard: tendril clipboard get --json\n  9. reuse a target: eval \"$(tendril --window <id> alias --name desk)\"\n\nCommands:\n  list           Discover windows and displays\n  list-elements  Discover UI elements for a window/display or globally\n  capture        Capture a screenshot from a window or display\n  run            Type text or execute an input sequence against a target\n  clipboard      Read or serve Linux/X11 text selections for deterministic browser↔OS transfer\n  alias          Emit a shell helper that pre-fills --window/--display\n  listen         Probe supported audio capture paths\n  version        Inspect or bump the workspace release version\n  mcp            Serve Tendril over MCP stdio\n\nUse --json for machine-readable success/error envelopes.\nUse --remote user@host to proxy any invocation over ssh; Linux remotes auto-discover X11/Wayland session variables when SSH did not inherit them.\nUse -o/--output on capture to save the image directly to a file.\nUse --help on any subcommand for detailed flags.\n\n{WORKFLOW_HINT}\n"
         )
     }
 }
@@ -71,6 +71,8 @@ pub enum Command {
     Clipboard(ClipboardCommand),
     /// Emit shell helpers for repeated targeting.
     Alias(AliasCommand),
+    /// Inspect or bump the workspace release version.
+    Version(VersionCommand),
     /// Expose the CLI surface over MCP stdio.
     ///
     /// Note: the global --window, --display, and --json flags are inherited
@@ -92,6 +94,7 @@ impl Command {
             Self::Listen(_) => "listen",
             Self::Clipboard(_) => "clipboard",
             Self::Alias(_) => "alias",
+            Self::Version(_) => "version",
             Self::Mcp(_) => "mcp",
         }
     }
@@ -262,6 +265,32 @@ pub struct AliasCommand {
     pub name: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Args)]
+pub struct VersionCommand {
+    #[command(subcommand)]
+    pub command: VersionSubcommand,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Subcommand)]
+pub enum VersionSubcommand {
+    /// Bump the workspace semver version and create a git commit.
+    Bump(VersionBumpCommand),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Args)]
+pub struct VersionBumpCommand {
+    /// Semver component to increment.
+    pub level: VersionBumpLevel,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, ValueEnum)]
+#[serde(rename_all = "snake_case")]
+pub enum VersionBumpLevel {
+    Patch,
+    Minor,
+    Major,
+}
+
 #[derive(Debug, Clone, Args)]
 #[command(long_about = "Expose the Tendril CLI surface over MCP.\n\n\
 Note: the global --window, --display, and --json flags are inherited from the\n\
@@ -288,7 +317,9 @@ pub enum McpSubcommand {
 
 #[cfg(test)]
 mod tests {
-    use super::TendrilCli;
+    use clap::Parser;
+
+    use super::{Command, TendrilCli, VersionBumpLevel, VersionSubcommand};
 
     #[test]
     fn agent_help_includes_workflow_hint() {
@@ -302,5 +333,17 @@ mod tests {
         assert!(help.contains(" run 'send(\"hello\")'"));
         assert!(help.contains("clipboard get --json"));
         assert!(help.contains("alias --name desk"));
+        assert!(help.contains("version"));
+    }
+
+    #[test]
+    fn parses_version_bump_command() {
+        let cli = TendrilCli::parse_from(["tendril", "version", "bump", "minor"]);
+
+        let Some(Command::Version(command)) = cli.command else {
+            panic!("version command should parse");
+        };
+        let VersionSubcommand::Bump(command) = command.command;
+        assert_eq!(command.level, VersionBumpLevel::Minor);
     }
 }

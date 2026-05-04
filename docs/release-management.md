@@ -8,6 +8,7 @@ steps required for the initial `v0.0.1` release.
 
 - Tendril uses SemVer.
 - The authoritative version lives in `[workspace.package].version` in `Cargo.toml`.
+- `tendril version bump patch|minor|major` updates the workspace manifest, the in-repo `mcp-cli` manifest, and `Cargo.lock`, then creates the release bump commit.
 - The initial release target is `0.0.1`, published as the git tag `v0.0.1`.
 - Stable CLI flags, JSON schemas, and MCP tool contracts are semver-relevant.
 
@@ -82,7 +83,7 @@ Examples:
 
 ## Publication flow
 
-1. Update `CHANGELOG.md` and ensure `Cargo.toml` contains the release SemVer.
+1. Update `CHANGELOG.md`, then run `tendril version bump patch`, `tendril version bump minor`, or `tendril version bump major` to create the release bump commit.
 2. Push the matching git tag, for example `v0.0.1`.
 3. For a local dry run of the binary release package, stage artifacts:
    ```bash

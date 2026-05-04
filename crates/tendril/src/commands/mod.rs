@@ -13,7 +13,7 @@ use crate::capture::{execute_capture, render_capture_human};
 use crate::cli::{
     AliasCommand, CaptureCommand, ClipboardCommand, ClipboardGetCommand, ClipboardSetCommand,
     ClipboardSubcommand, Command, ElementListCommand, ListCommand, ListenCommand, McpSubcommand,
-    RunCommand, TendrilCli, WORKFLOW_HINT,
+    RunCommand, TendrilCli, VersionCommand, VersionSubcommand, WORKFLOW_HINT,
 };
 use crate::clipboard::{
     ClipboardGetInput, ClipboardSelection, ClipboardSetInput, DEFAULT_CLIPBOARD_SERVE_MS,
@@ -39,6 +39,7 @@ use crate::platform::{
     AudioSourceKind as PlatformAudioSourceKind, Capability, CaptureTargetKind, PlatformAdapter,
     TargetDiscoveryRequest, adapter_for_context,
 };
+use crate::versioning::{execute_version_bump, render_version_bump_human};
 
 #[derive(Clone)]
 struct CommandContext {
@@ -376,7 +377,25 @@ fn dispatch_cli_command(
                 render_alias_human,
             ))
         }
+        Command::Version(command) => dispatch_version_command(command, cli.json),
         Command::Mcp(_) => unreachable!("MCP commands are dispatched separately"),
+    }
+}
+
+fn dispatch_version_command(
+    command: &VersionCommand,
+    json_mode: bool,
+) -> Result<CommandOutput, TendrilError> {
+    match &command.command {
+        VersionSubcommand::Bump(command) => {
+            let output = execute_version_bump(command.level)?;
+            Ok(render_command_output(
+                "version bump",
+                json_mode,
+                output,
+                render_version_bump_human,
+            ))
+        }
     }
 }
 

@@ -382,7 +382,12 @@ Local pre-merge validation remains the primary fast-feedback gate:
 
 Tendril uses SemVer. The release version comes from `[workspace.package].version`
 in `Cargo.toml`, and release tags use the `v<semver>` form, for example
-`v0.0.1`.
+`v0.0.1`. Use the built-in bump helper to update all versioned manifests and
+create the release commit:
+
+```bash
+tendril version bump patch   # or: minor, major
+```
 
 Pushing a `v*` tag starts the tag-only GitHub Actions release workflow, which
 reruns pre-merge validation, builds Linux artifacts on `[self-hosted, linux]`,
