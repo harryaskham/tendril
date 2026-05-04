@@ -77,6 +77,8 @@ impl AdapterContext {
                     env::var("XDG_SESSION_TYPE").ok().as_deref(),
                     env::var_os("DISPLAY").as_deref(),
                     env::var_os("WAYLAND_DISPLAY").as_deref(),
+                    env::var_os("XDG_RUNTIME_DIR").as_deref(),
+                    &|path| std::path::Path::new(path).exists(),
                 ),
                 detect_linux_audio_backend(
                     env::var_os("PIPEWIRE_RUNTIME_DIR").as_deref(),
@@ -3131,20 +3133,41 @@ fn detect_linux_session(
     xdg_session_type: Option<&str>,
     display: Option<&std::ffi::OsStr>,
     wayland_display: Option<&std::ffi::OsStr>,
+    xdg_runtime_dir: Option<&std::ffi::OsStr>,
+    path_exists: &dyn Fn(&std::path::Path) -> bool,
 ) -> DesktopSession {
     match xdg_session_type.map(str::to_ascii_lowercase).as_deref() {
         Some("x11") => DesktopSession::X11,
         Some("wayland") => DesktopSession::Wayland,
         Some(_) | None => {
-            if wayland_display.is_some() {
+            if wayland_display.is_some() || wayland_socket_available(xdg_runtime_dir, path_exists) {
                 DesktopSession::Wayland
-            } else if display.is_some() {
+            } else if display.is_some() || x11_socket_available(path_exists) {
                 DesktopSession::X11
             } else {
                 DesktopSession::Unknown
             }
         }
     }
+}
+
+fn wayland_socket_available(
+    xdg_runtime_dir: Option<&std::ffi::OsStr>,
+    path_exists: &dyn Fn(&std::path::Path) -> bool,
+) -> bool {
+    let Some(runtime_dir) = xdg_runtime_dir else {
+        return false;
+    };
+    let runtime = std::path::Path::new(runtime_dir);
+    (0..=9).any(|index| path_exists(&runtime.join(format!("wayland-{index}"))))
+}
+
+fn x11_socket_available(path_exists: &dyn Fn(&std::path::Path) -> bool) -> bool {
+    (0..=9).any(|index| {
+        path_exists(&std::path::PathBuf::from(format!(
+            "/tmp/.X11-unix/X{index}"
+        )))
+    })
 }
 
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
@@ -3197,10 +3220,37 @@ mod tests {
 
     #[test]
     fn linux_session_detection_prefers_declared_session_type() {
-        let detected =
-            detect_linux_session(Some("wayland"), Some(std::ffi::OsStr::new(":0")), None);
+        let detected = detect_linux_session(
+            Some("wayland"),
+            Some(std::ffi::OsStr::new(":0")),
+            None,
+            None,
+            &|_| false,
+        );
 
         assert_eq!(detected, DesktopSession::Wayland);
+    }
+
+    #[test]
+    fn linux_session_detection_finds_wayland_socket_without_env() {
+        let detected = detect_linux_session(
+            None,
+            None,
+            None,
+            Some(std::ffi::OsStr::new("/run/user/1000")),
+            &|path| path == std::path::Path::new("/run/user/1000/wayland-1"),
+        );
+
+        assert_eq!(detected, DesktopSession::Wayland);
+    }
+
+    #[test]
+    fn linux_session_detection_finds_x11_socket_without_display_env() {
+        let detected = detect_linux_session(None, None, None, None, &|path| {
+            path == std::path::Path::new("/tmp/.X11-unix/X2")
+        });
+
+        assert_eq!(detected, DesktopSession::X11);
     }
 
     #[test]

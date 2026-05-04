@@ -56,6 +56,7 @@ binary on a supported host:
 
 - macOS `screencapture`
 - macOS `osascript`
+- Linux display server discovery probes `XDG_RUNTIME_DIR/wayland-*` and `/tmp/.X11-unix/X*` when `WAYLAND_DISPLAY`/`DISPLAY` are not already exported, so SSH and non-login shells can still identify the active local display server before compositor-specific discovery starts.
 - Wayland compositor utilities (`hyprctl`, `swaymsg`, `wlr-randr`) when Tendril
   is explicitly operating against those compositor families
 - Linux/Wayland `grim` only as an explicitly documented compatibility fallback
