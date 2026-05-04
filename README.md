@@ -389,6 +389,14 @@ create the release commit:
 tendril version bump patch   # or: minor, major
 ```
 
+Users can install or update from GitHub release assets with:
+
+```bash
+tendril update                         # installs latest matching platform binary to ~/.local/bin
+tendril update --dry-run               # shows the planned latest-release query and install path
+tendril update --release-version 0.0.1 # installs a specific release version
+```
+
 Pushing a `v*` tag or landing a commit that changes the workspace version on
 `main` starts the GitHub Actions release workflow. The workflow reruns pre-merge
 validation, builds Linux artifacts on `[self-hosted, linux]`, builds macOS

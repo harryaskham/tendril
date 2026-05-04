@@ -48,7 +48,7 @@ impl TendrilCli {
     #[must_use]
     pub fn agent_help() -> String {
         format!(
-            "Tendril is a stateless desktop inspection and control CLI for agents.\n\nWorkflow:\n  1. list targets:   tendril list --json\n  2. remote targets: tendril --remote me@box list --json\n  3. list elements:  tendril --window <id> list-elements --json\n  4. capture state:  tendril --window <id> capture --json\n  5. save to file:   tendril --window <id> capture -o /tmp/screen.png\n  6. run input:      tendril --window <id> run 'send(\"hello\")'\n  7. click element:  tendril --window <id> run 'click(33)'\n  8. read clipboard: tendril clipboard get --json\n  9. reuse a target: eval \"$(tendril --window <id> alias --name desk)\"\n\nCommands:\n  list           Discover windows and displays\n  list-elements  Discover UI elements for a window/display or globally\n  capture        Capture a screenshot from a window or display\n  run            Type text or execute an input sequence against a target\n  clipboard      Read or serve Linux/X11 text selections for deterministic browser↔OS transfer\n  alias          Emit a shell helper that pre-fills --window/--display\n  listen         Probe supported audio capture paths\n  version        Inspect or bump the workspace release version\n  mcp            Serve Tendril over MCP stdio\n\nUse --json for machine-readable success/error envelopes.\nUse --remote user@host to proxy any invocation over ssh; Linux remotes auto-discover X11/Wayland session variables when SSH did not inherit them.\nUse -o/--output on capture to save the image directly to a file.\nUse --help on any subcommand for detailed flags.\n\n{WORKFLOW_HINT}\n"
+            "Tendril is a stateless desktop inspection and control CLI for agents.\n\nWorkflow:\n  1. list targets:   tendril list --json\n  2. remote targets: tendril --remote me@box list --json\n  3. list elements:  tendril --window <id> list-elements --json\n  4. capture state:  tendril --window <id> capture --json\n  5. save to file:   tendril --window <id> capture -o /tmp/screen.png\n  6. run input:      tendril --window <id> run 'send(\"hello\")'\n  7. click element:  tendril --window <id> run 'click(33)'\n  8. read clipboard: tendril clipboard get --json\n  9. reuse a target: eval \"$(tendril --window <id> alias --name desk)\"\n\nCommands:\n  list           Discover windows and displays\n  list-elements  Discover UI elements for a window/display or globally\n  capture        Capture a screenshot from a window or display\n  run            Type text or execute an input sequence against a target\n  clipboard      Read or serve Linux/X11 text selections for deterministic browser↔OS transfer\n  alias          Emit a shell helper that pre-fills --window/--display\n  listen         Probe supported audio capture paths\n  update         Download and install a Tendril release binary\n  version        Inspect or bump the workspace release version\n  mcp            Serve Tendril over MCP stdio\n\nUse --json for machine-readable success/error envelopes.\nUse --remote user@host to proxy any invocation over ssh; Linux remotes auto-discover X11/Wayland session variables when SSH did not inherit them.\nUse -o/--output on capture to save the image directly to a file.\nUse --help on any subcommand for detailed flags.\n\n{WORKFLOW_HINT}\n"
         )
     }
 }
@@ -71,6 +71,8 @@ pub enum Command {
     Clipboard(ClipboardCommand),
     /// Emit shell helpers for repeated targeting.
     Alias(AliasCommand),
+    /// Download and install a Tendril release binary.
+    Update(UpdateCommand),
     /// Inspect or bump the workspace release version.
     Version(VersionCommand),
     /// Expose the CLI surface over MCP stdio.
@@ -94,6 +96,7 @@ impl Command {
             Self::Listen(_) => "listen",
             Self::Clipboard(_) => "clipboard",
             Self::Alias(_) => "alias",
+            Self::Update(_) => "update",
             Self::Version(_) => "version",
             Self::Mcp(_) => "mcp",
         }
@@ -265,6 +268,26 @@ pub struct AliasCommand {
     pub name: Option<String>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Args, Serialize, Deserialize, JsonSchema)]
+pub struct UpdateCommand {
+    /// Install a specific release version. Defaults to the latest GitHub release.
+    #[arg(long = "release-version")]
+    pub release_version: Option<String>,
+
+    /// Override the GitHub repository in owner/name form.
+    #[arg(long)]
+    pub repository: Option<String>,
+
+    /// Directory where the tendril binary should be installed. Defaults to ~/.local/bin.
+    #[arg(long = "install-dir")]
+    pub install_dir: Option<PathBuf>,
+
+    /// Print the download/install plan without writing files.
+    #[arg(long = "dry-run")]
+    #[serde(default)]
+    pub dry_run: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Args)]
 pub struct VersionCommand {
     #[command(subcommand)]
@@ -333,6 +356,7 @@ mod tests {
         assert!(help.contains(" run 'send(\"hello\")'"));
         assert!(help.contains("clipboard get --json"));
         assert!(help.contains("alias --name desk"));
+        assert!(help.contains("update"));
         assert!(help.contains("version"));
     }
 

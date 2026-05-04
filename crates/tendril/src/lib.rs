@@ -13,6 +13,7 @@ pub mod logging;
 pub mod model;
 pub mod platform;
 pub mod remote;
+pub mod update;
 pub mod versioning;
 pub(crate) mod wayland_input;
 pub(crate) mod x11;
