@@ -2,6 +2,12 @@ name: tag-release
 
 on:
   push:
+    branches:
+      - main
+    paths:
+      - Cargo.toml
+      - Cargo.lock
+      - crates/mcp-cli/Cargo.toml
     tags:
       - "v*"
 
@@ -14,9 +20,13 @@ concurrency:
 
 jobs:
   verify:
-    name: Verify tagged release
+    name: Verify tagged or version-bump release
     runs-on: [self-hosted, linux]
     timeout-minutes: 60
+    outputs:
+      should_release: ${{ steps.release-context.outputs.should_release }}
+      release_tag: ${{ steps.release-context.outputs.release_tag }}
+      release_version: ${{ steps.release-context.outputs.release_version }}
 
     steps:
       - name: Check out repository
@@ -27,10 +37,49 @@ jobs:
       - name: Remove stale local build artifacts
         run: rm -rf target dist
 
+      - name: Resolve release context
+        id: release-context
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          current_version="$(./scripts/release-lib.sh version)"
+          current_tag="v${current_version}"
+          should_release=false
+
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            ./scripts/release-lib.sh tag | grep -Fx "${GITHUB_REF_NAME}"
+            current_tag="${GITHUB_REF_NAME}"
+            should_release=true
+          else
+            previous_version=""
+            if [[ -n "${{ github.event.before }}" ]] && git cat-file -e "${{ github.event.before }}:Cargo.toml" 2>/dev/null; then
+              previous_version="$({ git show "${{ github.event.before }}:Cargo.toml" || true; } | sed -n '/^\[workspace.package\]/,/^\[/{ s/^version = "\([^"]*\)"$/\1/p; }' | head -n 1)"
+            fi
+
+            if [[ -z "${previous_version}" || "${previous_version}" != "${current_version}" ]]; then
+              if git rev-parse -q --verify "refs/tags/${current_tag}" >/dev/null; then
+                echo "Workspace version changed to ${current_version}, but ${current_tag} already exists; skipping duplicate release."
+              else
+                should_release=true
+              fi
+            else
+              echo "Cargo metadata changed without a workspace version bump (${current_version}); skipping release."
+            fi
+          fi
+
+          {
+            echo "should_release=${should_release}"
+            echo "release_tag=${current_tag}"
+            echo "release_version=${current_version}"
+          } >> "${GITHUB_OUTPUT}"
+
       - name: Verify Nix is available on the self-hosted runner
+        if: steps.release-context.outputs.should_release == 'true'
         run: nix --version
 
       - name: Run local pre-merge validation gate
+        if: steps.release-context.outputs.should_release == 'true'
         run: ./scripts/pre-merge.sh
 
   build-linux:
@@ -38,6 +87,7 @@ jobs:
     runs-on: [self-hosted, linux]
     timeout-minutes: 30
     needs: verify
+    if: needs.verify.outputs.should_release == 'true'
 
     steps:
       - name: Check out repository
@@ -52,7 +102,7 @@ jobs:
         run: nix --version
 
       - name: Build linux release artifacts
-        run: ./scripts/release-artifacts.sh "$GITHUB_REF_NAME"
+        run: ./scripts/release-artifacts.sh "${{ needs.verify.outputs.release_tag }}"
 
       - name: Upload linux release artifacts
         uses: actions/upload-artifact@v4
@@ -68,6 +118,7 @@ jobs:
     runs-on: [self-hosted, macos]
     timeout-minutes: 30
     needs: verify
+    if: needs.verify.outputs.should_release == 'true'
 
     steps:
       - name: Check out repository
@@ -84,12 +135,12 @@ jobs:
       - name: Build macOS release artifacts
         env:
           TENDRIL_RELEASE_DIST: ${{ github.workspace }}/dist/macos
-        run: ./scripts/stage-release-artifacts.sh "$GITHUB_REF_NAME"
+        run: ./scripts/stage-release-artifacts.sh "${{ needs.verify.outputs.release_tag }}"
 
       - name: Smoke packaged Tendril list flow on macOS
         env:
           TENDRIL_RELEASE_DIST: ${{ github.workspace }}/dist/macos
-        run: ./scripts/macos-packaged-smoke.sh "$GITHUB_REF_NAME"
+        run: ./scripts/macos-packaged-smoke.sh "${{ needs.verify.outputs.release_tag }}"
 
       - name: Upload macOS release artifacts
         uses: actions/upload-artifact@v4
@@ -105,8 +156,10 @@ jobs:
     runs-on: [self-hosted, linux]
     timeout-minutes: 30
     needs:
+      - verify
       - build-linux
       - build-macos
+    if: needs.verify.outputs.should_release == 'true'
 
     steps:
       - name: Check out repository
@@ -134,18 +187,20 @@ jobs:
           find dist -mindepth 2 -type f \( -name '*.tar.gz' -o -name '*.sha256' \) -exec cp {} dist/ \;
 
       - name: Extract release notes from changelog
-        run: ./scripts/release-notes.sh "$GITHUB_REF_NAME" > dist/release-notes.md
+        run: ./scripts/release-notes.sh "${{ needs.verify.outputs.release_tag }}" > dist/release-notes.md
 
       - name: Write combined release manifest
-        run: ./scripts/write-release-manifest.py "$GITHUB_REF_NAME" dist > dist/release-manifest.json
+        run: ./scripts/write-release-manifest.py "${{ needs.verify.outputs.release_tag }}" dist > dist/release-manifest.json
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.verify.outputs.release_tag }}
+          target_commitish: ${{ github.sha }}
           body_path: dist/release-notes.md
           files: |
             dist/*.tar.gz
             dist/*.sha256
             dist/release-manifest.json
           fail_on_unmatched_files: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ contains(needs.verify.outputs.release_tag, '-') }}

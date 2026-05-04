@@ -389,10 +389,11 @@ create the release commit:
 tendril version bump patch   # or: minor, major
 ```
 
-Pushing a `v*` tag starts the tag-only GitHub Actions release workflow, which
-reruns pre-merge validation, builds Linux artifacts on `[self-hosted, linux]`,
-builds macOS artifacts on `[self-hosted, macos]`, stages the combined asset set,
-and publishes a GitHub release.
+Pushing a `v*` tag or landing a commit that changes the workspace version on
+`main` starts the GitHub Actions release workflow. The workflow reruns pre-merge
+validation, builds Linux artifacts on `[self-hosted, linux]`, builds macOS
+artifacts on `[self-hosted, macos]`, stages the combined asset set, and publishes
+a GitHub release for the matching `v<semver>` tag.
 
 The release asset set is intended to include at least:
 

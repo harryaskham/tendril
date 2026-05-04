@@ -83,8 +83,12 @@ Examples:
 
 ## Publication flow
 
+The GitHub Actions workflow runs only on self-hosted Linux and macOS runners and
+assumes Nix is already available on those machines. It starts either from a
+pushed `v*` tag or from a `main` commit that changes the workspace version.
+
 1. Update `CHANGELOG.md`, then run `tendril version bump patch`, `tendril version bump minor`, or `tendril version bump major` to create the release bump commit.
-2. Push the matching git tag, for example `v0.0.1`.
+2. Push the matching git tag, for example `v0.0.1`, or land the version bump commit on `main` and let the workflow publish the matching `v<semver>` release.
 3. For a local dry run of the binary release package, stage artifacts:
    ```bash
    ./scripts/stage-release-artifacts.sh v0.0.1
