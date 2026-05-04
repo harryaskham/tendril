@@ -1,8 +1,8 @@
 # Runtime dependency audit
 
 This page inventories every current Tendril runtime subprocess/tool dependency in
-`crates/tendril/src/discovery.rs`, `crates/tendril/src/platform.rs`, and
-`crates/tendril/src/wayland_input.rs`.
+`crates/tendril/src/discovery.rs`, `crates/tendril/src/elements.rs`,
+`crates/tendril/src/platform.rs`, and `crates/tendril/src/wayland_input.rs`.
 
 The governing rule from the approved `SPEC.md` is that every command should be
 self-contained. This audit therefore distinguishes between:
@@ -38,6 +38,7 @@ without spawning anything.
 | `run` | Linux/Wayland | `ydotool` | Preferred Wayland keyboard + pointer injection via uinput; requires the `ydotoold` daemon (`bd-408572`) | Documented platform prerequisite | Embed a uinput-based driver to remove the helper boundary once permissions and packaging are sorted | `bd-408572` |
 | `run` | Linux/Wayland | `wtype` | Keyboard-only fallback via the wlroots `virtual-keyboard-v1` protocol when `ydotool` is not installed (`bd-408572`) | Documented platform prerequisite | Embed a wlroots virtual-keyboard client to remove the helper boundary | `bd-408572` |
 | `run` | Linux/Wayland | _none_ | Generic Wayland input falls back to a structured `unsupported_capability` error when neither helper tool is installed | Not applicable | Keep the actionable diagnostic in sync with the helper-tool detection in `wayland_input::detect_backend` | `bd-408572` |
+| `list-elements` | Linux/Wayland | _none_ | AT-SPI over D-Bus (`AT_SPI_BUS_ADDRESS` or `org.a11y.Bus.GetAddress`) for semantic element discovery; falls back to compositor target roots when unavailable | Self-contained with platform accessibility service | Keep the platform contract documented and validate against real Wayland applications that publish AT-SPI metadata | `bd-f22b95` |
 | `run` | Windows 11 | _none_ | Native Win32 focus transfer plus keyboard/mouse injection inside the Tendril binary | Self-contained | Continue hardening the embedded input backend and smoke coverage | `bd-a3357b` |
 | `listen` | macOS | `afrecord` | CoreAudio-backed WAV capture; ships with the OS | Documented platform prerequisite | Replace with a native CoreAudio binding once the cross-platform listen surface stabilizes | `bd-d7c2f0` |
 | `listen` | Linux/PipeWire | `pw-record` | WAV capture against `@DEFAULT_MONITOR@` / `@DEFAULT_SOURCE@` with a sample-count limit so the recorder exits on its own | Documented backend prerequisite | Embed a PipeWire client to remove the subprocess boundary | `bd-d7c2f0` |
@@ -62,6 +63,9 @@ binary on a supported host:
 - Linux/Wayland `ydotool` (with the `ydotoold` daemon) as the preferred input
   backend, plus `wtype` as the keyboard-only fallback for wlroots compositors
   (`bd-408572`)
+- Linux/Wayland AT-SPI accessibility service for semantic `list-elements`
+  metadata; it is a desktop-session service accessed over D-Bus, not an extra
+  Tendril subprocess (`bd-f22b95`)
 
 Why they are only *conditionally* acceptable:
 

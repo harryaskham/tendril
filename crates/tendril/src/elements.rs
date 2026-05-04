@@ -1,7 +1,12 @@
+use std::collections::HashSet;
 use std::process::Command;
 
 use serde::Deserialize;
 use serde_json::Value;
+use zbus::{
+    blocking::{Connection, Proxy, connection::Builder as ConnectionBuilder},
+    zvariant::OwnedObjectPath,
+};
 
 use crate::error::TendrilError;
 use crate::model::{
@@ -14,6 +19,9 @@ use crate::platform::{
 
 const ELEMENT_FIXTURE_ENV: &str = "TENDRIL_ELEMENT_FIXTURE_JSON";
 const MAX_MACOS_ELEMENTS: usize = 512;
+const MAX_ATSPI_ELEMENTS: usize = 512;
+const MAX_ATSPI_DEPTH: usize = 12;
+const ATSPI_COORD_TYPE_SCREEN: u32 = 0;
 
 #[derive(Debug, Deserialize)]
 struct ElementFixture {
@@ -44,7 +52,7 @@ pub fn discover_elements(
             discover_x11_window_elements(&targets, input.include_offscreen, &mut notes)
         }
         (PlatformKind::Linux, DesktopSession::Wayland) => {
-            discover_wayland_elements(&targets, &mut notes)
+            discover_wayland_elements(&targets, input.include_offscreen, &mut notes)
         }
         _ => {
             notes.push(
@@ -526,13 +534,404 @@ fn split_geometry_offsets(value: &str) -> Option<(&str, &str, &str)> {
 
 fn discover_wayland_elements(
     targets: &[PlatformTargetDescriptor],
+    include_offscreen: bool,
     notes: &mut Vec<String>,
 ) -> Vec<ElementDescriptor> {
-    notes.push(
-        "Wayland does not expose a compositor-neutral widget tree to clients; returning compositor-discovered surface roots as clickable elements. Apps that publish AT-SPI accessibility metadata can be wired as a future backend without changing the list-elements/run contract."
-            .to_owned(),
-    );
-    root_elements_from_targets(targets)
+    match run_atspi_accessibility_listing(targets, include_offscreen) {
+        Ok(elements) if !elements.is_empty() => {
+            notes.push(
+                "Wayland element discovery used AT-SPI accessibility metadata; element bounds are screen coordinates and click(<id>) resolves them through the existing target-relative DSL contract."
+                    .to_owned(),
+            );
+            elements
+        }
+        Ok(_) => {
+            notes.push(
+                "AT-SPI was reachable but did not report accessible child elements for the requested Wayland target; returning compositor-discovered surface roots."
+                    .to_owned(),
+            );
+            root_elements_from_targets(targets)
+        }
+        Err(error) => {
+            notes.push(format!(
+                "Wayland AT-SPI element listing failed: {error}; returning compositor-discovered surface roots."
+            ));
+            root_elements_from_targets(targets)
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct AtspiObjectRef {
+    destination: String,
+    path: OwnedObjectPath,
+}
+
+impl AtspiObjectRef {
+    fn from_tuple((destination, path): (String, OwnedObjectPath)) -> Self {
+        Self { destination, path }
+    }
+
+    fn key(&self) -> String {
+        format!("{}{}", self.destination, self.path.as_str())
+    }
+}
+
+struct AtspiClient {
+    connection: Connection,
+}
+
+impl AtspiClient {
+    fn connect() -> Result<Self, String> {
+        let address = std::env::var("AT_SPI_BUS_ADDRESS")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .map_or_else(query_atspi_bus_address, Ok)?;
+        let connection = ConnectionBuilder::address(address.as_str())
+            .map_err(|error| format!("failed to configure AT-SPI bus connection: {error}"))?
+            .build()
+            .map_err(|error| format!("failed to connect to AT-SPI bus: {error}"))?;
+        Ok(Self { connection })
+    }
+
+    fn applications(&self) -> Result<Vec<AtspiObjectRef>, String> {
+        let registry = Proxy::new(
+            &self.connection,
+            "org.a11y.atspi.Registry",
+            "/org/a11y/atspi/registry",
+            "org.a11y.atspi.Registry",
+        )
+        .map_err(|error| format!("failed to create AT-SPI registry proxy: {error}"))?;
+        let applications: Vec<(String, OwnedObjectPath)> = registry
+            .call("GetApplications", &())
+            .map_err(|error| format!("AT-SPI Registry.GetApplications failed: {error}"))?;
+        Ok(applications
+            .into_iter()
+            .map(AtspiObjectRef::from_tuple)
+            .collect())
+    }
+
+    fn accessible_proxy(&self, object: &AtspiObjectRef) -> Result<Proxy<'static>, String> {
+        Proxy::new_owned(
+            self.connection.clone(),
+            object.destination.clone(),
+            object.path.clone(),
+            "org.a11y.atspi.Accessible".to_owned(),
+        )
+        .map_err(|error| format!("failed to create AT-SPI Accessible proxy: {error}"))
+    }
+
+    fn component_proxy(&self, object: &AtspiObjectRef) -> Result<Proxy<'static>, String> {
+        Proxy::new_owned(
+            self.connection.clone(),
+            object.destination.clone(),
+            object.path.clone(),
+            "org.a11y.atspi.Component".to_owned(),
+        )
+        .map_err(|error| format!("failed to create AT-SPI Component proxy: {error}"))
+    }
+
+    fn action_proxy(&self, object: &AtspiObjectRef) -> Result<Proxy<'static>, String> {
+        Proxy::new_owned(
+            self.connection.clone(),
+            object.destination.clone(),
+            object.path.clone(),
+            "org.a11y.atspi.Action".to_owned(),
+        )
+        .map_err(|error| format!("failed to create AT-SPI Action proxy: {error}"))
+    }
+
+    fn application_proxy(&self, object: &AtspiObjectRef) -> Result<Proxy<'static>, String> {
+        Proxy::new_owned(
+            self.connection.clone(),
+            object.destination.clone(),
+            object.path.clone(),
+            "org.a11y.atspi.Application".to_owned(),
+        )
+        .map_err(|error| format!("failed to create AT-SPI Application proxy: {error}"))
+    }
+}
+
+fn query_atspi_bus_address() -> Result<String, String> {
+    let session = Connection::session()
+        .map_err(|error| format!("failed to connect to session bus for org.a11y.Bus: {error}"))?;
+    let bus = Proxy::new(&session, "org.a11y.Bus", "/org/a11y/bus", "org.a11y.Bus")
+        .map_err(|error| format!("failed to create org.a11y.Bus proxy: {error}"))?;
+    bus.call("GetAddress", &())
+        .map_err(|error| format!("org.a11y.Bus.GetAddress failed: {error}"))
+}
+
+fn run_atspi_accessibility_listing(
+    targets: &[PlatformTargetDescriptor],
+    include_offscreen: bool,
+) -> Result<Vec<ElementDescriptor>, String> {
+    let client = AtspiClient::connect()?;
+    let applications = client.applications()?;
+    let mut elements = Vec::new();
+
+    for target in targets {
+        for application in &applications {
+            if elements.len() >= MAX_ATSPI_ELEMENTS {
+                return Ok(elements);
+            }
+            let process_id = atspi_application_process_id(&client, application);
+            if target.kind == CaptureTargetKind::Window
+                && target.process_id.is_some()
+                && process_id.is_some()
+                && target.process_id != process_id
+            {
+                continue;
+            }
+            let app_name = atspi_accessible_name(&client, application)
+                .filter(|name| !name.trim().is_empty())
+                .or_else(|| target.app_name.clone());
+            let mut visited = HashSet::new();
+            let root_path = app_name.clone().into_iter().collect::<Vec<_>>();
+            walk_atspi_tree(
+                &client,
+                application,
+                target,
+                include_offscreen,
+                &root_path,
+                app_name.as_ref(),
+                process_id.or(target.process_id),
+                &mut visited,
+                &mut elements,
+                0,
+            );
+        }
+    }
+
+    Ok(elements)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn walk_atspi_tree(
+    client: &AtspiClient,
+    object: &AtspiObjectRef,
+    target: &PlatformTargetDescriptor,
+    include_offscreen: bool,
+    parent_path: &[String],
+    app_name: Option<&String>,
+    process_id: Option<u32>,
+    visited: &mut HashSet<String>,
+    elements: &mut Vec<ElementDescriptor>,
+    depth: usize,
+) {
+    if elements.len() >= MAX_ATSPI_ELEMENTS || depth > MAX_ATSPI_DEPTH {
+        return;
+    }
+    if !visited.insert(object.key()) {
+        return;
+    }
+
+    let Ok(accessible) = client.accessible_proxy(object) else {
+        return;
+    };
+    let role = atspi_role_name(&accessible);
+    let name = atspi_string_property(&accessible, "Name")
+        .or_else(|| atspi_string_property(&accessible, "Description"))
+        .unwrap_or_else(|| role.clone());
+    let description = atspi_string_property(&accessible, "Description");
+    let value = atspi_value_text(client, object);
+    let bounds = atspi_component_extents(client, object);
+    let mut path = parent_path.to_vec();
+    if path.last() != Some(&name) {
+        path.push(name.clone());
+    }
+
+    if atspi_element_in_scope(bounds.as_ref(), &target.bounds, include_offscreen) {
+        let mut actions = atspi_action_names(client, object);
+        if bounds.is_some() && !actions.iter().any(|action| action == "click") {
+            actions.insert(0, "click".to_owned());
+        }
+        if bounds.is_some() && !actions.iter().any(|action| action == "press") {
+            actions.push("press".to_owned());
+        }
+        elements.push(ElementDescriptor {
+            id: String::new(),
+            role,
+            name: name.clone(),
+            description,
+            value,
+            bounds,
+            target: Some(target_selector_from_platform(target)),
+            path,
+            actions,
+            app_name: app_name.cloned(),
+            process_id,
+        });
+    }
+
+    for child in atspi_children(&accessible) {
+        let child_parent_path = parent_path_for_child(parent_path, &name);
+        walk_atspi_tree(
+            client,
+            &child,
+            target,
+            include_offscreen,
+            &child_parent_path,
+            app_name,
+            process_id,
+            visited,
+            elements,
+            depth + 1,
+        );
+    }
+}
+
+fn parent_path_for_child(parent_path: &[String], name: &str) -> Vec<String> {
+    let mut path = parent_path.to_vec();
+    if path.last().is_none_or(|last| last != name) {
+        path.push(name.to_owned());
+    }
+    path
+}
+
+fn atspi_application_process_id(client: &AtspiClient, object: &AtspiObjectRef) -> Option<u32> {
+    let application = client.application_proxy(object).ok()?;
+    let id = application
+        .get_property::<i32>("Id")
+        .ok()
+        .or_else(|| application.call::<_, _, i32>("GetId", &()).ok())?;
+    u32::try_from(id).ok()
+}
+
+fn atspi_accessible_name(client: &AtspiClient, object: &AtspiObjectRef) -> Option<String> {
+    let accessible = client.accessible_proxy(object).ok()?;
+    atspi_string_property(&accessible, "Name")
+}
+
+fn atspi_role_name(accessible: &Proxy<'_>) -> String {
+    accessible
+        .get_property::<String>("RoleName")
+        .ok()
+        .or_else(|| accessible.call::<_, _, String>("GetRoleName", &()).ok())
+        .map(|role| normalize_atspi_role(&role))
+        .filter(|role| !role.is_empty())
+        .unwrap_or_else(|| "element".to_owned())
+}
+
+fn normalize_atspi_role(role: &str) -> String {
+    let normalized = role
+        .trim()
+        .trim_start_matches("ROLE_")
+        .chars()
+        .map(|ch| match ch {
+            '-' | ' ' => '_',
+            other => other.to_ascii_lowercase(),
+        })
+        .collect::<String>();
+    normalized
+        .strip_prefix("atspi_role_")
+        .unwrap_or(&normalized)
+        .to_owned()
+}
+
+fn atspi_string_property(proxy: &Proxy<'_>, property: &str) -> Option<String> {
+    proxy
+        .get_property::<String>(property)
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+}
+
+fn atspi_value_text(client: &AtspiClient, object: &AtspiObjectRef) -> Option<String> {
+    let value = Proxy::new(
+        &client.connection,
+        object.destination.as_str(),
+        object.path.as_str(),
+        "org.a11y.atspi.Value",
+    )
+    .ok()?;
+    value
+        .get_property::<f64>("CurrentValue")
+        .ok()
+        .map(|number| number.to_string())
+        .filter(|text| !text.is_empty())
+}
+
+fn atspi_component_extents(client: &AtspiClient, object: &AtspiObjectRef) -> Option<Bounds> {
+    let component = client.component_proxy(object).ok()?;
+    let (x, y, width, height): (i32, i32, i32, i32) = component
+        .call("GetExtents", &(ATSPI_COORD_TYPE_SCREEN,))
+        .ok()?;
+    if width <= 0 || height <= 0 {
+        return None;
+    }
+    Some(Bounds {
+        x,
+        y,
+        width: u32::try_from(width).ok()?,
+        height: u32::try_from(height).ok()?,
+    })
+}
+
+fn atspi_action_names(client: &AtspiClient, object: &AtspiObjectRef) -> Vec<String> {
+    let Ok(action) = client.action_proxy(object) else {
+        return Vec::new();
+    };
+    let count = action
+        .get_property::<i32>("NActions")
+        .ok()
+        .or_else(|| action.call::<_, _, i32>("GetNActions", &()).ok())
+        .unwrap_or(0);
+    (0..count)
+        .filter_map(|index| action.call::<_, _, String>("GetName", &(index,)).ok())
+        .map(|name| normalize_atspi_action(&name))
+        .filter(|name| !name.is_empty())
+        .fold(Vec::new(), |mut acc, name| {
+            if !acc.contains(&name) {
+                acc.push(name);
+            }
+            acc
+        })
+}
+
+fn normalize_atspi_action(action: &str) -> String {
+    match action.trim().to_ascii_lowercase().as_str() {
+        "click" | "press" | "activate" | "default" => "press".to_owned(),
+        "toggle" => "toggle".to_owned(),
+        "expand" => "expand".to_owned(),
+        "collapse" => "collapse".to_owned(),
+        other => other.replace([' ', '-'], "_"),
+    }
+}
+
+fn atspi_children(accessible: &Proxy<'_>) -> Vec<AtspiObjectRef> {
+    if let Ok(children) =
+        accessible.call::<_, _, Vec<(String, OwnedObjectPath)>>("GetChildren", &())
+    {
+        return children
+            .into_iter()
+            .map(AtspiObjectRef::from_tuple)
+            .collect();
+    }
+
+    let child_count = accessible
+        .get_property::<i32>("ChildCount")
+        .ok()
+        .or_else(|| accessible.call::<_, _, i32>("GetChildCount", &()).ok())
+        .unwrap_or(0);
+    (0..child_count)
+        .filter_map(|index| {
+            accessible
+                .call::<_, _, (String, OwnedObjectPath)>("GetChildAtIndex", &(index,))
+                .ok()
+        })
+        .map(AtspiObjectRef::from_tuple)
+        .collect()
+}
+
+fn atspi_element_in_scope(
+    bounds: Option<&Bounds>,
+    target_bounds: &Bounds,
+    include_offscreen: bool,
+) -> bool {
+    if include_offscreen {
+        return true;
+    }
+    bounds.is_some_and(|bounds| bounds_overlap(bounds, target_bounds))
 }
 
 fn bounds_overlap(left: &Bounds, right: &Bounds) -> bool {
@@ -584,7 +983,10 @@ fn json_u32(value: &Value, key: &str) -> Option<u32> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_x11_geometry_from_line, parse_xwininfo_line};
+    use super::{
+        atspi_element_in_scope, normalize_atspi_action, normalize_atspi_role,
+        parse_x11_geometry_from_line, parse_xwininfo_line,
+    };
     use crate::model::{Bounds, ScaleFactor};
     use crate::platform::{CaptureTargetKind, TargetDescriptor};
 
@@ -637,5 +1039,47 @@ mod tests {
         assert_eq!(element.name, "New Note");
         assert_eq!(element.bounds.expect("bounds").x, 110);
         assert_eq!(element.actions, vec!["click"]);
+    }
+
+    #[test]
+    fn normalizes_atspi_roles_to_contract_taxonomy_names() {
+        assert_eq!(normalize_atspi_role("push button"), "push_button");
+        assert_eq!(normalize_atspi_role("ROLE_TEXT"), "text");
+        assert_eq!(normalize_atspi_role("ATSPI_ROLE_MENU-ITEM"), "menu_item");
+    }
+
+    #[test]
+    fn normalizes_atspi_actions_for_element_dsl() {
+        assert_eq!(normalize_atspi_action("activate"), "press");
+        assert_eq!(normalize_atspi_action("show menu"), "show_menu");
+    }
+
+    #[test]
+    fn filters_atspi_elements_to_target_bounds_by_default() {
+        let target_bounds = target().bounds;
+        let visible = Bounds {
+            x: 120,
+            y: 220,
+            width: 20,
+            height: 20,
+        };
+        let offscreen = Bounds {
+            x: 2_000,
+            y: 2_000,
+            width: 20,
+            height: 20,
+        };
+
+        assert!(atspi_element_in_scope(
+            Some(&visible),
+            &target_bounds,
+            false
+        ));
+        assert!(!atspi_element_in_scope(
+            Some(&offscreen),
+            &target_bounds,
+            false
+        ));
+        assert!(atspi_element_in_scope(None, &target_bounds, true));
     }
 }
