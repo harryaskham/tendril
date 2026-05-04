@@ -46,7 +46,12 @@ pub fn discover_elements(
     let mut notes = Vec::new();
     let mut elements = match (adapter.platform, adapter.session) {
         (PlatformKind::MacOs, DesktopSession::MacOsWindowServer) => {
-            discover_macos_accessibility_elements(&targets, input.include_offscreen, &mut notes)
+            discover_macos_accessibility_elements(
+                inventory,
+                &targets,
+                input.include_offscreen,
+                &mut notes,
+            )
         }
         (PlatformKind::Linux, DesktopSession::X11) => {
             discover_x11_window_elements(&targets, input.include_offscreen, &mut notes)
@@ -191,12 +196,14 @@ fn assign_snapshot_ids(elements: &mut [ElementDescriptor]) {
 }
 
 fn discover_macos_accessibility_elements(
+    inventory: &TargetInventory,
     targets: &[PlatformTargetDescriptor],
     include_offscreen: bool,
     notes: &mut Vec<String>,
 ) -> Vec<ElementDescriptor> {
     let mut elements = Vec::new();
-    for target in targets {
+    let query_targets = macos_accessibility_query_targets(inventory, targets, notes);
+    for target in &query_targets {
         let Some(process_id) = target.process_id else {
             elements.push(root_element_from_target(target));
             notes.push(format!(
@@ -218,6 +225,50 @@ fn discover_macos_accessibility_elements(
         }
     }
     elements
+}
+
+fn macos_accessibility_query_targets(
+    inventory: &TargetInventory,
+    targets: &[PlatformTargetDescriptor],
+    notes: &mut Vec<String>,
+) -> Vec<PlatformTargetDescriptor> {
+    let mut query_targets = Vec::new();
+    let mut seen = HashSet::new();
+
+    for target in targets {
+        match target.kind {
+            CaptureTargetKind::Window => push_unique_target(&mut query_targets, &mut seen, target),
+            CaptureTargetKind::Display => {
+                let before = query_targets.len();
+                for window in inventory.targets.iter().filter(|candidate| {
+                    candidate.kind == CaptureTargetKind::Window
+                        && bounds_overlap(&candidate.bounds, &target.bounds)
+                }) {
+                    push_unique_target(&mut query_targets, &mut seen, window);
+                }
+                if query_targets.len() == before {
+                    notes.push(format!(
+                        "Display `{}` did not contain any discovered windows for macOS Accessibility listing; returning its root target instead.",
+                        target.id
+                    ));
+                    push_unique_target(&mut query_targets, &mut seen, target);
+                }
+            }
+        }
+    }
+
+    query_targets
+}
+
+fn push_unique_target(
+    targets: &mut Vec<PlatformTargetDescriptor>,
+    seen: &mut HashSet<String>,
+    target: &PlatformTargetDescriptor,
+) {
+    let key = format!("{:?}:{}", target.kind, target.id);
+    if seen.insert(key) {
+        targets.push(target.clone());
+    }
 }
 
 fn run_macos_accessibility_listing(
@@ -984,29 +1035,54 @@ fn json_u32(value: &Value, key: &str) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::{
-        atspi_element_in_scope, normalize_atspi_action, normalize_atspi_role,
-        parse_x11_geometry_from_line, parse_xwininfo_line,
+        atspi_element_in_scope, macos_accessibility_query_targets, normalize_atspi_action,
+        normalize_atspi_role, parse_x11_geometry_from_line, parse_xwininfo_line,
     };
     use crate::model::{Bounds, ScaleFactor};
     use crate::platform::{CaptureTargetKind, TargetDescriptor};
 
     fn target() -> TargetDescriptor {
+        window_target("0x400001", 100, 200, 800, 600)
+    }
+
+    fn window_target(id: &str, x: i32, y: i32, width: u32, height: u32) -> TargetDescriptor {
         TargetDescriptor {
-            id: "0x400001".to_owned(),
+            id: id.to_owned(),
             title: Some("App".to_owned()),
             kind: CaptureTargetKind::Window,
             name: "App".to_owned(),
             bounds: Bounds {
-                x: 100,
-                y: 200,
-                width: 800,
-                height: 600,
+                x,
+                y,
+                width,
+                height,
             },
             scale_factor: ScaleFactor::identity(),
             capture_supported: true,
             input_supported: true,
             app_name: Some("App".to_owned()),
             process_id: Some(42),
+            diagnostics: Vec::new(),
+        }
+    }
+
+    fn display_target(id: &str, x: i32, y: i32, width: u32, height: u32) -> TargetDescriptor {
+        TargetDescriptor {
+            id: id.to_owned(),
+            title: None,
+            kind: CaptureTargetKind::Display,
+            name: format!("Display {id}"),
+            bounds: Bounds {
+                x,
+                y,
+                width,
+                height,
+            },
+            scale_factor: ScaleFactor::identity(),
+            capture_supported: true,
+            input_supported: true,
+            app_name: None,
+            process_id: None,
             diagnostics: Vec::new(),
         }
     }
@@ -1039,6 +1115,50 @@ mod tests {
         assert_eq!(element.name, "New Note");
         assert_eq!(element.bounds.expect("bounds").x, 110);
         assert_eq!(element.actions, vec!["click"]);
+    }
+
+    #[test]
+    fn expands_macos_display_targets_to_windows_on_that_display() {
+        let display = display_target("2", 0, 0, 1000, 800);
+        let left_window = window_target("left", 100, 100, 200, 200);
+        let overlapping_window = window_target("overlap", 900, 100, 300, 200);
+        let other_display_window = window_target("right", 1500, 100, 200, 200);
+        let inventory = crate::platform::TargetInventory {
+            targets: vec![
+                display.clone(),
+                left_window.clone(),
+                overlapping_window.clone(),
+                other_display_window,
+            ],
+        };
+        let mut notes = Vec::new();
+
+        let query_targets = macos_accessibility_query_targets(&inventory, &[display], &mut notes);
+
+        assert_eq!(
+            query_targets
+                .iter()
+                .map(|target| target.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["left", "overlap"]
+        );
+        assert!(notes.is_empty());
+    }
+
+    #[test]
+    fn keeps_macos_window_targets_once_when_also_selected_by_a_display() {
+        let display = display_target("2", 0, 0, 1000, 800);
+        let window = window_target("left", 100, 100, 200, 200);
+        let inventory = crate::platform::TargetInventory {
+            targets: vec![display.clone(), window.clone()],
+        };
+        let mut notes = Vec::new();
+
+        let query_targets =
+            macos_accessibility_query_targets(&inventory, &[display, window], &mut notes);
+
+        assert_eq!(query_targets.len(), 1);
+        assert_eq!(query_targets[0].id, "left");
     }
 
     #[test]
