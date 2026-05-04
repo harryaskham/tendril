@@ -1,5 +1,7 @@
 mod common;
 
+use std::process::Command;
+
 use common::CliHarness;
 
 #[test]
@@ -52,4 +54,76 @@ fn list_capture_and_run_flow_uses_isolated_config_and_dynamic_fixtures() {
     assert_eq!(run_json["data"]["focus_restored"], true);
     assert_eq!(run_json["data"]["pointer_restored"], true);
     assert_eq!(run_json["data"]["notes"][0], "fixture input executed");
+}
+
+#[test]
+#[cfg(unix)]
+fn remote_run_proxies_over_ssh_and_preserves_quoted_arguments() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let harness = CliHarness::new();
+    let fake_bin = tempfile::tempdir().expect("fake bin tempdir");
+    let log_path = fake_bin.path().join("ssh-target.log");
+    let ssh_path = fake_bin.path().join("ssh");
+    let tendril_path = fake_bin.path().join("tendril");
+    let real_tendril = env!("CARGO_BIN_EXE_tendril");
+
+    std::fs::write(
+        &ssh_path,
+        "#!/bin/sh\nprintf '%s\\n' \"$1\" > \"$TENDRIL_FAKE_SSH_TARGET_LOG\"\nshift\nexec /bin/sh -c \"$1\"\n",
+    )
+    .expect("fake ssh script");
+    std::fs::write(
+        &tendril_path,
+        format!(
+            "#!/bin/sh\nexec '{}' \"$@\"\n",
+            real_tendril.replace('\'', "'\\''")
+        ),
+    )
+    .expect("fake tendril shim");
+    std::fs::set_permissions(&ssh_path, std::fs::Permissions::from_mode(0o755))
+        .expect("fake ssh executable");
+    std::fs::set_permissions(&tendril_path, std::fs::Permissions::from_mode(0o755))
+        .expect("fake tendril executable");
+
+    let old_path = std::env::var_os("PATH").unwrap_or_default();
+    let path = std::env::join_paths(
+        std::iter::once(fake_bin.path().to_path_buf()).chain(std::env::split_paths(&old_path)),
+    )
+    .expect("joined PATH");
+
+    let mut command = Command::new(real_tendril);
+    harness.apply_env(&mut command);
+    let output = command
+        .env("PATH", path)
+        .env("TENDRIL_FAKE_SSH_TARGET_LOG", &log_path)
+        .args([
+            "--remote",
+            "me@box",
+            "--json",
+            "--window",
+            "window-1",
+            "run",
+            r#"send("hello, remote")"#,
+        ])
+        .output()
+        .expect("remote CLI should run");
+
+    assert!(
+        output.status.success(),
+        "remote CLI failed with status {}\nstdout:\n{}\nstderr:\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("remote output should be JSON");
+    assert_eq!(json["status"], "success");
+    assert_eq!(json["meta"]["command"], "run");
+    assert_eq!(json["data"]["target"]["id"], "window-1");
+    assert_eq!(json["data"]["notes"][0], "fixture input executed");
+    assert_eq!(
+        std::fs::read_to_string(log_path).expect("ssh target log"),
+        "me@box\n"
+    );
 }

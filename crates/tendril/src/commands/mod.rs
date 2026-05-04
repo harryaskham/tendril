@@ -577,6 +577,10 @@ fn build_help_output() -> HelpOutput {
                 description: "Discover actionable window and display targets.".to_owned(),
             },
             HelpWorkflowStep {
+                command: "tendril --remote me@box list --json".to_owned(),
+                description: "Discover windows/displays on a remote desktop over SSH with session auto-detection.".to_owned(),
+            },
+            HelpWorkflowStep {
                 command: "tendril --window <id> list-elements --json".to_owned(),
                 description: "Discover clickable UI elements without choosing screenshot pixels.".to_owned(),
             },
@@ -637,6 +641,10 @@ fn build_help_output() -> HelpOutput {
                 command: "tendril list --json".to_owned(),
             },
             HelpExample {
+                description: "Inspect targets on a remote host over SSH".to_owned(),
+                command: "tendril --remote me@box list --json".to_owned(),
+            },
+            HelpExample {
                 description: "Inspect target elements".to_owned(),
                 command: "tendril --window <id> list-elements --json".to_owned(),
             },
@@ -671,6 +679,7 @@ fn build_help_output() -> HelpOutput {
         ],
         notes: vec![
             "Use --json for machine-readable success and error envelopes.".to_owned(),
+            "Use --remote user@host to proxy the invocation over SSH; Linux remotes bootstrap DISPLAY/WAYLAND_DISPLAY/XDG_RUNTIME_DIR when an SSH login did not inherit the graphical session.".to_owned(),
             "Use -o/--output on capture to save the decoded image directly to a file; combine with --json to also get the JSON envelope.".to_owned(),
             "Alias helpers are plain shell wrappers around explicit tendril arguments; Tendril does not store session state.".to_owned(),
             "Element ids are snapshot-local and should be refreshed with list-elements when the UI changes.".to_owned(),
@@ -1709,6 +1718,7 @@ mod tests {
             json,
             window: window.map(str::to_owned),
             display: display.map(str::to_owned),
+            remote: None,
             command: Some(Command::Mcp(McpCommand {
                 command: McpSubcommand::Stdio,
             })),
@@ -1766,6 +1776,7 @@ mod tests {
             json: true,
             window: None,
             display: None,
+            remote: None,
             command: None,
         };
 
@@ -1788,18 +1799,22 @@ mod tests {
                 );
                 assert_eq!(
                     value["data"]["workflow_steps"][1]["command"],
-                    "tendril --window <id> list-elements --json"
+                    "tendril --remote me@box list --json"
                 );
                 assert_eq!(
                     value["data"]["workflow_steps"][2]["command"],
-                    "tendril --window <id> capture --json"
+                    "tendril --window <id> list-elements --json"
                 );
                 assert_eq!(
                     value["data"]["workflow_steps"][3]["command"],
-                    "tendril --window <id> capture -o /tmp/screen.png"
+                    "tendril --window <id> capture --json"
                 );
                 assert_eq!(
                     value["data"]["workflow_steps"][4]["command"],
+                    "tendril --window <id> capture -o /tmp/screen.png"
+                );
+                assert_eq!(
+                    value["data"]["workflow_steps"][5]["command"],
                     "tendril --window <id> run 'send(\"hello\")'"
                 );
             }
@@ -2307,6 +2322,7 @@ mod tests {
                 json: true,
                 window: Some("window-1".to_owned()),
                 display: Some("1".to_owned()),
+                remote: None,
                 command: Some(Command::Capture(CaptureCommand::default())),
             },
             &TendrilConfig::default(),
@@ -2338,6 +2354,7 @@ mod tests {
                 json: true,
                 window: Some("window-1".to_owned()),
                 display: None,
+                remote: None,
                 command: Some(Command::Run(RunCommand {
                     input_definition: None,
                     ..RunCommand::default()
@@ -2577,6 +2594,7 @@ mod tests {
             json: false,
             window: Some("window-1".into()),
             display: None,
+            remote: None,
             command: Some(Command::Capture(CaptureCommand::default())),
         };
         assert!(matches!(cli.command, Some(Command::Capture(_))));

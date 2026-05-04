@@ -124,6 +124,11 @@ Examples:
 
 tendril --json list
 
+# List windows and displays on a remote desktop over SSH.
+# Linux remotes auto-discover X11/Wayland session variables when SSH did not inherit them.
+
+tendril --remote me@box --json list
+
 # Capture a window using config defaults
 
 tendril --json --window <window-id> capture
@@ -172,6 +177,15 @@ eval "$(tendril --window <window-id> alias --name desk)"
 
 Target-scoped commands use the global `--window <id>` or `--display <id>`
 flags. `capture`, `run`, and `alias` require exactly one target selector.
+
+`--remote user@host` proxies the same invocation over `ssh`, strips only the
+local `--remote` flag, bootstraps common non-login-shell `PATH` entries, and
+then execs `tendril` on the remote host. Set `TENDRIL_REMOTE_BIN` remotely when
+the binary is not named `tendril` or is outside `PATH`. On Linux remotes, the
+bootstrap prefers existing graphical environment variables; if SSH did not
+provide them, it discovers `/run/user/<uid>/wayland-*`, `/tmp/.X11-unix/X*`,
+`XDG_RUNTIME_DIR`, and the session bus so macOS, X11, and Wayland desktops can
+be listed/captured/run transparently.
 
 ## JSON mode
 

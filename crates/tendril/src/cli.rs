@@ -31,6 +31,15 @@ pub struct TendrilCli {
     #[arg(long, global = true)]
     pub display: Option<String>,
 
+    /// Execute this Tendril invocation on a remote host over SSH.
+    ///
+    /// The remote host must have `tendril` on PATH (or set
+    /// `TENDRIL_REMOTE_BIN` on the remote side). For Linux desktops, Tendril
+    /// bootstraps X11/Wayland session variables before launching the remote
+    /// command so SSH logins do not need `DISPLAY/WAYLAND_DISPLAY` pre-wired.
+    #[arg(long, global = true, value_name = "USER@HOST")]
+    pub remote: Option<String>,
+
     #[command(subcommand)]
     pub command: Option<Command>,
 }
@@ -39,7 +48,7 @@ impl TendrilCli {
     #[must_use]
     pub fn agent_help() -> String {
         format!(
-            "Tendril is a stateless desktop inspection and control CLI for agents.\n\nWorkflow:\n  1. list targets:   tendril list --json\n  2. list elements:  tendril --window <id> list-elements --json\n  3. capture state:  tendril --window <id> capture --json\n  4. save to file:   tendril --window <id> capture -o /tmp/screen.png\n  5. run input:      tendril --window <id> run 'send(\"hello\")'\n  6. click element:  tendril --window <id> run 'click(33)'\n  7. read clipboard: tendril clipboard get --json\n  8. reuse a target: eval \"$(tendril --window <id> alias --name desk)\"\n\nCommands:\n  list           Discover windows and displays\n  list-elements  Discover UI elements for a window/display or globally\n  capture        Capture a screenshot from a window or display\n  run            Type text or execute an input sequence against a target\n  clipboard      Read or serve Linux/X11 text selections for deterministic browser↔OS transfer\n  alias          Emit a shell helper that pre-fills --window/--display\n  listen         Probe supported audio capture paths\n  mcp            Serve Tendril over MCP stdio\n\nUse --json for machine-readable success/error envelopes.\nUse -o/--output on capture to save the image directly to a file.\nUse --help on any subcommand for detailed flags.\n\n{WORKFLOW_HINT}\n"
+            "Tendril is a stateless desktop inspection and control CLI for agents.\n\nWorkflow:\n  1. list targets:   tendril list --json\n  2. remote targets: tendril --remote me@box list --json\n  3. list elements:  tendril --window <id> list-elements --json\n  4. capture state:  tendril --window <id> capture --json\n  5. save to file:   tendril --window <id> capture -o /tmp/screen.png\n  6. run input:      tendril --window <id> run 'send(\"hello\")'\n  7. click element:  tendril --window <id> run 'click(33)'\n  8. read clipboard: tendril clipboard get --json\n  9. reuse a target: eval \"$(tendril --window <id> alias --name desk)\"\n\nCommands:\n  list           Discover windows and displays\n  list-elements  Discover UI elements for a window/display or globally\n  capture        Capture a screenshot from a window or display\n  run            Type text or execute an input sequence against a target\n  clipboard      Read or serve Linux/X11 text selections for deterministic browser↔OS transfer\n  alias          Emit a shell helper that pre-fills --window/--display\n  listen         Probe supported audio capture paths\n  mcp            Serve Tendril over MCP stdio\n\nUse --json for machine-readable success/error envelopes.\nUse --remote user@host to proxy any invocation over ssh; Linux remotes auto-discover X11/Wayland session variables when SSH did not inherit them.\nUse -o/--output on capture to save the image directly to a file.\nUse --help on any subcommand for detailed flags.\n\n{WORKFLOW_HINT}\n"
         )
     }
 }
@@ -287,6 +296,7 @@ mod tests {
 
         assert!(help.contains("Workflow:"));
         assert!(help.contains("tendril list --json"));
+        assert!(help.contains("tendril --remote me@box list --json"));
         assert!(help.contains("capture --json"));
         assert!(help.contains("capture -o /tmp/screen.png"));
         assert!(help.contains(" run 'send(\"hello\")'"));

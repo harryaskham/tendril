@@ -12,6 +12,7 @@ pub mod listen;
 pub mod logging;
 pub mod model;
 pub mod platform;
+pub mod remote;
 pub(crate) mod wayland_input;
 pub(crate) mod x11;
 
@@ -36,9 +37,17 @@ pub use platform::{AdapterContext, PlatformAdapterError, current_adapter};
 pub fn run<I, T>(args: I) -> ExitCode
 where
     I: IntoIterator<Item = T>,
-    T: Into<OsString> + Clone,
+    T: Into<OsString>,
 {
-    let cli = TendrilCli::parse_from(args);
+    let args = args.into_iter().map(Into::into).collect::<Vec<OsString>>();
+    let cli = TendrilCli::parse_from(args.clone());
+
+    if cli.remote.is_some() {
+        return match remote::dispatch(&cli, &args) {
+            Ok(exit_code) => exit_code,
+            Err(error) => emit_error(&cli, None, &error),
+        };
+    }
 
     if cli.command.is_none() {
         return match commands::dispatch(&cli, &TendrilConfig::default()) {
