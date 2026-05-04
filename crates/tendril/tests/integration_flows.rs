@@ -127,3 +127,50 @@ fn remote_run_proxies_over_ssh_and_preserves_quoted_arguments() {
         "me@box\n"
     );
 }
+
+#[test]
+#[cfg(unix)]
+fn remote_ssh_failures_return_structured_json_errors() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let harness = CliHarness::new();
+    let fake_bin = tempfile::tempdir().expect("fake bin tempdir");
+    let ssh_path = fake_bin.path().join("ssh");
+    let real_tendril = env!("CARGO_BIN_EXE_tendril");
+
+    std::fs::write(
+        &ssh_path,
+        "#!/bin/sh\necho 'ssh: connect to host badhost port 22: No route to host' >&2\nexit 255\n",
+    )
+    .expect("fake ssh script");
+    std::fs::set_permissions(&ssh_path, std::fs::Permissions::from_mode(0o755))
+        .expect("fake ssh executable");
+
+    let old_path = std::env::var_os("PATH").unwrap_or_default();
+    let path = std::env::join_paths(
+        std::iter::once(fake_bin.path().to_path_buf()).chain(std::env::split_paths(&old_path)),
+    )
+    .expect("joined PATH");
+
+    let mut command = Command::new(real_tendril);
+    harness.apply_env(&mut command);
+    let output = command
+        .env("PATH", path)
+        .args(["--json", "--remote", "me@badhost", "list"])
+        .output()
+        .expect("remote CLI should run");
+
+    assert!(!output.status.success());
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("remote failure should be JSON");
+    assert_eq!(json["status"], "error");
+    assert_eq!(json["meta"]["command"], "list");
+    assert_eq!(json["error"]["code"], "remote_ssh_failed");
+    assert_eq!(json["error"]["details"]["remote"], "me@badhost");
+    assert!(
+        json["error"]["message"]
+            .as_str()
+            .expect("message")
+            .contains("No route to host")
+    );
+}

@@ -47,7 +47,11 @@ where
     if cli.remote.is_some() {
         return match remote::dispatch(&cli, &args) {
             Ok(exit_code) => exit_code,
-            Err(error) => emit_error(&cli, None, &error),
+            Err(error) => emit_error(
+                &cli,
+                cli.command.as_ref().map(crate::cli::Command::name),
+                &error,
+            ),
         };
     }
 
