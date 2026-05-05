@@ -339,8 +339,10 @@ start a helper daemon to bypass platform rules.
 ### Windows 11
 
 - Tendril expects a normal desktop user session.
-- Discovery, capture, and input do not require a Tendril-managed background
-  service.
+- Discovery, capture, input, and `list-elements` use native Win32 APIs inside
+  the Tendril binary and do not require a Tendril-managed background service.
+- `list-elements` exposes a pragmatic Win32 window/control tree with stable
+  snapshot-local IDs that can be passed to `run 'click(<id>)'`.
 - Microphone paths may depend on **Settings > Privacy & security > Microphone**
   for desktop apps.
 

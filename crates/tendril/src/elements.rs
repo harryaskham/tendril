@@ -59,6 +59,9 @@ pub fn discover_elements(
         (PlatformKind::Linux, DesktopSession::Wayland) => {
             discover_wayland_elements(&targets, input.include_offscreen, &mut notes)
         }
+        (PlatformKind::Windows11, DesktopSession::WindowsDesktop) => {
+            discover_windows_elements(inventory, &targets, input.include_offscreen, &mut notes)
+        }
         _ => {
             notes.push(
                 "No platform element backend is available for this session; returning target roots only."
@@ -612,6 +615,108 @@ fn split_geometry_offsets(value: &str) -> Option<(&str, &str, &str)> {
     Some((first, &rest[..second_sign], &rest[second_sign..]))
 }
 
+fn discover_windows_elements(
+    inventory: &TargetInventory,
+    targets: &[PlatformTargetDescriptor],
+    include_offscreen: bool,
+    notes: &mut Vec<String>,
+) -> Vec<ElementDescriptor> {
+    let query_targets = window_targets_for_scope(inventory, targets);
+    let mut elements = Vec::new();
+    for target in &query_targets {
+        if target.kind != CaptureTargetKind::Window {
+            elements.push(root_element_from_target(target));
+            continue;
+        }
+        match tendril_win32::discover_window_elements(&target.id) {
+            Ok(discovered) if !discovered.is_empty() => {
+                elements.extend(discovered.into_iter().filter_map(|element| {
+                    windows_element_descriptor(target, element, include_offscreen)
+                }));
+            }
+            Ok(_) => elements.push(root_element_from_target(target)),
+            Err(error) => {
+                notes.push(format!(
+                    "Windows native element listing failed for `{}`: {error}; returning its root target instead.",
+                    target.id
+                ));
+                elements.push(root_element_from_target(target));
+            }
+        }
+    }
+    if !elements.is_empty() {
+        notes.push(
+            "Windows element discovery used native Win32 window/control enumeration; element bounds are screen coordinates and click(<id>) resolves them through the shared target-relative DSL contract."
+                .to_owned(),
+        );
+    }
+    elements
+}
+
+fn window_targets_for_scope(
+    inventory: &TargetInventory,
+    targets: &[PlatformTargetDescriptor],
+) -> Vec<PlatformTargetDescriptor> {
+    let mut query_targets = Vec::new();
+    let mut seen = HashSet::new();
+    for target in targets {
+        match target.kind {
+            CaptureTargetKind::Window => push_unique_target(&mut query_targets, &mut seen, target),
+            CaptureTargetKind::Display => {
+                for window in inventory.targets.iter().filter(|candidate| {
+                    candidate.kind == CaptureTargetKind::Window
+                        && bounds_overlap(&candidate.bounds, &target.bounds)
+                }) {
+                    push_unique_target(&mut query_targets, &mut seen, window);
+                }
+            }
+        }
+    }
+    if query_targets.is_empty() {
+        targets.to_vec()
+    } else {
+        query_targets
+    }
+}
+
+fn windows_element_descriptor(
+    target: &PlatformTargetDescriptor,
+    element: tendril_win32::ElementInfo,
+    include_offscreen: bool,
+) -> Option<ElementDescriptor> {
+    let bounds = Bounds {
+        x: element.bounds.x,
+        y: element.bounds.y,
+        width: element.bounds.width,
+        height: element.bounds.height,
+    };
+    if !include_offscreen && !bounds_overlap(&bounds, &target.bounds) {
+        return None;
+    }
+    Some(ElementDescriptor {
+        id: element.id,
+        role: element.role,
+        name: element.name,
+        description: element.description,
+        value: None,
+        bounds: Some(bounds),
+        target: Some(target_selector_from_platform(target)),
+        path: if element.path.is_empty() {
+            target
+                .app_name
+                .iter()
+                .chain(std::iter::once(&target.name))
+                .cloned()
+                .collect()
+        } else {
+            element.path
+        },
+        actions: element.actions,
+        app_name: target.app_name.clone(),
+        process_id: element.process_id.or(target.process_id),
+    })
+}
+
 fn discover_wayland_elements(
     targets: &[PlatformTargetDescriptor],
     include_offscreen: bool,
@@ -1066,6 +1171,7 @@ mod tests {
     use super::{
         atspi_element_in_scope, macos_accessibility_query_targets, normalize_atspi_action,
         normalize_atspi_role, parse_x11_geometry_from_line, parse_xwininfo_line,
+        window_targets_for_scope,
     };
     use crate::model::{Bounds, ScaleFactor};
     use crate::platform::{CaptureTargetKind, TargetDescriptor};
@@ -1188,6 +1294,21 @@ mod tests {
 
         assert_eq!(query_targets.len(), 1);
         assert_eq!(query_targets[0].id, "left");
+    }
+
+    #[test]
+    fn expands_display_scoped_native_window_element_backends_to_windows() {
+        let display = display_target("display-1", 0, 0, 1000, 800);
+        let window = window_target("window-1", 100, 100, 200, 200);
+        let other = window_target("window-2", 1500, 100, 200, 200);
+        let inventory = crate::platform::TargetInventory {
+            targets: vec![display.clone(), window.clone(), other],
+        };
+
+        let query_targets = window_targets_for_scope(&inventory, &[display]);
+
+        assert_eq!(query_targets.len(), 1);
+        assert_eq!(query_targets[0].id, "window-1");
     }
 
     #[test]

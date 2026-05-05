@@ -24,6 +24,18 @@ pub struct WindowInfo {
     pub bounds: Bounds,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ElementInfo {
+    pub id: String,
+    pub role: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub process_id: Option<u32>,
+    pub bounds: Bounds,
+    pub path: Vec<String>,
+    pub actions: Vec<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModifierKey {
     Ctrl,
@@ -49,6 +61,10 @@ pub fn discover_windows() -> Result<Vec<WindowInfo>, String> {
 
 pub fn capture_display_png(display_id: &str) -> Result<Vec<u8>, String> {
     imp::capture_display_png(display_id)
+}
+
+pub fn discover_window_elements(window_id: &str) -> Result<Vec<ElementInfo>, String> {
+    imp::discover_window_elements(window_id)
 }
 
 pub fn capture_window_png(window_id: &str) -> Result<Vec<u8>, String> {
@@ -91,7 +107,7 @@ pub fn drag_mouse(
 
 #[cfg(not(target_os = "windows"))]
 mod imp {
-    use super::{DisplayInfo, ModifierKey, MouseButton, WindowInfo};
+    use super::{DisplayInfo, ElementInfo, ModifierKey, MouseButton, WindowInfo};
 
     const MESSAGE: &str =
         "native Windows runtime bindings are only available when building for Windows";
@@ -105,6 +121,10 @@ mod imp {
     }
 
     pub fn capture_display_png(_display_id: &str) -> Result<Vec<u8>, String> {
+        Err(MESSAGE.to_owned())
+    }
+
+    pub fn discover_window_elements(_window_id: &str) -> Result<Vec<ElementInfo>, String> {
         Err(MESSAGE.to_owned())
     }
 
@@ -179,12 +199,13 @@ mod imp {
         VK_NEXT, VK_PRIOR, VK_RETURN, VK_RIGHT, VK_SHIFT, VK_SPACE, VK_TAB, VK_UP, VkKeyScanW,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        BringWindowToTop, EnumDisplayMonitors, EnumWindows, GetDC, GetDesktopWindow, GetWindowRect,
-        GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible,
-        PrintWindow, ReleaseDC, SW_RESTORE, SetForegroundWindow, ShowWindow,
+        BringWindowToTop, EnumChildWindows, EnumDisplayMonitors, EnumWindows, GetClassNameW, GetDC,
+        GetDesktopWindow, GetWindowRect, GetWindowTextLengthW, GetWindowTextW,
+        GetWindowThreadProcessId, IsWindowVisible, PrintWindow, ReleaseDC, SW_RESTORE,
+        SetForegroundWindow, ShowWindow,
     };
 
-    use super::{Bounds, DisplayInfo, ModifierKey, MouseButton, WindowInfo};
+    use super::{Bounds, DisplayInfo, ElementInfo, ModifierKey, MouseButton, WindowInfo};
 
     const PW_RENDERFULLCONTENT: u32 = 0x0000_0002;
 
@@ -244,6 +265,27 @@ mod imp {
                 ))
         });
         Ok(windows)
+    }
+
+    pub fn discover_window_elements(window_id: &str) -> Result<Vec<ElementInfo>, String> {
+        let hwnd = parse_window_id(window_id)?;
+        let root = window_element(hwnd, Vec::new())?;
+        let mut elements = vec![root.clone()];
+        let mut state = ChildElementState {
+            elements: &mut elements,
+            parent_path: root.path.clone(),
+        };
+        let result = unsafe {
+            EnumChildWindows(
+                hwnd,
+                Some(enum_child_element_windows),
+                (&mut state as *mut ChildElementState<'_>) as isize,
+            )
+        };
+        if result == 0 {
+            return Err(format!("EnumChildWindows failed for `{window_id}`"));
+        }
+        Ok(elements)
     }
 
     pub fn capture_display_png(display_id: &str) -> Result<Vec<u8>, String> {
@@ -382,19 +424,7 @@ mod imp {
             return 1;
         }
 
-        let title_length = GetWindowTextLengthW(hwnd);
-        if title_length <= 0 {
-            return 1;
-        }
-
-        let mut title_buffer = vec![0_u16; title_length as usize + 1];
-        let copied = GetWindowTextW(hwnd, title_buffer.as_mut_ptr(), title_buffer.len() as i32);
-        if copied <= 0 {
-            return 1;
-        }
-        let title = String::from_utf16_lossy(&title_buffer[..copied as usize])
-            .trim()
-            .to_owned();
+        let title = window_text(hwnd);
         if title.is_empty() {
             return 1;
         }
@@ -428,6 +458,108 @@ mod imp {
             },
         });
         1
+    }
+
+    struct ChildElementState<'a> {
+        elements: &'a mut Vec<ElementInfo>,
+        parent_path: Vec<String>,
+    }
+
+    unsafe extern "system" fn enum_child_element_windows(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        if IsWindowVisible(hwnd) == 0 {
+            return 1;
+        }
+        let state = &mut *(lparam as *mut ChildElementState<'_>);
+        if let Ok(element) = window_element(hwnd, state.parent_path.clone()) {
+            state.elements.push(element);
+        }
+        1
+    }
+
+    fn window_element(hwnd: HWND, parent_path: Vec<String>) -> Result<ElementInfo, String> {
+        let rect = get_window_rect(hwnd)?;
+        let width = rect.right - rect.left;
+        let height = rect.bottom - rect.top;
+        if width <= 0 || height <= 0 {
+            return Err(format!("window 0x{:X} has invalid bounds", hwnd as usize));
+        }
+        let title = window_text(hwnd);
+        let class_name = window_class_name(hwnd);
+        let role = windows_role_from_class(&class_name);
+        let name = if title.is_empty() {
+            class_name.clone().unwrap_or_else(|| role.to_owned())
+        } else {
+            title
+        };
+        let mut process_id = 0_u32;
+        unsafe { GetWindowThreadProcessId(hwnd, &mut process_id) };
+        let mut path = parent_path;
+        if path.last() != Some(&name) {
+            path.push(name.clone());
+        }
+        Ok(ElementInfo {
+            id: format!("0x{:X}", hwnd as usize),
+            role: role.to_owned(),
+            name,
+            description: class_name.map(|class| format!("Win32 class {class}")),
+            process_id: (process_id != 0).then_some(process_id),
+            bounds: Bounds {
+                x: rect.left,
+                y: rect.top,
+                width: width as u32,
+                height: height as u32,
+            },
+            path,
+            actions: vec!["click".to_owned()],
+        })
+    }
+
+    fn window_text(hwnd: HWND) -> String {
+        let title_length = unsafe { GetWindowTextLengthW(hwnd) };
+        if title_length <= 0 {
+            return String::new();
+        }
+        let mut title_buffer = vec![0_u16; title_length as usize + 1];
+        let copied =
+            unsafe { GetWindowTextW(hwnd, title_buffer.as_mut_ptr(), title_buffer.len() as i32) };
+        if copied <= 0 {
+            return String::new();
+        }
+        String::from_utf16_lossy(&title_buffer[..copied as usize])
+            .trim()
+            .to_owned()
+    }
+
+    fn window_class_name(hwnd: HWND) -> Option<String> {
+        let mut buffer = vec![0_u16; 256];
+        let copied = unsafe { GetClassNameW(hwnd, buffer.as_mut_ptr(), buffer.len() as i32) };
+        if copied <= 0 {
+            return None;
+        }
+        let class = String::from_utf16_lossy(&buffer[..copied as usize])
+            .trim()
+            .to_owned();
+        (!class.is_empty()).then_some(class)
+    }
+
+    fn windows_role_from_class(class_name: &Option<String>) -> &'static str {
+        let Some(class_name) = class_name.as_deref() else {
+            return "window";
+        };
+        let lower = class_name.to_ascii_lowercase();
+        if lower.contains("button") {
+            "button"
+        } else if lower.contains("edit") || lower.contains("textbox") {
+            "text_box"
+        } else if lower.contains("list") {
+            "list"
+        } else if lower.contains("combo") {
+            "combo_box"
+        } else if lower.contains("menu") {
+            "menu"
+        } else {
+            "window"
+        }
     }
 
     fn get_window_rect(hwnd: HWND) -> Result<Rect, String> {
