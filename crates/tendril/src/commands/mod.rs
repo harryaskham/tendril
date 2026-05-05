@@ -286,102 +286,129 @@ fn dispatch_cli_command(
     config: &TendrilConfig,
 ) -> Result<CommandOutput, TendrilError> {
     match command {
-        Command::List(command) => {
-            let input = validate_list_command(command)?;
-            let output = execute_list(&input, &AdapterContext::detect())?;
-            info!(
-                command = "list",
-                target_count = output.targets.len(),
-                "discovered desktop targets"
-            );
-            Ok(render_command_output(
-                "list",
-                cli.json,
-                output,
-                render_list_human,
-            ))
-        }
-        Command::ListElements(command) => {
-            let input = build_element_list_input(&target_scope_from_cli(cli), command)?;
-            let adapter = adapter_for_context(AdapterContext::detect());
-            let output = execute_list_elements(&input, adapter.as_ref())?;
-            Ok(render_command_output(
-                "list-elements",
-                cli.json,
-                output,
-                render_list_elements_human,
-            ))
-        }
-        Command::Capture(command) => {
-            let input = build_capture_input(&target_scope_from_cli(cli), command, config)?;
-            info!(
-                command = "capture",
-                target_kind = ?input.target.kind(),
-                target_id = %input.target.id(),
-                format = ?input.format,
-                "validated capture request"
-            );
-            let adapter = adapter_for_context(AdapterContext::detect());
-            let output = execute_capture(&input, adapter.as_ref())?;
-            if let Some(path) = &command.output {
-                write_capture_to_file(&output.image_base64, path)?;
-            }
-            Ok(render_command_output(
-                "capture",
-                cli.json,
-                output,
-                render_capture_human,
-            ))
-        }
-        Command::Run(command) => {
-            let input = build_run_input(&target_scope_from_cli(cli), command)?;
-            info!(
-                command = "run",
-                target_kind = ?input.target.kind(),
-                target_id = %input.target.id(),
-                payload_kind = %payload_kind(&input.payload),
-                "validated run request with redacted payload"
-            );
-            let lock_request = build_execution_lock_request(command, &input, config)?;
-            let lock_permit = acquire_execution_lock(&lock_request)?;
-            let lock_report = lock_permit.report().clone();
-            let adapter = adapter_for_context(AdapterContext::detect());
-            let mut output = execute_run(&input, adapter.as_ref())
-                .map_err(|error| error.with_detail_entry("execution_lock", json!(lock_report)))?;
-            output.execution_lock = Some(lock_permit.report().clone());
-            Ok(render_command_output(
-                "run",
-                cli.json,
-                output,
-                render_run_human,
-            ))
-        }
+        Command::List(command) => dispatch_list_command(command, cli.json),
+        Command::ListElements(command) => dispatch_list_elements_command(cli, command),
+        Command::Capture(command) => dispatch_capture_command(cli, command, config),
+        Command::Run(command) => dispatch_run_command(cli, command, config),
         Command::Listen(command) => {
             dispatch_listen_command(command, cli.json, &AdapterContext::detect())
         }
         Command::Clipboard(command) => dispatch_clipboard_command(command, cli.json),
-        Command::Alias(command) => {
-            let input = build_alias_input(&target_scope_from_cli(cli), command)?;
-            info!(
-                command = "alias",
-                target_kind = ?input.target.kind(),
-                target_id = %input.target.id(),
-                shell = ?input.shell,
-                alias_name = %input.name,
-                "validated alias request"
-            );
-            let output = execute_alias(&input);
-            Ok(render_command_output(
-                "alias",
-                cli.json,
-                output,
-                render_alias_human,
-            ))
-        }
+        Command::Alias(command) => dispatch_alias_command(cli, command),
         Command::Update(command) => dispatch_update_command(command, cli.json),
         Command::Version(command) => dispatch_version_command(command, cli.json),
         Command::Mcp(_) => unreachable!("MCP commands are dispatched separately"),
     }
+}
+
+fn dispatch_list_command(
+    command: &ListCommand,
+    json_mode: bool,
+) -> Result<CommandOutput, TendrilError> {
+    let input = validate_list_command(command)?;
+    let output = execute_list(&input, &AdapterContext::detect())?;
+    info!(
+        command = "list",
+        target_count = output.targets.len(),
+        "discovered desktop targets"
+    );
+    Ok(render_command_output(
+        "list",
+        json_mode,
+        output,
+        render_list_human,
+    ))
+}
+
+fn dispatch_list_elements_command(
+    cli: &TendrilCli,
+    command: &ElementListCommand,
+) -> Result<CommandOutput, TendrilError> {
+    let input = build_element_list_input(&target_scope_from_cli(cli), command)?;
+    let adapter = adapter_for_context(AdapterContext::detect());
+    let output = execute_list_elements(&input, adapter.as_ref())?;
+    Ok(render_command_output(
+        "list-elements",
+        cli.json,
+        output,
+        render_list_elements_human,
+    ))
+}
+
+fn dispatch_capture_command(
+    cli: &TendrilCli,
+    command: &CaptureCommand,
+    config: &TendrilConfig,
+) -> Result<CommandOutput, TendrilError> {
+    let input = build_capture_input(&target_scope_from_cli(cli), command, config)?;
+    info!(
+        command = "capture",
+        target_kind = ?input.target.kind(),
+        target_id = %input.target.id(),
+        format = ?input.format,
+        "validated capture request"
+    );
+    let adapter = adapter_for_context(AdapterContext::detect());
+    let output = execute_capture(&input, adapter.as_ref())?;
+    if let Some(path) = &command.output {
+        write_capture_to_file(&output.image_base64, path)?;
+    }
+    Ok(render_command_output(
+        "capture",
+        cli.json,
+        output,
+        render_capture_human,
+    ))
+}
+
+fn dispatch_run_command(
+    cli: &TendrilCli,
+    command: &RunCommand,
+    config: &TendrilConfig,
+) -> Result<CommandOutput, TendrilError> {
+    let input = build_run_input(&target_scope_from_cli(cli), command)?;
+    info!(
+        command = "run",
+        target_kind = ?input.target.kind(),
+        target_id = %input.target.id(),
+        payload_kind = %payload_kind(&input.payload),
+        "validated run request with redacted payload"
+    );
+    let lock_request = build_execution_lock_request(command, &input, config)?;
+    let lock_permit = acquire_execution_lock(&lock_request)?;
+    let lock_report = lock_permit.report().clone();
+    let adapter = adapter_for_context(AdapterContext::detect());
+    let mut output = execute_run(&input, adapter.as_ref())
+        .map_err(|error| error.with_detail_entry("execution_lock", json!(lock_report)))?;
+    output.execution_lock = Some(lock_permit.report().clone());
+    Ok(render_command_output(
+        "run",
+        cli.json,
+        output,
+        render_run_human,
+    ))
+}
+
+fn dispatch_alias_command(
+    cli: &TendrilCli,
+    command: &AliasCommand,
+) -> Result<CommandOutput, TendrilError> {
+    let input = build_alias_input(&target_scope_from_cli(cli), command)?;
+    info!(
+        command = "alias",
+        target_kind = ?input.target.kind(),
+        target_id = %input.target.id(),
+        shell = ?input.shell,
+        alias_name = %input.name,
+        "validated alias request"
+    );
+    let output = execute_alias(&input);
+    Ok(render_command_output(
+        "alias",
+        cli.json,
+        output,
+        render_alias_human,
+    ))
 }
 
 fn dispatch_update_command(
