@@ -54,7 +54,7 @@ pub fn discover_elements(
             )
         }
         (PlatformKind::Linux, DesktopSession::X11) => {
-            discover_x11_window_elements(&targets, input.include_offscreen, &mut notes)
+            discover_x11_elements(&targets, input.include_offscreen, &mut notes)
         }
         (PlatformKind::Linux, DesktopSession::Wayland) => {
             discover_wayland_elements(&targets, input.include_offscreen, &mut notes)
@@ -416,6 +416,35 @@ fn macos_accessibility_listing_jxa(
 }}());
 "
     )
+}
+
+fn discover_x11_elements(
+    targets: &[PlatformTargetDescriptor],
+    include_offscreen: bool,
+    notes: &mut Vec<String>,
+) -> Vec<ElementDescriptor> {
+    match run_atspi_accessibility_listing(targets, include_offscreen) {
+        Ok(elements) if !elements.is_empty() => {
+            notes.push(
+                "X11 element discovery used AT-SPI accessibility metadata; element bounds are screen coordinates and click(<id>) resolves them through the existing target-relative DSL contract."
+                    .to_owned(),
+            );
+            elements
+        }
+        Ok(_) => {
+            notes.push(
+                "AT-SPI was reachable but did not report accessible child elements for the requested X11 target; falling back to the X11 window tree."
+                    .to_owned(),
+            );
+            discover_x11_window_elements(targets, include_offscreen, notes)
+        }
+        Err(error) => {
+            notes.push(format!(
+                "X11 AT-SPI element listing failed: {error}; falling back to the X11 window tree."
+            ));
+            discover_x11_window_elements(targets, include_offscreen, notes)
+        }
+    }
 }
 
 fn discover_x11_window_elements(

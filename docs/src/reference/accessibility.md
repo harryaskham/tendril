@@ -60,9 +60,12 @@ screen-space `AXPosition`/`AXSize`, then relies on the shared input resolver for
 
 ### Linux/X11
 
-The current X11 backend exposes an X window tree via `xwininfo` as a pragmatic
-surface-level element source. It follows the same output shape and click resolver
-contract, but it is not as semantically rich as native toolkit accessibility.
+The X11 backend first tries the same AT-SPI accessibility bus used by the
+Wayland path, walking `org.a11y.atspi.Accessible` trees and filtering elements to
+the requested window/display bounds. When AT-SPI is unavailable or an X11
+application does not publish accessibility metadata, Tendril falls back to the X
+window tree via `xwininfo` as a pragmatic surface-level element source. Both
+paths follow the same output shape and click resolver contract.
 
 ### Linux/Wayland
 
