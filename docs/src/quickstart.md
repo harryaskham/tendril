@@ -33,6 +33,7 @@ The CLI is designed around a small, explicit loop:
 ```bash
 tendril list --json
 tendril --window <id> capture --json
+tendril --window <id> list-elements --json
 tendril --window <id> run 'send("hello")'
 ```
 
@@ -41,6 +42,13 @@ If you are validating Tendril as an operator on a real desktop instead of settin
 - [macOS operator validation](macos-operator-validation.md)
 - [Linux/X11 operator validation](linux-x11-operator-validation.md)
 - [Linux Wayland operator validation](linux-wayland-operator-validation.md)
+
+Remote and host-tunnel variants use the same command surface:
+
+```bash
+tendril --remote user@host --json list
+tendril --wsl-tunnel --json list
+```
 
 For repeated use against one target, generate a shell helper instead of storing hidden runtime state:
 
@@ -61,10 +69,10 @@ See [Configuration](reference/configuration.md) for the current schema.
 
 ## Publishing model
 
-Documentation publishing follows the same tag-oriented release policy as the rest of the repository:
+Documentation publishing follows the same release policy as the rest of the repository:
 
 - docs are built and deployed by GitHub Actions,
-- the Pages workflow runs on version tag pushes such as `v0.0.1`, and
-- the published site always reflects a release-aligned docs snapshot.
+- the Pages workflow runs on version tag pushes and release-aligned version bumps, and
+- the published site should reflect the current CLI/MCP/platform support matrix.
 
 See [Docs publishing and release flow](reference/publishing.md) for the exact workflow.

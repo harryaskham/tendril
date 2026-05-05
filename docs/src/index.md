@@ -4,8 +4,9 @@ Tendril is a stateless Rust CLI for agent-driven desktop inspection and control 
 
 1. discover a target with `tendril list`,
 2. capture the current state with `tendril capture`,
-3. act on that target with `tendril run`, and
-4. expose the same typed command surface through `tendril mcp stdio`.
+3. inspect semantic or surface-level elements with `tendril list-elements`,
+4. act on that target with `tendril run`, and
+5. expose the same typed command surface through `tendril mcp stdio`.
 
 ## What this site publishes
 
@@ -28,9 +29,14 @@ The repository currently exposes these user-facing entry points:
 | `tendril list` | Implemented in CLI and MCP |
 | `tendril capture` | Implemented in CLI and MCP |
 | `tendril run` | Implemented in CLI and MCP |
-| `tendril listen` | Captures WAV on supported backends; probe-only fallback elsewhere |
+| `tendril list-elements` | Implemented in CLI and MCP across macOS, Linux, and Windows |
+| `tendril listen` | Captures WAV on supported Linux/macOS backends; probe-only fallback elsewhere |
 | `tendril alias` | Implemented as a shell-helper CLI command |
-| `tendril mcp stdio` | Implements the initial list/capture/run MCP tool set |
+| `tendril update` | Installs released binaries with checksum verification |
+| `tendril version bump` | Bumps SemVer metadata and creates release commits |
+| `--remote user@host` | SSH proxy mode for remote desktops |
+| `--wsl-tunnel` | WSL/Linux proxy mode for Windows-host `tendril.exe` |
+| `tendril mcp stdio` | Implements the typed list/capture/run/list-elements/listen tool set |
 
 ## Repository layout
 
@@ -56,5 +62,6 @@ The generated site is built into `target/book/`, and the Pages workflow uploads 
 - [macOS operator validation](macos-operator-validation.md)
 - [Linux Wayland operator validation](linux-wayland-operator-validation.md)
 - [CLI guide](cli/index.md)
+- [Remote and WSL tunnelling](cli/remote.md)
 - [MCP guide](mcp.md)
 - [Docs publishing and release flow](reference/publishing.md)

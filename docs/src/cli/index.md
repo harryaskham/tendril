@@ -11,7 +11,9 @@ Tendril keeps its CLI intentionally small and agent-oriented.
 | `tendril run` | Execute text or input sequences against a selected target | Yes | Yes |
 | `tendril listen` | Capture WAV audio (PipeWire/PulseAudio on Linux, CoreAudio on macOS) and report capability/permission state | Yes | Yes |
 | `tendril alias` | Emit shell wrappers for repeated targeting | Yes | Not yet |
-| `tendril mcp stdio` | Serve the initial MCP tool surface over stdio | N/A | N/A |
+| `tendril update` | Download, verify, install, and verify a released Tendril binary | Yes | Not yet |
+| `tendril version bump` | Bump SemVer metadata and create the release commit | Yes | Not yet |
+| `tendril mcp stdio` | Serve the typed MCP tool surface over stdio | N/A | N/A |
 
 ## Global flags
 
@@ -19,7 +21,9 @@ The root CLI currently shares these global flags across command execution:
 
 - `--json` for stable machine-readable envelopes,
 - `--window <id>` to scope target-aware commands to a window, and
-- `--display <id>` to scope target-aware commands to a display.
+- `--display <id>` to scope target-aware commands to a display,
+- `--remote user@host` to proxy the invocation over SSH, and
+- `--wsl-tunnel` to proxy from WSL/Linux to a Windows-host `tendril.exe`.
 
 Commands that act on a target require exactly one of `--window` or `--display`.
 
@@ -39,7 +43,10 @@ The same controls are available on the MCP `run` tool. See [Execution lock and q
 ```bash
 tendril list --json
 tendril --window <id> capture --json
+tendril --window <id> list-elements --json
 tendril --window <id> run 'send("hello")'
 ```
+
+For remote desktops, use `--remote user@host`. For Windows host control from WSL, use `--wsl-tunnel` once a Windows `tendril.exe` is visible.
 
 The command-specific pages below document the current shape of each surface and note where the implementation is intentionally probe-first or scaffolded for future work.
