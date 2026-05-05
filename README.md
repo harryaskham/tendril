@@ -185,7 +185,10 @@ the binary is not named `tendril` or is outside `PATH`. On Linux remotes, the
 bootstrap prefers existing graphical environment variables; if SSH did not
 provide them, it discovers `/run/user/<uid>/wayland-*`, `/tmp/.X11-unix/X*`,
 `XDG_RUNTIME_DIR`, and the session bus so macOS, X11, and Wayland desktops can
-be listed/captured/run transparently.
+be listed/captured/run transparently. When a Linux display socket is inferred,
+the remote process also receives `TENDRIL_DISCOVERED_X11_SOCKET` or
+`TENDRIL_DISCOVERED_WAYLAND_SOCKET` for diagnostics while continuing to use the
+standard display variables.
 
 ## JSON mode
 

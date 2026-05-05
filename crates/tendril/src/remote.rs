@@ -238,7 +238,8 @@ case "$(uname -s 2>/dev/null || echo unknown)" in
       for sock in "$runtime"/wayland-*; do
         [ -S "$sock" ] || continue
         WAYLAND_DISPLAY="${{sock##*/}}"
-        export WAYLAND_DISPLAY
+        TENDRIL_DISCOVERED_WAYLAND_SOCKET="$sock"
+        export WAYLAND_DISPLAY TENDRIL_DISCOVERED_WAYLAND_SOCKET
         break
       done
     fi
@@ -248,7 +249,8 @@ case "$(uname -s 2>/dev/null || echo unknown)" in
         display_num="${{sock##*/X}}"
         [ -n "$display_num" ] || continue
         DISPLAY=":$display_num"
-        export DISPLAY
+        TENDRIL_DISCOVERED_X11_SOCKET="$sock"
+        export DISPLAY TENDRIL_DISCOVERED_X11_SOCKET
         break
       done
     fi
@@ -343,7 +345,9 @@ mod tests {
 
         assert!(script.contains("XDG_RUNTIME_DIR"));
         assert!(script.contains("WAYLAND_DISPLAY"));
+        assert!(script.contains("TENDRIL_DISCOVERED_WAYLAND_SOCKET"));
         assert!(script.contains("/tmp/.X11-unix/X*"));
+        assert!(script.contains("TENDRIL_DISCOVERED_X11_SOCKET"));
         assert!(
             script.contains("exec \"$remote_bin\" --window 'window 1' run 'send(\"hi, there\")'")
         );
