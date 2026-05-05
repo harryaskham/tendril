@@ -194,6 +194,40 @@ This page focuses on `list`, `capture`, `run`, and MCP stdio, but if you later v
 
 ## Troubleshooting
 
+### Validating over `caco ssh ms-mac` / SSH
+
+When validating from another machine through `caco ssh ms-mac` or plain SSH,
+prefer the already-installed packaged `tendril` binary for runtime smoke checks:
+
+```bash
+caco ssh ms-mac -- 'tendril --json list'
+caco ssh ms-mac -- 'tendril --display 1 capture --json --timeout-ms 2000'
+```
+
+Avoid adding shell pipelines that implicitly use the remote Nix profile's
+`coreutils` (for example `| head`) while diagnosing Tendril itself. If you need
+small output slices, use an OS tool with an absolute path such as `/usr/bin/head`
+or redirect to a file and inspect it separately.
+
+A known host/toolchain failure mode is a `dyld` message like:
+
+```text
+Library not loaded: /nix/store/.../libcurl.4.dylib
+code signature ... not valid for use in process: library load mig callout failed
+```
+
+or the same shape for `libgmp` / `librustc_driver`. That is a macOS code-signing
+problem in the remote Nix/rustup toolchain or helper process, not a Tendril
+runtime failure. In that state:
+
+- do not treat `cargo`, `rustc`, or Nix helper failures over SSH as evidence that
+  the Tendril binary is broken;
+- validate packaged runtime behavior with `tendril ...` directly;
+- if source builds are required on the Mac, refresh/repair the Mac toolchain or
+  use the self-hosted macOS runner path rather than ad-hoc SSH builds; and
+- keep the full `dyld` line in any bug report so the failing library and launcher
+  are visible.
+
 ### Permissions were granted but the command still fails
 
 Try this sequence:
