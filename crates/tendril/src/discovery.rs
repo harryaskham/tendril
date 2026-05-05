@@ -1297,6 +1297,7 @@ mod tests {
         let script = macos_discovery_script();
 
         assert!(script.contains("ObjC.import('CoreGraphics')"));
+        assert!(script.contains("NSScreen.screens"));
         assert!(script.contains("CGWindowListCopyWindowInfo"));
         assert!(!script.contains("import AppKit\nimport ApplicationServices"));
     }

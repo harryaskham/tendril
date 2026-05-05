@@ -16,7 +16,7 @@ Tendril is designed around a platform adapter boundary so the CLI and MCP surfac
 
 ## Notes
 
-- Discovery currently focuses on windows and displays.
+- Discovery currently focuses on windows and displays. On macOS there is no user-selected display socket analogous to X11 or Wayland; Tendril identifies the native WindowServer session as `mac_os_window_server` and discovers display/window connection details through Quartz/AppKit (`NSScreen` and `CGWindowListCopyWindowInfo`).
 - `listen` writes WAV bytes to a temp file (or `--output <path>`) on Linux and macOS; the JSON envelope reports the on-disk path under `execution.artifact`. Windows and unrecognized backends still return `status = "probe_only"`.
 - Linux/Wayland is a documented backend matrix rather than one generic path: Hyprland discovery uses `hyprctl`, sway uses `swaymsg`, wlroots display fallback uses `wlr-randr`, capture prefers xdg-desktop-portal with `grim` retained only as a compatibility fallback, and `list-elements` uses AT-SPI when applications publish accessibility metadata.
 - The dedicated [Linux Wayland operator validation](../linux-wayland-operator-validation.md) guide covers those supported matrices explicitly.
