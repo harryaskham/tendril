@@ -1780,6 +1780,7 @@ mod tests {
             window: window.map(str::to_owned),
             display: display.map(str::to_owned),
             remote: None,
+            wsl_tunnel: false,
             command: Some(Command::Mcp(McpCommand {
                 command: McpSubcommand::Stdio,
             })),
@@ -1838,6 +1839,7 @@ mod tests {
             window: None,
             display: None,
             remote: None,
+            wsl_tunnel: false,
             command: None,
         };
 
@@ -2384,6 +2386,7 @@ mod tests {
                 window: Some("window-1".to_owned()),
                 display: Some("1".to_owned()),
                 remote: None,
+                wsl_tunnel: false,
                 command: Some(Command::Capture(CaptureCommand::default())),
             },
             &TendrilConfig::default(),
@@ -2416,6 +2419,7 @@ mod tests {
                 window: Some("window-1".to_owned()),
                 display: None,
                 remote: None,
+                wsl_tunnel: false,
                 command: Some(Command::Run(RunCommand {
                     input_definition: None,
                     ..RunCommand::default()
@@ -2656,6 +2660,7 @@ mod tests {
             window: Some("window-1".into()),
             display: None,
             remote: None,
+            wsl_tunnel: false,
             command: Some(Command::Capture(CaptureCommand::default())),
         };
         assert!(matches!(cli.command, Some(Command::Capture(_))));

@@ -16,6 +16,7 @@ pub mod remote;
 pub mod update;
 pub mod versioning;
 pub(crate) mod wayland_input;
+pub mod wsl;
 pub(crate) mod x11;
 
 use std::ffi::OsString;
@@ -46,6 +47,17 @@ where
 
     if cli.remote.is_some() {
         return match remote::dispatch(&cli, &args) {
+            Ok(exit_code) => exit_code,
+            Err(error) => emit_error(
+                &cli,
+                cli.command.as_ref().map(crate::cli::Command::name),
+                &error,
+            ),
+        };
+    }
+
+    if cli.wsl_tunnel {
+        return match wsl::dispatch(&cli, &args) {
             Ok(exit_code) => exit_code,
             Err(error) => emit_error(
                 &cli,

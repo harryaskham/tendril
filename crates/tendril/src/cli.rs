@@ -40,6 +40,15 @@ pub struct TendrilCli {
     #[arg(long, global = true, value_name = "USER@HOST")]
     pub remote: Option<String>,
 
+    /// Proxy this invocation from WSL/Linux to a Windows-host Tendril binary.
+    ///
+    /// The Windows side must have `tendril.exe` on PATH, or set
+    /// `TENDRIL_WSL_WINDOWS_BIN` to the Windows executable path visible from
+    /// the Linux/WSL environment. This flag composes with --remote by being
+    /// forwarded to the remote Tendril process.
+    #[arg(long, global = true)]
+    pub wsl_tunnel: bool,
+
     #[command(subcommand)]
     pub command: Option<Command>,
 }
@@ -48,7 +57,7 @@ impl TendrilCli {
     #[must_use]
     pub fn agent_help() -> String {
         format!(
-            "Tendril is a stateless desktop inspection and control CLI for agents.\n\nWorkflow:\n  1. list targets:   tendril list --json\n  2. remote targets: tendril --remote me@box list --json\n  3. list elements:  tendril --window <id> list-elements --json\n  4. capture state:  tendril --window <id> capture --json\n  5. save to file:   tendril --window <id> capture -o /tmp/screen.png\n  6. run input:      tendril --window <id> run 'send(\"hello\")'\n  7. click element:  tendril --window <id> run 'click(33)'\n  8. read clipboard: tendril clipboard get --json\n  9. reuse a target: eval \"$(tendril --window <id> alias --name desk)\"\n\nCommands:\n  list           Discover windows and displays\n  list-elements  Discover UI elements for a window/display or globally\n  capture        Capture a screenshot from a window or display\n  run            Type text or execute an input sequence against a target\n  clipboard      Read or serve Linux/X11 text selections for deterministic browser↔OS transfer\n  alias          Emit a shell helper that pre-fills --window/--display\n  listen         Probe supported audio capture paths\n  update         Download and install a Tendril release binary\n  version        Inspect or bump the workspace release version\n  mcp            Serve Tendril over MCP stdio\n\nUse --json for machine-readable success/error envelopes.\nUse --remote user@host to proxy any invocation over ssh; Linux remotes auto-discover X11/Wayland session variables when SSH did not inherit them.\nUse -o/--output on capture to save the image directly to a file.\nUse --help on any subcommand for detailed flags.\n\n{WORKFLOW_HINT}\n"
+            "Tendril is a stateless desktop inspection and control CLI for agents.\n\nWorkflow:\n  1. list targets:   tendril list --json\n  2. remote targets: tendril --remote me@box list --json\n  3. WSL host:       tendril --wsl-tunnel list --json\n  4. list elements:  tendril --window <id> list-elements --json\n  4. capture state:  tendril --window <id> capture --json\n  5. save to file:   tendril --window <id> capture -o /tmp/screen.png\n  6. run input:      tendril --window <id> run 'send(\"hello\")'\n  7. click element:  tendril --window <id> run 'click(33)'\n  8. read clipboard: tendril clipboard get --json\n  9. reuse a target: eval \"$(tendril --window <id> alias --name desk)\"\n\nCommands:\n  list           Discover windows and displays\n  list-elements  Discover UI elements for a window/display or globally\n  capture        Capture a screenshot from a window or display\n  run            Type text or execute an input sequence against a target\n  clipboard      Read or serve Linux/X11 text selections for deterministic browser↔OS transfer\n  alias          Emit a shell helper that pre-fills --window/--display\n  listen         Probe supported audio capture paths\n  update         Download and install a Tendril release binary\n  version        Inspect or bump the workspace release version\n  mcp            Serve Tendril over MCP stdio\n\nUse --json for machine-readable success/error envelopes.\nUse --remote user@host to proxy any invocation over ssh; Linux remotes auto-discover X11/Wayland session variables when SSH did not inherit them.\nUse -o/--output on capture to save the image directly to a file.\nUse --help on any subcommand for detailed flags.\n\n{WORKFLOW_HINT}\n"
         )
     }
 }
@@ -369,5 +378,14 @@ mod tests {
         };
         let VersionSubcommand::Bump(command) = command.command;
         assert_eq!(command.level, VersionBumpLevel::Minor);
+    }
+
+    #[test]
+    fn parses_wsl_tunnel_flag_as_global_proxy_mode() {
+        let cli = TendrilCli::parse_from(["tendril", "--wsl-tunnel", "--json", "list"]);
+
+        assert!(cli.wsl_tunnel);
+        assert!(cli.json);
+        assert!(matches!(cli.command, Some(Command::List(_))));
     }
 }

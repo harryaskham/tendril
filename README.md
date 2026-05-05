@@ -180,7 +180,11 @@ flags. `capture`, `run`, and `alias` require exactly one target selector.
 
 `--remote user@host` proxies the same invocation over `ssh`, strips only the
 local `--remote` flag, bootstraps common non-login-shell `PATH` entries, and
-then execs `tendril` on the remote host. Set `TENDRIL_REMOTE_BIN` remotely when
+then execs `tendril` on the remote host. `--wsl-tunnel` proxies the invocation
+from WSL/Linux to a Windows-host `tendril.exe`; it also composes with `--remote`
+because the flag is forwarded to the remote Tendril process. Set
+`TENDRIL_WSL_WINDOWS_BIN` when the Windows executable is not visible as
+`tendril.exe` from WSL. Set `TENDRIL_REMOTE_BIN` remotely when
 the binary is not named `tendril` or is outside `PATH`. On Linux remotes, the
 bootstrap prefers existing graphical environment variables; if SSH did not
 provide them, it discovers `/run/user/<uid>/wayland-*`, `/tmp/.X11-unix/X*`,
