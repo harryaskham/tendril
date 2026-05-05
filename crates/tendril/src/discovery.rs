@@ -883,13 +883,7 @@ fn run_optional_command(
         Ok(output) => {
             let stderr = String::from_utf8_lossy(&output.stderr).to_ascii_lowercase();
             let stdout = String::from_utf8_lossy(&output.stdout).to_ascii_lowercase();
-            if stderr.contains("unknown socket")
-                || stderr.contains("unable to retrieve socket path")
-                || stderr.contains("unable to connect")
-                || stderr.contains("ipc")
-                || stdout.contains("unable to connect")
-                || stdout.contains("no running instance")
-            {
+            if command_output_means_backend_unavailable(&stdout, &stderr) {
                 Ok(None)
             } else {
                 Err(PlatformAdapterError::adapter_failure(
@@ -916,6 +910,19 @@ fn run_optional_command(
             format!("failed to execute `{program}`: {error}"),
         )),
     }
+}
+
+fn command_output_means_backend_unavailable(stdout: &str, stderr: &str) -> bool {
+    stderr.contains("unknown socket")
+        || stderr.contains("unable to retrieve socket path")
+        || stderr.contains("unable to connect")
+        || stderr.contains("hyprland_instance_signature not set")
+        || stderr.contains("is hyprland running")
+        || stderr.contains("ipc")
+        || stdout.contains("unable to connect")
+        || stdout.contains("no running instance")
+        || stdout.contains("hyprland_instance_signature not set")
+        || stdout.contains("is hyprland running")
 }
 
 fn deserialize_json_inventory(
@@ -1115,11 +1122,11 @@ pub(crate) fn is_filtered_system_window(app_name: Option<&str>, title: Option<&s
 #[cfg(test)]
 mod tests {
     use super::{
-        Bounds, WindowsDiscoveryBackend, discover_windows_targets_with_backend,
-        headless_wayland_capture_diagnostic, is_filtered_system_window,
-        is_headless_wayland_monitor, is_macos_permission_error, macos_discovery_script,
-        parse_simple_geometry, parse_wlr_randr_mode, wayland_discovery_backend_error,
-        wayland_discovery_backend_tools_on_path,
+        Bounds, WindowsDiscoveryBackend, command_output_means_backend_unavailable,
+        discover_windows_targets_with_backend, headless_wayland_capture_diagnostic,
+        is_filtered_system_window, is_headless_wayland_monitor, is_macos_permission_error,
+        macos_discovery_script, parse_simple_geometry, parse_wlr_randr_mode,
+        wayland_discovery_backend_error, wayland_discovery_backend_tools_on_path,
     };
     use crate::platform::{
         AdapterContext, Capability, CaptureTargetKind, DesktopSession, PlatformAdapterError,
@@ -1330,6 +1337,22 @@ mod tests {
             script.contains("kind: 'window'"),
             "macOS discovery script must emit kind: 'window' targets (bd-845b47)."
         );
+    }
+
+    #[test]
+    fn inactive_wayland_compositor_output_is_treated_as_backend_unavailable() {
+        assert!(command_output_means_backend_unavailable(
+            "",
+            "hyprland_instance_signature not set! (is hyprland running?)"
+        ));
+        assert!(command_output_means_backend_unavailable(
+            "unable to connect to socket",
+            ""
+        ));
+        assert!(!command_output_means_backend_unavailable(
+            "{not-json}",
+            "syntax error"
+        ));
     }
 
     #[test]
