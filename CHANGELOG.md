@@ -7,6 +7,11 @@ Tendril follows [Semantic Versioning](https://semver.org/). Release notes are cu
 
 ## [Unreleased]
 
+## [0.0.2] - 2026-05-17
+
+### Added
+- Tendril MCP stdio now exposes the shared `updatable-cli` self-update tools: `self_update_status`, `self_update_check`, and `self_update_run`. This matches the ring-mods reference pattern so long-running MCP clients can inspect and apply Tendril binary updates dynamically without bespoke Tendril-specific update wiring (bd-91b7f5).
+
 ### Fixed
 - Wayland capture now reserves part of the command deadline for the `grim` fallback when that backend is available. If `xdg-desktop-portal` advertises a screenshot path but hangs waiting on an invisible compositor/permission dialog, Tendril abandons the portal-first attempt promptly and captures through `grim` instead of spending the whole default timeout before the fallback can run (bd-d522bf).
 - macOS `tendril list` again enumerates open windows alongside displays. The JXA discovery script's `CGWindowListCopyWindowInfo` call returns a `CFArrayRef`; `ObjC.deepUnwrap` already wraps it via `ObjC.castRefToObject`, but there was no regression test pinning the cast in place. A previous build deployed to operator macOS hosts shipped an older script that fed the raw `CFArrayRef` into `deepUnwrap` and silently produced an empty array, so `tendril list --json` returned only `kind=display` entries and `tendril --window <id>` was unreachable from remote agents. Added a regression test that asserts the discovery script wraps the CFArrayRef with `ObjC.castRefToObject` before `ObjC.deepUnwrap` and still emits `kind: 'window'` targets, so future edits cannot silently drop window enumeration on macOS again (bd-845b47).
