@@ -7,6 +7,11 @@ Tendril follows [Semantic Versioning](https://semver.org/). Release notes are cu
 
 ## [Unreleased]
 
+## [0.0.3] - 2026-05-17
+
+### Fixed
+- macOS release archives now match the Tendril/updatable-cli self-update contract by packaging binaries under `tendril-<version>-<target>/` instead of at the tarball root. This lets `tendril update` and the MCP `self_update_run` tool find and verify the downloaded binary on macOS (bd-3d3f4b).
+
 ## [0.0.2] - 2026-05-17
 
 ### Added

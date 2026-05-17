@@ -161,10 +161,10 @@
           {
             nativeBuildInputs = [ pkgs.coreutils pkgs.gnutar pkgs.gzip ];
           } ''
-          mkdir -p "$out" stage
-          cp ${tendril}/bin/tendril stage/tendril
-          cp ${tendril}/bin/tendril-headless stage/tendril-headless
-          chmod +x stage/tendril stage/tendril-headless
+          mkdir -p "$out" "stage/tendril-${workspaceVersion}-${releaseTarget}"
+          cp ${tendril}/bin/tendril "stage/tendril-${workspaceVersion}-${releaseTarget}/tendril"
+          cp ${tendril}/bin/tendril-headless "stage/tendril-${workspaceVersion}-${releaseTarget}/tendril-headless"
+          chmod +x "stage/tendril-${workspaceVersion}-${releaseTarget}/tendril" "stage/tendril-${workspaceVersion}-${releaseTarget}/tendril-headless"
           tar \
             --sort=name \
             --mtime='UTC 1970-01-01' \
@@ -174,8 +174,7 @@
             --use-compress-program="gzip -n" \
             -cf "$out/${releaseArtifactName}" \
             -C stage \
-            tendril \
-            tendril-headless
+            "tendril-${workspaceVersion}-${releaseTarget}"
           (
             cd "$out"
             sha256sum "${releaseArtifactName}" > "${releaseChecksumName}"
