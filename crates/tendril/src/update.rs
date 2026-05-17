@@ -4,11 +4,19 @@ use std::process::Command as ProcessCommand;
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use updatable_cli::{AssetStrategy, UpdaterConfig};
 
 use crate::cli::UpdateCommand;
 use crate::error::TendrilError;
 
 const DEFAULT_REPOSITORY: &str = "harryaskham/tendril";
+
+#[must_use]
+pub fn updater_config() -> UpdaterConfig {
+    let mut config = UpdaterConfig::new("tendril", env!("CARGO_PKG_VERSION"), DEFAULT_REPOSITORY);
+    config.asset_strategy = AssetStrategy::TendrilStyle;
+    config
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UpdateOutput {

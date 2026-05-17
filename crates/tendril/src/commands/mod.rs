@@ -39,7 +39,7 @@ use crate::platform::{
     AudioSourceKind as PlatformAudioSourceKind, Capability, CaptureTargetKind, PlatformAdapter,
     TargetDiscoveryRequest, adapter_for_context,
 };
-use crate::update::{execute_update, render_update_human};
+use crate::update::{execute_update, render_update_human, updater_config};
 use crate::versioning::{execute_version_bump, render_version_bump_human};
 
 #[derive(Clone)]
@@ -538,6 +538,7 @@ fn build_tool_router() -> ToolRouter<CommandContext> {
                 .map_err(|error| TendrilError::serialization(error.to_string()))
         },
     );
+    updatable_cli::register_update_tool(&mut router, |_context: &CommandContext| updater_config());
     router
 }
 
@@ -1988,7 +1989,10 @@ mod tests {
                 "run",
                 "listen",
                 "clipboard_get",
-                "clipboard_set"
+                "clipboard_set",
+                "self_update_status",
+                "self_update_check",
+                "self_update_run"
             ]
         );
     }
@@ -2024,6 +2028,18 @@ mod tests {
             .iter()
             .find(|tool| tool.name == "clipboard_set")
             .expect("clipboard_set tool should be registered");
+        let self_update_status = tools
+            .iter()
+            .find(|tool| tool.name == "self_update_status")
+            .expect("self_update_status tool should be registered");
+        let self_update_check = tools
+            .iter()
+            .find(|tool| tool.name == "self_update_check")
+            .expect("self_update_check tool should be registered");
+        let self_update_run = tools
+            .iter()
+            .find(|tool| tool.name == "self_update_run")
+            .expect("self_update_run tool should be registered");
 
         assert_eq!(
             list.input_schema,
@@ -2060,6 +2076,11 @@ mod tests {
             serde_json::to_value(schemars::schema_for!(ClipboardSetRequest))
                 .expect("clipboard_set schema should serialize")
         );
+        let empty_schema = serde_json::to_value(schemars::schema_for!(updatable_cli::EmptyArgs))
+            .expect("self-update empty schema should serialize");
+        assert_eq!(self_update_status.input_schema, empty_schema);
+        assert_eq!(self_update_check.input_schema, empty_schema);
+        assert_eq!(self_update_run.input_schema, empty_schema);
     }
 
     #[test]

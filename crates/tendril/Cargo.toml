@@ -25,7 +25,7 @@ ashpd.workspace = true
 base64.workspace = true
 clap.workspace = true
 image.workspace = true
-mcp-cli = { path = "../mcp-cli" }
+mcp-cli = { git = "https://github.com/harryaskham/mcp-cli", branch = "main" }
 pollster.workspace = true
 tendril-win32 = { path = "../tendril-win32" }
 schemars.workspace = true
@@ -36,6 +36,7 @@ thiserror.workspace = true
 time.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+updatable-cli.workspace = true
 zbus.workspace = true
 x11rb = { version = "0.13.2", features = ["image", "randr", "xtest"] }
 tempfile = "3.15.0"

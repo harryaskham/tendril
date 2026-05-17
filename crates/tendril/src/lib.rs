@@ -42,6 +42,7 @@ where
     I: IntoIterator<Item = T>,
     T: Into<OsString>,
 {
+    let _ = updatable_cli::maybe_apply_staged_update("tendril");
     let args = args.into_iter().map(Into::into).collect::<Vec<OsString>>();
     let cli = TendrilCli::parse_from(args.clone());
 

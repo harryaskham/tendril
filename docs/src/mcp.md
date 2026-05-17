@@ -11,11 +11,19 @@ tendril mcp stdio
 The current MCP server publishes these tools:
 
 - `list`
+- `list_elements`
 - `capture`
 - `run`
 - `listen`
+- `clipboard_get`
+- `clipboard_set`
+- `self_update_status`
+- `self_update_check`
+- `self_update_run`
 
 Those tools are backed by the same typed command models used by the CLI, which keeps validation and result envelopes aligned across both surfaces. MCP `run` calls use the same default focus-restoration and host-local execution lock/queue behavior as CLI `tendril run`; pass `restore_focus`, `no_restore_focus`, `no_lock`, `lock_timeout_ms`, `lock_stale_ms`, or `lock_path` in the tool arguments when an advanced workflow needs to tune focus handling or the queue.
+
+The `self_update_*` tools come from the shared [`updatable-cli`](https://github.com/harryaskham/updatable-cli) integration, matching the ring-mods reference pattern. They let an MCP client inspect the current install path, check GitHub releases, and stage/promote a newer Tendril binary without adding Tendril-specific update protocol code to the client.
 
 For the Pi/Cacophony-facing launch contract, environment assumptions, and stable tool argument summary, see the dedicated [Pi and Cacophony MCP integration contract](reference/pi-cacophony-mcp-contract.md).
 

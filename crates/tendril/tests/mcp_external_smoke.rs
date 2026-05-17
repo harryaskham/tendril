@@ -37,6 +37,15 @@ fn external_client_smoke_script_verifies_stdio_contract_against_built_binary() {
                 "arguments": {}
             }
         }),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "tools/call",
+            "params": {
+                "name": "self_update_status",
+                "arguments": {}
+            }
+        }),
     ];
 
     let mut command = Command::new(env!("CARGO_BIN_EXE_tendril"));
@@ -69,7 +78,7 @@ fn external_client_smoke_script_verifies_stdio_contract_against_built_binary() {
     );
 
     let responses = parse_framed_responses(&output.stdout);
-    assert_eq!(responses.len(), 3);
+    assert_eq!(responses.len(), 4);
 
     let initialize = &responses[0];
     assert_eq!(initialize["result"]["serverInfo"]["name"], "tendril");
@@ -90,7 +99,10 @@ fn external_client_smoke_script_verifies_stdio_contract_against_built_binary() {
             "run",
             "listen",
             "clipboard_get",
-            "clipboard_set"
+            "clipboard_set",
+            "self_update_status",
+            "self_update_check",
+            "self_update_run"
         ]
     );
 
@@ -153,6 +165,27 @@ fn external_client_smoke_script_verifies_stdio_contract_against_built_binary() {
         }
         other => panic!("unexpected tools/call(list) status: {other:?}\nresponse: {structured}"),
     }
+
+    let update_status = &responses[3]["result"]["structuredContent"];
+    assert_eq!(responses[3]["result"]["isError"], false);
+    assert_eq!(update_status["meta"]["command"], "self_update_status");
+    assert_eq!(update_status["data"]["tool"], "tendril");
+    assert_eq!(
+        update_status["data"]["current_version"],
+        env!("CARGO_PKG_VERSION")
+    );
+    assert!(
+        update_status["data"]["installed_path"]
+            .as_str()
+            .expect("installed path")
+            .ends_with("/tendril")
+    );
+    assert!(
+        update_status["data"]["next_path"]
+            .as_str()
+            .expect("next path")
+            .ends_with("/tendril_next")
+    );
 }
 
 fn tool<'a>(tools: &'a [Value], name: &str) -> &'a Value {

@@ -50,7 +50,7 @@ nix develop --command ./scripts/build-docs.sh
 ## Workspace layout
 
 - `crates/tendril`: the Tendril CLI
-- `crates/mcp-cli`: reusable JSON-envelope and MCP stdio support, pinned as a git submodule from `https://github.com/harryaskham/mcp-cli`
+- `crates/mcp-cli`: reusable JSON-envelope and MCP stdio support, pinned from `https://github.com/harryaskham/mcp-cli`; the workspace package and Tendril dependency stay on the same upstream revision so the shared `updatable-cli` MCP extension can reuse the same `mcp-cli` types
 - `docs/`: mdBook-based documentation site source
 - `flake.nix`: dev shell, packages, checks, and reproducible build outputs
 - `.cacophony/config.yaml`: project bootstrap plus managed build/test defaults
@@ -405,6 +405,11 @@ tendril update                         # installs latest matching platform binar
 tendril update --dry-run               # shows the planned latest-release query and install path
 tendril update --release-version 0.0.1 # installs a specific release version
 ```
+
+The MCP stdio server also registers the shared `updatable-cli` tools
+`self_update_status`, `self_update_check`, and `self_update_run`, following the
+same reference pattern used by ring-mods. MCP clients can therefore inspect and
+apply Tendril binary updates without bespoke Tendril update wiring.
 
 Pushing a `v*` tag or landing a commit that changes the workspace version on
 `main` starts the GitHub Actions release workflow. The workflow reruns pre-merge
