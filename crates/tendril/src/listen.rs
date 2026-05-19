@@ -242,7 +242,7 @@ fn recorders_for(platform: PlatformKind, backend: Option<AudioBackend>) -> Vec<R
                 },
             ],
         },
-        PlatformKind::Windows11 => Vec::new(),
+        PlatformKind::Windows11 | PlatformKind::Android => Vec::new(),
     }
 }
 

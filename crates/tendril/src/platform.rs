@@ -33,6 +33,7 @@ pub enum PlatformKind {
     MacOs,
     Linux,
     Windows11,
+    Android,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -42,6 +43,7 @@ pub enum DesktopSession {
     X11,
     Wayland,
     WindowsDesktop,
+    AndroidDevice,
     Unknown,
 }
 
@@ -3118,7 +3120,7 @@ fn macos_key_code(key: &str) -> Result<u16, TendrilError> {
 pub fn adapter_for_context(context: AdapterContext) -> Box<dyn PlatformAdapter> {
     match context.platform {
         PlatformKind::MacOs => Box::new(MacOsAdapter::new(context)),
-        PlatformKind::Linux => Box::new(LinuxAdapter::new(context)),
+        PlatformKind::Linux | PlatformKind::Android => Box::new(LinuxAdapter::new(context)),
         PlatformKind::Windows11 => Box::new(WindowsAdapter::new(context)),
     }
 }

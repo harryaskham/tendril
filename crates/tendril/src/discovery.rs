@@ -26,6 +26,15 @@ pub fn discover_targets(
         PlatformKind::Linux => discover_linux_targets(context),
         PlatformKind::Windows11 => discover_windows_targets(context),
         PlatformKind::MacOs => discover_macos_targets(context),
+        PlatformKind::Android => Err(PlatformAdapterError::unsupported(
+            Capability::TargetDiscovery,
+            context.platform,
+            CapabilityErrorReason::UnsupportedPlatform,
+            "Use `tendril --android <serial> list` for Android target discovery.",
+            Some(
+                "Pass an adb serial, or use `--android auto` when exactly one device is connected.",
+            ),
+        )),
     }
 }
 
@@ -54,7 +63,8 @@ fn discover_linux_targets(
         DesktopSession::Wayland => discover_wayland_targets(context),
         DesktopSession::Unknown
         | DesktopSession::MacOsWindowServer
-        | DesktopSession::WindowsDesktop => Err(PlatformAdapterError::unsupported(
+        | DesktopSession::WindowsDesktop
+        | DesktopSession::AndroidDevice => Err(PlatformAdapterError::unsupported(
             Capability::TargetDiscovery,
             context.platform,
             CapabilityErrorReason::UnsupportedSession,

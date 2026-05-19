@@ -49,6 +49,14 @@ pub struct TendrilCli {
     #[arg(long, global = true)]
     pub wsl_tunnel: bool,
 
+    /// Drive an Android device or emulator through adb instead of the desktop backend.
+    ///
+    /// Pass an adb serial such as `sgu24:5555`, `emulator-5554`, or `auto` to
+    /// select the single connected device. When omitted, Tendril also honors
+    /// TENDRIL_ANDROID_SERIAL.
+    #[arg(long, global = true, value_name = "SERIAL")]
+    pub android: Option<String>,
+
     #[command(subcommand)]
     pub command: Option<Command>,
 }
@@ -57,7 +65,7 @@ impl TendrilCli {
     #[must_use]
     pub fn agent_help() -> String {
         format!(
-            "Tendril is a stateless desktop inspection and control CLI for agents.\n\nWorkflow:\n  1. list targets:   tendril list --json\n  2. remote targets: tendril --remote me@box list --json\n  3. WSL host:       tendril --wsl-tunnel list --json\n  4. list elements:  tendril --window <id> list-elements --json\n  4. capture state:  tendril --window <id> capture --json\n  5. save to file:   tendril --window <id> capture -o /tmp/screen.png\n  6. run input:      tendril --window <id> run 'send(\"hello\")'\n  7. click element:  tendril --window <id> run 'click(33)'\n  8. read clipboard: tendril clipboard get --json\n  9. reuse a target: eval \"$(tendril --window <id> alias --name desk)\"\n\nCommands:\n  list           Discover windows and displays\n  list-elements  Discover UI elements for a window/display or globally\n  capture        Capture a screenshot from a window or display\n  run            Type text or execute an input sequence against a target\n  clipboard      Read or serve Linux/X11 text selections for deterministic browser↔OS transfer\n  alias          Emit a shell helper that pre-fills --window/--display\n  listen         Probe supported audio capture paths\n  update         Download and install a Tendril release binary\n  version        Inspect or bump the workspace release version\n  mcp            Serve Tendril over MCP stdio\n\nUse --json for machine-readable success/error envelopes.\nUse --remote user@host to proxy any invocation over ssh; Linux remotes auto-discover X11/Wayland session variables when SSH did not inherit them.\nUse -o/--output on capture to save the image directly to a file.\nUse --help on any subcommand for detailed flags.\n\n{WORKFLOW_HINT}\n"
+            "Tendril is a stateless desktop inspection and control CLI for agents.\n\nWorkflow:\n  1. list targets:    tendril list --json\n  2. remote targets:  tendril --remote me@box list --json\n  3. WSL host:        tendril --wsl-tunnel list --json\n  4. Android device:  tendril --android sgu24:5555 list --json\n  5. list elements:   tendril --window <id> list-elements --json\n  6. capture state:   tendril --window <id> capture --json\n  7. save to file:    tendril --window <id> capture -o /tmp/screen.png\n  8. run input:       tendril --window <id> run 'send(\"hello\")'\n  9. click element:   tendril --window <id> run 'click(33)'\n  10. read clipboard: tendril clipboard get --json\n  11. reuse a target: eval \"$(tendril --window <id> alias --name desk)\"\n\nCommands:\n  list           Discover windows, displays, and Android devices\n  list-elements  Discover UI elements for a window/display or Android device\n  capture        Capture a screenshot from a window/display/Android target\n  run            Type text or execute an input sequence against a target\n  clipboard      Read or serve Linux/X11 text selections for deterministic browser↔OS transfer\n  alias          Emit a shell helper that pre-fills --window/--display\n  listen         Probe supported audio capture paths\n  update         Download and install a Tendril release binary\n  version        Inspect or bump the workspace release version\n  mcp            Serve Tendril over MCP stdio\n\nUse --json for machine-readable success/error envelopes.\nUse --remote user@host to proxy any invocation over ssh; Linux remotes auto-discover X11/Wayland session variables when SSH did not inherit them.\nUse -o/--output on capture to save the image directly to a file.\nUse --help on any subcommand for detailed flags.\n\n{WORKFLOW_HINT}\n"
         )
     }
 }

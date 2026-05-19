@@ -47,6 +47,17 @@ nix build .#tendril .#mcp-cli          # build workspace packages
 nix develop --command ./scripts/build-docs.sh
 ```
 
+Android device smoke examples:
+
+```bash
+tendril --android auto list --json
+tendril --android sgu24:5555 list-elements --json
+tendril --android sgu24:5555 capture -o android.png
+tendril --android sgu24:5555 run 'press("launch:com.example.app"),wait(1s),click(231,1905),Back'
+```
+
+See [the Android backend reference](docs/src/reference/android.md) for supported ADB/UIAutomator capabilities and safety limits.
+
 ## Workspace layout
 
 - `crates/tendril`: the Tendril CLI

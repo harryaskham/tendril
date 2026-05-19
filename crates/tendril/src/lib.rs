@@ -1,3 +1,4 @@
+pub mod android;
 pub mod capture;
 pub mod cli;
 pub mod clipboard;

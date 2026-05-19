@@ -22,6 +22,7 @@
   - [Execution lock and queue](reference/execution-lock.md)
   - [Pi and Cacophony MCP integration contract](reference/pi-cacophony-mcp-contract.md)
   - [Accessibility element contract](reference/accessibility.md)
+  - [Android device backend](reference/android.md)
   - [Platform support and rollout status](reference/platform-support.md)
   - [Runtime dependency audit](reference/runtime-dependencies.md)
   - [Nix wrapper dependency audit](reference/nix-runtime-dependency-audit.md)

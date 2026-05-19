@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tracing::info;
 
+use crate::android::{AndroidDevice, AndroidDeviceSummary};
 use crate::capture::{execute_capture, render_capture_human};
 use crate::cli::{
     AliasCommand, CaptureCommand, ClipboardCommand, ClipboardGetCommand, ClipboardSetCommand,
@@ -285,6 +286,10 @@ fn dispatch_cli_command(
     command: &Command,
     config: &TendrilConfig,
 ) -> Result<CommandOutput, TendrilError> {
+    if let Some(selection) = android_selection_from_cli(cli) {
+        return dispatch_android_cli_command(cli, command, config, &selection);
+    }
+
     match command {
         Command::List(command) => dispatch_list_command(command, cli.json),
         Command::ListElements(command) => dispatch_list_elements_command(cli, command),
@@ -299,6 +304,117 @@ fn dispatch_cli_command(
         Command::Version(command) => dispatch_version_command(command, cli.json),
         Command::Mcp(_) => unreachable!("MCP commands are dispatched separately"),
     }
+}
+
+fn android_selection_from_cli(cli: &TendrilCli) -> Option<String> {
+    cli.android
+        .clone()
+        .or_else(|| std::env::var("TENDRIL_ANDROID_SERIAL").ok())
+        .filter(|value| !value.trim().is_empty())
+}
+
+fn dispatch_android_cli_command(
+    cli: &TendrilCli,
+    command: &Command,
+    config: &TendrilConfig,
+    selection: &str,
+) -> Result<CommandOutput, TendrilError> {
+    if cli.window.is_some() || cli.display.is_some() {
+        return Err(TendrilError::validation(
+            "--android selects the Android target; do not combine it with --window or --display",
+        )
+        .with_code("invalid_android_target_scope"));
+    }
+    let device = AndroidDevice::resolve(Some(selection))?;
+    match command {
+        Command::List(_) => {
+            let output = AndroidListOutput {
+                device: device.summary(),
+                targets: device.list_output(),
+            };
+            Ok(render_command_output(
+                "list",
+                cli.json,
+                output,
+                render_android_list_human,
+            ))
+        }
+        Command::ListElements(command) => {
+            let output = device.list_elements_output(command.include_offscreen)?;
+            Ok(render_command_output(
+                "list-elements",
+                cli.json,
+                output,
+                render_list_elements_human,
+            ))
+        }
+        Command::Capture(command) => {
+            let output =
+                device.capture_output(command.compression.unwrap_or(config.capture.compression))?;
+            if let Some(path) = &command.output {
+                write_capture_to_file(&output.image_base64, path)?;
+            }
+            Ok(render_command_output(
+                "capture",
+                cli.json,
+                output,
+                render_capture_human,
+            ))
+        }
+        Command::Run(command) => {
+            let input_definition = command.input_definition.as_deref().ok_or_else(|| {
+                TendrilError::validation("run requires text or a DSL input definition")
+                    .with_code("invalid_run_input")
+                    .with_field("input_definition")
+            })?;
+            let payload = parse_input_definition(input_definition)?;
+            let output = device.execute_payload(&payload)?;
+            Ok(render_command_output(
+                "run",
+                cli.json,
+                output,
+                render_run_human,
+            ))
+        }
+        Command::Listen(_)
+        | Command::Clipboard(_)
+        | Command::Alias(_)
+        | Command::Update(_)
+        | Command::Version(_)
+        | Command::Mcp(_) => Err(TendrilError::unsupported_capability(
+            "android_command_unsupported",
+            format!(
+                "--android does not support the `{}` command",
+                command.name()
+            ),
+            Some(json!({ "command": command.name() })),
+        )),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct AndroidListOutput {
+    device: AndroidDeviceSummary,
+    targets: ListOutput,
+}
+
+fn render_android_list_human(output: &AndroidListOutput) -> String {
+    let mut rendered = String::new();
+    let _ = writeln!(
+        rendered,
+        "android device: {} state={} model={} wm_size={} wm_density={} artifacts={}",
+        output.device.serial,
+        output.device.state,
+        output.device.model.as_deref().unwrap_or("<unknown>"),
+        output.device.wm_size.as_deref().unwrap_or("<unknown>"),
+        output.device.wm_density.as_deref().unwrap_or("<unknown>"),
+        output.device.artifact_dir.display(),
+    );
+    if let Some(focus) = &output.device.focused_window {
+        let _ = writeln!(rendered, "focused: {focus}");
+    }
+    rendered.push_str(&render_list_human(&output.targets));
+    rendered
 }
 
 fn dispatch_list_command(
@@ -1782,6 +1898,7 @@ mod tests {
             display: display.map(str::to_owned),
             remote: None,
             wsl_tunnel: false,
+            android: None,
             command: Some(Command::Mcp(McpCommand {
                 command: McpSubcommand::Stdio,
             })),
@@ -1841,6 +1958,7 @@ mod tests {
             display: None,
             remote: None,
             wsl_tunnel: false,
+            android: None,
             command: None,
         };
 
@@ -2408,6 +2526,7 @@ mod tests {
                 display: Some("1".to_owned()),
                 remote: None,
                 wsl_tunnel: false,
+                android: None,
                 command: Some(Command::Capture(CaptureCommand::default())),
             },
             &TendrilConfig::default(),
@@ -2441,6 +2560,7 @@ mod tests {
                 display: None,
                 remote: None,
                 wsl_tunnel: false,
+                android: None,
                 command: Some(Command::Run(RunCommand {
                     input_definition: None,
                     ..RunCommand::default()
@@ -2682,6 +2802,7 @@ mod tests {
             display: None,
             remote: None,
             wsl_tunnel: false,
+            android: None,
             command: Some(Command::Capture(CaptureCommand::default())),
         };
         assert!(matches!(cli.command, Some(Command::Capture(_))));
