@@ -72,6 +72,12 @@
         craneLib = crane.mkLib pkgs;
         parentSrc = craneLib.cleanCargoSource ./.;
         fullParentSrc = lib.cleanSource ./.;
+        # Keep the vendored workspace crate and Cargo's git source identity in
+        # sync. Do not replace the downstream mcp-cli git dependency with a
+        # root [patch] path entry without also testing the crane cargoArtifacts
+        # build: crane-cleaned/grafted sources can rewrite patch tables so a
+        # local Cargo build succeeds while Nix resolves updatable-cli against
+        # the wrong mcp-cli API. See docs/src/mcp.md.
         graftMcpCli = name: baseSrc: pkgs.runCommand name { } ''
           cp -r ${baseSrc} "$out"
           chmod -R u+w "$out"

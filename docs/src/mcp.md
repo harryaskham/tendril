@@ -36,6 +36,15 @@ The `crates/mcp-cli` git submodule (`https://github.com/harryaskham/mcp-cli`) pr
 - typed tool routing, and
 - framed stdio transport handling.
 
+### Nix/crane source-grafting footgun
+
+`flake.nix` grafts the pinned `mcp-cli` flake input into `crates/mcp-cli` before crane builds the workspace. Keep that grafted source and Cargo's dependency source identity aligned:
+
+- `crates/tendril` intentionally depends on `mcp-cli` through the same git source/revision that `updatable-cli` expects, matching the ring-mods reference pattern.
+- Do **not** rely on a root `[patch."https://github.com/harryaskham/mcp-cli"]` path override just because a local `cargo build` succeeds. The crane-cleaned/grafted source can present that patch table differently during `cargoArtifacts`, so `updatable-cli` may resolve against a different `mcp-cli` API in the Nix build.
+- If you change the `mcp-cli` dependency strategy, validate with the Nix path (`nix build .#tendril .#mcp-cli` or the queued equivalent) before landing, not only with a local Cargo build.
+
+
 ## Minimal wire flow
 
 A raw client should:
