@@ -88,30 +88,94 @@
         };
         cargoArtifacts = craneLib.buildDepsOnly commonArgs;
 
-        linuxRuntimeDeps = lib.optionals pkgs.stdenv.isLinux (with pkgs; [
-          # Wayland compositor discovery
-          hyprland # hyprctl
-          sway # swaymsg
-          wlr-randr
-          # Wayland screen capture fallback
-          grim
-          # Wayland input injection
-          ydotool
-          wtype
-        ]);
+        commandName = command: command.name or command.exe;
+        commandPackageName = command: command.package.pname or command.package.name;
+        linkRuntimeCommands = name: commands: pkgs.runCommand name { } (
+          ''
+            mkdir -p "$out/bin"
+          ''
+          + lib.concatMapStringsSep "\n"
+            (command: ''
+              ln -s ${lib.getExe' command.package command.exe} "$out/bin/${commandName command}"
+            '')
+            commands
+        );
+        runtimeCommandAudit = name: commands: pkgs.runCommand name { } (
+          ''
+            mkdir -p "$out"
+            cat > "$out/README.md" <<'EOF'
+            # Tendril Linux runtime command audit
 
-        linuxHeadlessDeps = lib.optionals pkgs.stdenv.isLinux (with pkgs; [
-          bash
-          chromium
-          coreutils
-          firefox
-          openbox
-          python3
-          xdpyinfo
-          xsetroot
-          xterm
-          xvfb
-        ]);
+            This check records the exact executables Tendril exposes through its
+            Linux Nix wrappers. Keep this list command-level rather than linking
+            whole package `bin/` directories; profile/buildEnv collisions are
+            caused by overlapping installed paths, so Tendril should avoid
+            contributing incidental tools it never executes.
+            EOF
+            cat > "$out/commands.tsv" <<'EOF'
+            command	package	executable
+            EOF
+          ''
+          + lib.concatMapStringsSep "\n"
+            (command: ''
+              test -x ${lib.getExe' command.package command.exe}
+              printf '%s\t%s\t%s\n' '${commandName command}' '${commandPackageName command}' '${lib.getExe' command.package command.exe}' >> "$out/commands.tsv"
+            '')
+            commands
+          + ''
+
+            duplicates=$(cut -f1 "$out/commands.tsv" | tail -n +2 | sort | uniq -d)
+            if [ -n "$duplicates" ]; then
+              printf 'duplicate runtime command names:\n%s\n' "$duplicates" >&2
+              exit 1
+            fi
+          ''
+        );
+
+        linuxRuntimeCommands = lib.optionals pkgs.stdenv.isLinux [
+          # Wayland compositor discovery
+          { package = pkgs.hyprland; exe = "hyprctl"; }
+          { package = pkgs.sway; exe = "swaymsg"; }
+          { package = pkgs.wlr-randr; exe = "wlr-randr"; }
+          # Wayland screen capture fallback
+          { package = pkgs.grim; exe = "grim"; }
+          # Wayland input injection
+          { package = pkgs.ydotool; exe = "ydotool"; }
+          { package = pkgs.wtype; exe = "wtype"; }
+        ];
+
+        linuxHeadlessCommands = lib.optionals pkgs.stdenv.isLinux (
+          linuxRuntimeCommands ++ [
+            { package = pkgs.bash; exe = "bash"; }
+            { package = pkgs.bash; exe = "sh"; }
+            { package = pkgs.chromium; exe = "chromium"; }
+            { package = pkgs.coreutils; exe = "basename"; }
+            { package = pkgs.coreutils; exe = "cat"; }
+            { package = pkgs.coreutils; exe = "chmod"; }
+            { package = pkgs.coreutils; exe = "dirname"; }
+            { package = pkgs.coreutils; exe = "env"; }
+            { package = pkgs.coreutils; exe = "mkdir"; }
+            { package = pkgs.coreutils; exe = "mktemp"; }
+            { package = pkgs.coreutils; exe = "rm"; }
+            { package = pkgs.coreutils; exe = "sleep"; }
+            { package = pkgs.coreutils; exe = "tail"; }
+            { package = pkgs.coreutils; exe = "tr"; }
+            { package = pkgs.firefox; exe = "firefox"; }
+            { package = pkgs.gnugrep; exe = "grep"; }
+            { package = pkgs.openbox; exe = "openbox"; }
+            { package = pkgs.python3; exe = "python3"; }
+            { package = pkgs.xdpyinfo; exe = "xdpyinfo"; }
+            { package = pkgs.xsetroot; exe = "xsetroot"; }
+            { package = pkgs.xterm; exe = "xterm"; }
+            { package = pkgs.xvfb; exe = "Xvfb"; }
+          ]
+        );
+
+        linuxRuntimeDeps = lib.unique (map (command: command.package) linuxRuntimeCommands);
+        linuxHeadlessDeps = lib.unique (map (command: command.package) linuxHeadlessCommands);
+        linuxRuntimeBinPath = linkRuntimeCommands "tendril-linux-runtime-bin-path" linuxRuntimeCommands;
+        linuxHeadlessBinPath = linkRuntimeCommands "tendril-linux-headless-bin-path" linuxHeadlessCommands;
+        linuxRuntimeDependencyAudit = runtimeCommandAudit "tendril-linux-runtime-dependency-audit" linuxHeadlessCommands;
 
         tendril = craneLib.buildPackage (
           commonArgs
@@ -126,9 +190,9 @@
             '';
             postFixup = lib.optionalString pkgs.stdenv.isLinux ''
               wrapProgram $out/bin/tendril \
-                --suffix PATH : ${lib.makeBinPath linuxRuntimeDeps}
+                --suffix PATH : ${linuxRuntimeBinPath}/bin
               wrapProgram $out/bin/tendril-headless \
-                --prefix PATH : ${lib.makeBinPath (linuxRuntimeDeps ++ linuxHeadlessDeps)} \
+                --prefix PATH : ${linuxHeadlessBinPath}/bin \
                 --set-default TENDRIL_HEADLESS_TENDRIL_BIN "$out/bin/tendril"
             '';
             meta = {
@@ -244,7 +308,7 @@
           tendril = tendril;
           mcp-cli = mcpCli;
           releaseArtifact = releaseArtifact;
-          inherit clippy tests fmt docs;
+          inherit clippy tests fmt docs linuxRuntimeDependencyAudit;
         };
 
         devShells.default = pkgs.mkShell {
