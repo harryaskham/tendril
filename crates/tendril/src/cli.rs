@@ -53,7 +53,7 @@ pub struct TendrilCli {
     ///
     /// Pass an adb serial such as `sgu24:5555`, `emulator-5554`, or `auto` to
     /// select the single connected device. When omitted, Tendril also honors
-    /// TENDRIL_ANDROID_SERIAL.
+    /// `TENDRIL_ANDROID_SERIAL`.
     #[arg(long, global = true, value_name = "SERIAL")]
     pub android: Option<String>,
 

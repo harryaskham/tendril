@@ -82,6 +82,7 @@ impl AndroidDevice {
         &self.serial
     }
 
+    #[must_use]
     pub fn summary(&self) -> AndroidDeviceSummary {
         AndroidDeviceSummary {
             serial: self.serial.clone(),
@@ -110,6 +111,7 @@ impl AndroidDevice {
         }
     }
 
+    #[must_use]
     pub fn list_output(&self) -> ListOutput {
         let bounds = self.screen_bounds().unwrap_or(Bounds {
             x: 0,
@@ -473,6 +475,7 @@ impl AndroidDevice {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::struct_excessive_bools)]
 struct AndroidNode {
     text: Option<String>,
     content_desc: Option<String>,
@@ -499,8 +502,8 @@ impl AndroidNode {
     fn center(&self) -> Option<(i32, i32)> {
         self.bounds.as_ref().map(|bounds| {
             (
-                bounds.x.saturating_add((bounds.width / 2) as i32),
-                bounds.y.saturating_add((bounds.height / 2) as i32),
+                bounds.x.saturating_add(i32::try_from(bounds.width / 2).unwrap_or(i32::MAX)),
+                bounds.y.saturating_add(i32::try_from(bounds.height / 2).unwrap_or(i32::MAX)),
             )
         })
     }
