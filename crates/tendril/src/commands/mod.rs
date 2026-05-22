@@ -809,6 +809,14 @@ fn build_help_output() -> HelpOutput {
                 description: "Probe supported audio capture paths.".to_owned(),
             },
             HelpCommandSummary {
+                name: "update".to_owned(),
+                description: "Download and install a Tendril release binary.".to_owned(),
+            },
+            HelpCommandSummary {
+                name: "version".to_owned(),
+                description: "Inspect or bump the workspace release version.".to_owned(),
+            },
+            HelpCommandSummary {
                 name: "mcp stdio".to_owned(),
                 description: "Serve Tendril over MCP stdio.".to_owned(),
             },
@@ -1999,6 +2007,22 @@ mod tests {
                     value["data"]["workflow_steps"][5]["command"],
                     "tendril --window <id> run 'send(\"hello\")'"
                 );
+                let command_names: Vec<&str> = value["data"]["commands"]
+                    .as_array()
+                    .expect("commands array")
+                    .iter()
+                    .map(|command| {
+                        command["name"]
+                            .as_str()
+                            .expect("command summary should include a string name")
+                    })
+                    .collect();
+                for expected in ["list", "update", "version", "mcp stdio"] {
+                    assert!(
+                        command_names.contains(&expected),
+                        "expected JSON help command list to include {expected}; got {command_names:?}"
+                    );
+                }
             }
             _ => panic!("expected json output"),
         }
