@@ -121,7 +121,12 @@ impl Command {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Args, Serialize, Deserialize, JsonSchema)]
-pub struct ListCommand {}
+pub struct ListCommand {
+    /// Android only: include all launchable apps as switchable window targets.
+    #[arg(long = "all-apps")]
+    #[serde(default)]
+    pub all_apps: bool,
+}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Args, Serialize, Deserialize, JsonSchema)]
 pub struct ElementListCommand {

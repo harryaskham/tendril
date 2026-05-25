@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tracing::info;
 
-use crate::android::{AndroidDevice, AndroidDeviceSummary};
+use crate::android::{AndroidAppSummary, AndroidDevice, AndroidDeviceSummary};
 use crate::capture::{execute_capture, render_capture_human};
 use crate::cli::{
     AliasCommand, CaptureCommand, ClipboardCommand, ClipboardGetCommand, ClipboardSetCommand,
@@ -327,10 +327,21 @@ fn dispatch_android_cli_command(
     }
     let device = AndroidDevice::resolve(Some(selection))?;
     match command {
-        Command::List(_) => {
+        Command::List(command) => {
+            let active = device.active_app().ok().flatten();
+            let recent = device.recent_apps().unwrap_or_default();
+            let launchable = if command.all_apps {
+                device.launchable_apps().unwrap_or_default()
+            } else {
+                Vec::new()
+            };
+            let target_apps = android_target_apps(active.as_ref(), &recent, &launchable);
             let output = AndroidListOutput {
                 device: device.summary(),
-                targets: device.list_output(),
+                active_app: active,
+                recent_apps: recent,
+                launchable_apps: launchable,
+                targets: device.list_output_with_apps(&target_apps),
             };
             Ok(render_command_output(
                 "list",
@@ -395,7 +406,27 @@ fn dispatch_android_cli_command(
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 struct AndroidListOutput {
     device: AndroidDeviceSummary,
+    active_app: Option<AndroidAppSummary>,
+    recent_apps: Vec<AndroidAppSummary>,
+    launchable_apps: Vec<AndroidAppSummary>,
     targets: ListOutput,
+}
+
+fn android_target_apps(
+    active: Option<&AndroidAppSummary>,
+    recent: &[AndroidAppSummary],
+    launchable: &[AndroidAppSummary],
+) -> Vec<AndroidAppSummary> {
+    let mut apps = Vec::new();
+    if let Some(active) = active {
+        apps.push(active.clone());
+    }
+    apps.extend(recent.iter().cloned());
+    apps.extend(launchable.iter().cloned());
+    let mut seen = std::collections::HashSet::new();
+    apps.into_iter()
+        .filter(|app| seen.insert(app.package.clone()))
+        .collect()
 }
 
 fn render_android_list_human(output: &AndroidListOutput) -> String {
@@ -413,6 +444,15 @@ fn render_android_list_human(output: &AndroidListOutput) -> String {
     if let Some(focus) = &output.device.focused_window {
         let _ = writeln!(rendered, "focused: {focus}");
     }
+    if let Some(app) = &output.active_app {
+        let _ = writeln!(rendered, "active app: {}", app.package);
+    }
+    let _ = writeln!(
+        rendered,
+        "recent apps: {} launchable apps listed: {}",
+        output.recent_apps.len(),
+        output.launchable_apps.len()
+    );
     rendered.push_str(&render_list_human(&output.targets));
     rendered
 }

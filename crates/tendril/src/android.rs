@@ -27,7 +27,26 @@ pub struct AndroidDeviceSummary {
     pub wm_size: Option<String>,
     pub wm_density: Option<String>,
     pub focused_window: Option<String>,
+    pub active_app: Option<AndroidAppSummary>,
+    pub recent_apps: Vec<AndroidAppSummary>,
+    pub launchable_app_count: usize,
     pub artifact_dir: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AndroidAppSummary {
+    pub package: String,
+    pub activity: Option<String>,
+    pub label: Option<String>,
+    pub state: AndroidAppState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AndroidAppState {
+    Active,
+    Recent,
+    Launchable,
 }
 
 #[derive(Debug, Clone)]
@@ -107,37 +126,65 @@ impl AndroidDevice {
                 .map(|value| value.trim().to_owned())
                 .filter(|value| !value.is_empty()),
             focused_window: self.focused_window().ok(),
+            active_app: self.active_app().ok().flatten(),
+            recent_apps: self.recent_apps().unwrap_or_default(),
+            launchable_app_count: self.launchable_apps().map_or(0, |apps| apps.len()),
             artifact_dir: self.artifact_dir.clone(),
         }
     }
 
     #[must_use]
     pub fn list_output(&self) -> ListOutput {
+        self.list_output_with_apps(&[])
+    }
+
+    #[must_use]
+    pub fn list_output_with_apps(&self, apps: &[AndroidAppSummary]) -> ListOutput {
         let bounds = self.screen_bounds().unwrap_or(Bounds {
             x: 0,
             y: 0,
             width: 1,
             height: 1,
         });
-        ListOutput {
-            adapter: android_adapter_info(),
-            permissions: Vec::new(),
-            targets: vec![TargetDescriptor {
-                id: android_target_id(&self.serial),
-                kind: TargetKind::Display,
-                name: format!("Android device {}", self.serial),
-                title: self.summary().focused_window,
-                bounds,
+        let summary = self.summary();
+        let mut targets = vec![TargetDescriptor {
+            id: android_target_id(&self.serial),
+            kind: TargetKind::Display,
+            name: format!("Android device {}", self.serial),
+            title: summary.focused_window.clone(),
+            bounds: bounds.clone(),
+            scale_factor: ScaleFactor::identity(),
+            capabilities: CapabilitySet {
+                capture: true,
+                input: true,
+                audio: false,
+            },
+            diagnostics: Vec::new(),
+            app_name: summary.model,
+            process_id: None,
+        }];
+        for app in apps {
+            targets.push(TargetDescriptor {
+                id: android_app_target_id(&self.serial, &app.package),
+                kind: TargetKind::Window,
+                name: app.label.clone().unwrap_or_else(|| app.package.clone()),
+                title: app.activity.clone(),
+                bounds: bounds.clone(),
                 scale_factor: ScaleFactor::identity(),
                 capabilities: CapabilitySet {
-                    capture: true,
+                    capture: false,
                     input: true,
                     audio: false,
                 },
                 diagnostics: Vec::new(),
-                app_name: self.summary().model,
+                app_name: Some(app.package.clone()),
                 process_id: None,
-            }],
+            });
+        }
+        ListOutput {
+            adapter: android_adapter_info(),
+            permissions: Vec::new(),
+            targets,
         }
     }
 
@@ -285,28 +332,7 @@ impl AndroidDevice {
                 Ok(())
             }
             InputAction::ElementClick { id } => {
-                if let Some(package) = id
-                    .strip_prefix("launch:")
-                    .or_else(|| id.strip_prefix("package:"))
-                {
-                    return self.launch_package(package);
-                }
-                if cached_nodes.is_none() {
-                    *cached_nodes = Some(self.dump_nodes()?);
-                }
-                let nodes = cached_nodes.as_ref().expect("nodes just populated");
-                let node = find_node_for_element_id(nodes, id).ok_or_else(|| {
-                    TendrilError::target_not_found("android_element", id.clone())
-                        .with_detail_entry("action_index", serde_json::json!(action_index))
-                })?;
-                let (x, y) = node.center().ok_or_else(|| {
-                    TendrilError::execution_failure(
-                        "android_element_missing_bounds",
-                        format!("Android element `{id}` did not expose usable bounds"),
-                        Some(action_index),
-                    )
-                })?;
-                self.tap(x, y)
+                self.execute_android_selector(id, action_index, cached_nodes)
             }
             InputAction::Hold { .. } | InputAction::Release { .. } => {
                 Err(TendrilError::unsupported_capability(
@@ -316,6 +342,148 @@ impl AndroidDevice {
                 ))
             }
         }
+    }
+
+    fn execute_android_selector(
+        &self,
+        id: &str,
+        action_index: usize,
+        cached_nodes: &mut Option<Vec<AndroidNode>>,
+    ) -> Result<(), TendrilError> {
+        if let Some(package) = id
+            .strip_prefix("launch:")
+            .or_else(|| id.strip_prefix("package:"))
+            .or_else(|| id.strip_prefix("open:"))
+            .or_else(|| id.strip_prefix("switch:"))
+        {
+            return self.launch_package(package);
+        }
+        match id {
+            "android:back" => return self.key_event("BACK"),
+            "android:home" => return self.key_event("HOME"),
+            "android:recents" => return self.key_event("APP_SWITCH"),
+            "android:assistant" => return self.key_event("ASSIST"),
+            "android:notifications" => {
+                return self
+                    .adb_text(["shell", "cmd", "statusbar", "expand-notifications"])
+                    .map(|_| ());
+            }
+            "android:quicksettings" => {
+                return self
+                    .adb_text(["shell", "cmd", "statusbar", "expand-settings"])
+                    .map(|_| ());
+            }
+            "android:status" => return self.write_status_artifact(),
+            _ => {}
+        }
+        if let Some(selector) = id.strip_prefix("assert-visible:") {
+            self.find_node(selector, cached_nodes)?.ok_or_else(|| {
+                TendrilError::target_not_found("android_element", selector.to_owned())
+                    .with_detail_entry("action_index", serde_json::json!(action_index))
+            })?;
+            return Ok(());
+        }
+        if let Some(selector) = id.strip_prefix("assert-absent:") {
+            if self.find_node(selector, cached_nodes)?.is_some() {
+                return Err(TendrilError::validation(format!(
+                    "Android selector `{selector}` was visible but assert-absent expected it to be absent"
+                ))
+                .with_code("android_assert_absent_failed")
+                .with_detail_entry("action_index", serde_json::json!(action_index)));
+            }
+            return Ok(());
+        }
+        let selector = id.strip_prefix("scroll-until:").unwrap_or(id);
+        let node = if id.starts_with("scroll-until:") {
+            self.scroll_until_node(selector, cached_nodes)?
+        } else {
+            self.find_node(selector, cached_nodes)?
+        }
+        .ok_or_else(|| {
+            TendrilError::target_not_found("android_element", selector.to_owned())
+                .with_detail_entry("action_index", serde_json::json!(action_index))
+        })?;
+        let (x, y) = node.center().ok_or_else(|| {
+            TendrilError::execution_failure(
+                "android_element_missing_bounds",
+                format!("Android element `{selector}` did not expose usable bounds"),
+                Some(action_index),
+            )
+        })?;
+        self.tap(x, y)
+    }
+
+    fn find_node(
+        &self,
+        selector: &str,
+        cached_nodes: &mut Option<Vec<AndroidNode>>,
+    ) -> Result<Option<AndroidNode>, TendrilError> {
+        if cached_nodes.is_none() {
+            *cached_nodes = Some(self.dump_nodes()?);
+        }
+        Ok(cached_nodes
+            .as_ref()
+            .and_then(|nodes| find_node_for_selector(nodes, selector).cloned()))
+    }
+
+    fn scroll_until_node(
+        &self,
+        selector: &str,
+        cached_nodes: &mut Option<Vec<AndroidNode>>,
+    ) -> Result<Option<AndroidNode>, TendrilError> {
+        for _ in 0..8 {
+            *cached_nodes = Some(self.dump_nodes()?);
+            if let Some(node) = cached_nodes
+                .as_ref()
+                .and_then(|nodes| find_node_for_selector(nodes, selector).cloned())
+            {
+                return Ok(Some(node));
+            }
+            let bounds = self.screen_bounds().unwrap_or(Bounds {
+                x: 0,
+                y: 0,
+                width: 1080,
+                height: 1920,
+            });
+            let x = i32::try_from(bounds.width / 2).unwrap_or(540);
+            let y0 = i32::try_from(bounds.height.saturating_mul(4) / 5).unwrap_or(1500);
+            let y1 = i32::try_from(bounds.height / 5).unwrap_or(400);
+            self.swipe(x, y0, x, y1, DEFAULT_SWIPE_MS)?;
+        }
+        *cached_nodes = Some(self.dump_nodes()?);
+        Ok(cached_nodes
+            .as_ref()
+            .and_then(|nodes| find_node_for_selector(nodes, selector).cloned()))
+    }
+
+    fn write_status_artifact(&self) -> Result<(), TendrilError> {
+        let status = serde_json::to_string_pretty(&self.summary())
+            .map_err(|error| TendrilError::serialization(error.to_string()))?;
+        std::fs::write(self.artifact_dir.join("status.json"), status).map_err(|error| {
+            TendrilError::execution_failure(
+                "android_status_artifact_failed",
+                format!("failed to write Android status artifact: {error}"),
+                None,
+            )
+        })
+    }
+
+    pub fn active_app(&self) -> Result<Option<AndroidAppSummary>, TendrilError> {
+        let windows = self.adb_text(["shell", "dumpsys", "window"])?;
+        Ok(parse_active_app(&windows))
+    }
+
+    pub fn recent_apps(&self) -> Result<Vec<AndroidAppSummary>, TendrilError> {
+        self.adb_text(["shell", "dumpsys", "activity", "recents"])
+            .map(|text| parse_recent_apps(&text))
+    }
+
+    pub fn launchable_apps(&self) -> Result<Vec<AndroidAppSummary>, TendrilError> {
+        self.adb_text([
+            "shell",
+            "cmd package query-activities -a android.intent.action.MAIN -c android.intent.category.LAUNCHER",
+        ])
+        .map(|text| parse_launchable_apps(&text))
     }
 
     fn dump_nodes(&self) -> Result<Vec<AndroidNode>, TendrilError> {
@@ -426,7 +594,7 @@ impl AndroidDevice {
     }
 
     fn adb_bytes<const N: usize>(&self, args: [&str; N]) -> Result<Vec<u8>, TendrilError> {
-        let mut command = Command::new("adb");
+        let mut command = Command::new(adb_bin());
         command.arg("-s").arg(&self.serial).args(args);
         self.append_command_log(&args);
         let output = command.output().map_err(|error| {
@@ -553,7 +721,7 @@ impl AndroidNode {
 }
 
 fn resolve_auto_serial() -> Result<String, TendrilError> {
-    let output = Command::new("adb")
+    let output = Command::new(adb_bin())
         .arg("devices")
         .output()
         .map_err(|error| {
@@ -608,6 +776,14 @@ fn android_adapter_info() -> AdapterInfo {
 
 fn android_target_id(serial: &str) -> String {
     format!("android:{serial}")
+}
+
+fn android_app_target_id(serial: &str, package: &str) -> String {
+    format!("android:{serial}:app:{package}")
+}
+
+fn adb_bin() -> String {
+    std::env::var("TENDRIL_ADB_BIN").unwrap_or_else(|_| "adb".to_owned())
 }
 
 fn android_artifact_dir(serial: &str) -> PathBuf {
@@ -746,15 +922,147 @@ fn android_key_event(key: &str) -> Option<String> {
     let code = match normalized.as_str() {
         "BACK" | "ESC" | "ESCAPE" => "KEYCODE_BACK",
         "HOME" => "KEYCODE_HOME",
+        "RECENTS" | "APP_SWITCH" | "APPSWITCH" => "KEYCODE_APP_SWITCH",
+        "ASSIST" | "ASSISTANT" => "KEYCODE_ASSIST",
+        "SEARCH" => "KEYCODE_SEARCH",
+        "NOTIFICATION" | "NOTIFICATIONS" => "KEYCODE_NOTIFICATION",
         "ENTER" | "RETURN" => "KEYCODE_ENTER",
         "WAKEUP" | "WAKE" => "KEYCODE_WAKEUP",
         "MENU" => "KEYCODE_MENU",
         "TAB" => "KEYCODE_TAB",
         "SPACE" => "KEYCODE_SPACE",
         "DELETE" | "BACKSPACE" => "KEYCODE_DEL",
+        "VOLUME_UP" | "VOLUP" => "KEYCODE_VOLUME_UP",
+        "VOLUME_DOWN" | "VOLDOWN" => "KEYCODE_VOLUME_DOWN",
+        "POWER" => "KEYCODE_POWER",
         _ => return None,
     };
     Some(code.to_owned())
+}
+
+fn parse_active_app(windows: &str) -> Option<AndroidAppSummary> {
+    windows
+        .lines()
+        .find(|line| line.contains("mCurrentFocus") || line.contains("mFocusedApp"))
+        .and_then(parse_component_from_line)
+        .map(|(package, activity)| AndroidAppSummary {
+            package,
+            activity,
+            label: None,
+            state: AndroidAppState::Active,
+        })
+}
+
+fn parse_recent_apps(output: &str) -> Vec<AndroidAppSummary> {
+    dedupe_apps(
+        output
+            .lines()
+            .filter_map(parse_component_from_line)
+            .map(|(package, activity)| AndroidAppSummary {
+                package,
+                activity,
+                label: None,
+                state: AndroidAppState::Recent,
+            })
+            .collect(),
+    )
+}
+
+fn parse_launchable_apps(output: &str) -> Vec<AndroidAppSummary> {
+    dedupe_apps(
+        output
+            .lines()
+            .filter_map(|line| {
+                let line = line.trim();
+                let package = line
+                    .split_whitespace()
+                    .find_map(|part| part.strip_prefix("packageName="))
+                    .map(str::to_owned)
+                    .or_else(|| parse_component_from_line(line).map(|(package, _)| package))?;
+                let activity = line
+                    .split_whitespace()
+                    .find_map(|part| part.strip_prefix("name="))
+                    .map(str::to_owned)
+                    .or_else(|| parse_component_from_line(line).and_then(|(_, activity)| activity));
+                Some(AndroidAppSummary {
+                    package,
+                    activity,
+                    label: None,
+                    state: AndroidAppState::Launchable,
+                })
+            })
+            .collect(),
+    )
+}
+
+fn parse_component_from_line(line: &str) -> Option<(String, Option<String>)> {
+    let cleaned = line
+        .replace(['{', '}', '[', ']'], " ")
+        .replace("cmp=", " ")
+        .replace("ComponentInfo", " ")
+        .replace("ActivityRecord", " ");
+    cleaned
+        .split(|ch: char| ch.is_whitespace() || ch == ',')
+        .filter(|part| part.contains('/') && !part.starts_with("http"))
+        .find_map(|part| {
+            let part = part.trim_matches(|ch: char| matches!(ch, ':' | ';' | ')' | '('));
+            let part = part.rsplit_once('=').map_or(part, |(_, value)| value);
+            let (package, activity) = part.split_once('/')?;
+            if !looks_like_package(package) {
+                return None;
+            }
+            let activity =
+                (!activity.is_empty()).then(|| activity.trim_start_matches('.').to_owned());
+            Some((package.to_owned(), activity))
+        })
+}
+
+fn looks_like_package(value: &str) -> bool {
+    value.contains('.')
+        && value
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '.'))
+}
+
+fn dedupe_apps(apps: Vec<AndroidAppSummary>) -> Vec<AndroidAppSummary> {
+    let mut seen = std::collections::HashSet::new();
+    apps.into_iter()
+        .filter(|app| seen.insert(app.package.clone()))
+        .collect()
+}
+
+fn find_node_for_selector<'a>(nodes: &'a [AndroidNode], selector: &str) -> Option<&'a AndroidNode> {
+    if let Some(node) = find_node_for_element_id(nodes, selector) {
+        return Some(node);
+    }
+    let selector = selector.trim();
+    let (field, value) = selector
+        .split_once('=')
+        .or_else(|| selector.split_once(':'))
+        .map_or(("any", selector), |(field, value)| {
+            (field.trim(), value.trim().trim_matches('"'))
+        });
+    nodes.iter().find(|node| match field {
+        "text" | "label" => node.text.as_deref() == Some(value),
+        "desc" | "content-desc" | "content_desc" | "description" => {
+            node.content_desc.as_deref() == Some(value)
+        }
+        "id" | "resource" | "resource-id" | "resource_id" => {
+            node.resource_id.as_deref() == Some(value)
+        }
+        "class" | "role" => node
+            .class_name
+            .as_deref()
+            .is_some_and(|class| class.ends_with(value) || class == value),
+        "package" | "app" => node.package_name.as_deref() == Some(value),
+        "any" => {
+            node.text.as_deref() == Some(value)
+                || node.content_desc.as_deref() == Some(value)
+                || node.resource_id.as_deref() == Some(value)
+                || node.class_name.as_deref() == Some(value)
+        }
+        _ => false,
+    })
 }
 
 fn current_timestamp_string() -> String {
@@ -792,5 +1100,39 @@ mod tests {
     #[test]
     fn escapes_android_input_text_spaces() {
         assert_eq!(escape_android_input_text("hello world"), "hello%sworld");
+    }
+
+    #[test]
+    fn parses_active_recent_and_launchable_apps() {
+        let active = parse_active_app("mCurrentFocus=Window{123 u0 com.example/.MainActivity}")
+            .expect("active app");
+        assert_eq!(active.package, "com.example");
+        assert_eq!(active.activity.as_deref(), Some("MainActivity"));
+        assert_eq!(active.state, AndroidAppState::Active);
+
+        let recent = parse_recent_apps(
+            "Recent #0: TaskRecord{abc A=com.chat/.Inbox U=0}
+Recent #1: TaskRecord{def A=com.chat/.Inbox U=0}",
+        );
+        assert_eq!(recent.len(), 1);
+        assert_eq!(recent[0].package, "com.chat");
+
+        let launchable = parse_launchable_apps(
+            "ActivityInfo{abc com.todo/.Main}
+  packageName=com.music name=.Player",
+        );
+        assert_eq!(launchable.len(), 2);
+        assert_eq!(launchable[0].package, "com.todo");
+        assert_eq!(launchable[1].package, "com.music");
+    }
+
+    #[test]
+    fn selector_matching_accepts_field_prefixes() {
+        let xml = r#"<hierarchy><node text="Monitor" content-desc="Route monitor" resource-id="app:id/monitor" class="android.widget.Button" package="com.example" clickable="true" enabled="true" bounds="[140,1838][323,1971]" /></hierarchy>"#;
+        let nodes = parse_uiautomator_nodes(xml);
+        assert!(find_node_for_selector(&nodes, "text=Monitor").is_some());
+        assert!(find_node_for_selector(&nodes, "desc=Route monitor").is_some());
+        assert!(find_node_for_selector(&nodes, "resource=app:id/monitor").is_some());
+        assert!(find_node_for_selector(&nodes, "package=com.example").is_some());
     }
 }

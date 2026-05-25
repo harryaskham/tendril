@@ -955,6 +955,69 @@ fn parse_action_segment(segment: &str, action_index: usize) -> Result<InputActio
             let id = parse_element_id(argument, action_index, segment)?;
             Ok(InputAction::ElementClick { id })
         }
+        "launch" | "open" | "switch" => {
+            let argument = expect_single_argument(inner, action_index, segment)?;
+            let package = parse_element_id(argument, action_index, segment)?;
+            Ok(InputAction::ElementClick {
+                id: format!("{name}:{package}"),
+            })
+        }
+        "tap_text" | "taptext" => {
+            let argument = expect_single_argument(inner, action_index, segment)?;
+            let text = parse_element_id(argument, action_index, segment)?;
+            Ok(InputAction::ElementClick {
+                id: format!("text={text}"),
+            })
+        }
+        "tap_desc" | "tap_description" | "tap_content_desc" => {
+            let argument = expect_single_argument(inner, action_index, segment)?;
+            let text = parse_element_id(argument, action_index, segment)?;
+            Ok(InputAction::ElementClick {
+                id: format!("desc={text}"),
+            })
+        }
+        "tap_resource" | "tap_resource_id" | "tap_id" => {
+            let argument = expect_single_argument(inner, action_index, segment)?;
+            let text = parse_element_id(argument, action_index, segment)?;
+            Ok(InputAction::ElementClick {
+                id: format!("resource={text}"),
+            })
+        }
+        "scroll_until" | "scrolluntil" => {
+            let argument = expect_single_argument(inner, action_index, segment)?;
+            let selector = parse_element_id(argument, action_index, segment)?;
+            Ok(InputAction::ElementClick {
+                id: format!("scroll-until:{selector}"),
+            })
+        }
+        "assert_visible" | "assertvisible" => {
+            let argument = expect_single_argument(inner, action_index, segment)?;
+            let selector = parse_element_id(argument, action_index, segment)?;
+            Ok(InputAction::ElementClick {
+                id: format!("assert-visible:{selector}"),
+            })
+        }
+        "assert_absent" | "assertabsent" => {
+            let argument = expect_single_argument(inner, action_index, segment)?;
+            let selector = parse_element_id(argument, action_index, segment)?;
+            Ok(InputAction::ElementClick {
+                id: format!("assert-absent:{selector}"),
+            })
+        }
+        "back" | "home" | "recents" | "assistant" | "notifications" | "quicksettings"
+        | "status" => {
+            if !inner.trim().is_empty() {
+                return Err(dsl_error(
+                    format!("`{name}` expects no arguments"),
+                    Some(action_index),
+                    Some(segment),
+                    Some("parse"),
+                ));
+            }
+            Ok(InputAction::ElementClick {
+                id: format!("android:{name}"),
+            })
+        }
         "lclick" | "rclick" | "mclick" => {
             let arguments = split_arguments(inner, action_index, segment)?;
             if arguments.len() != 2 {
@@ -1651,6 +1714,32 @@ mod tests {
                 dy: -3,
             }
         );
+    }
+
+    #[test]
+    fn parser_accepts_android_specific_actions_as_element_commands() {
+        let payload = parse_input_definition(
+            r#"back(),home(),recents(),assistant(),notifications(),quicksettings(),status(),launch("com.example"),tap_text("Monitor"),tap_desc("Route monitor"),tap_resource("app:id/monitor"),scroll_until("Done"),assert_visible("Ready"),assert_absent("Error")"#,
+        )
+        .expect("android DSL should parse");
+        let RunInputPayload::Actions { actions } = payload else {
+            panic!("expected actions payload");
+        };
+        let ids = actions
+            .into_iter()
+            .map(|action| match action {
+                InputAction::ElementClick { id } => id,
+                other => panic!("unexpected action {other:?}"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(ids[0], "android:back");
+        assert_eq!(ids[3], "android:assistant");
+        assert_eq!(ids[6], "android:status");
+        assert_eq!(ids[7], "launch:com.example");
+        assert_eq!(ids[8], "text=Monitor");
+        assert_eq!(ids[11], "scroll-until:Done");
+        assert_eq!(ids[12], "assert-visible:Ready");
+        assert_eq!(ids[13], "assert-absent:Error");
     }
 
     #[test]

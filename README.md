@@ -51,9 +51,10 @@ Android device smoke examples:
 
 ```bash
 tendril --android auto list --json
+tendril --android auto list --all-apps --json
 tendril --android sgu24:5555 list-elements --json
 tendril --android sgu24:5555 capture -o android.png
-tendril --android sgu24:5555 run 'press("launch:com.example.app"),wait(1s),click(231,1905),Back'
+tendril --android sgu24:5555 run 'launch("com.example.app"),wait(1s),tap_text("Monitor"),notifications(),back()'
 ```
 
 See [the Android backend reference](docs/src/reference/android.md) for supported ADB/UIAutomator capabilities and safety limits.
