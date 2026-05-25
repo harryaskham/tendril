@@ -59,7 +59,7 @@ fn install_windows_tendril_from_release() -> Result<String, TendrilError> {
             || update::query_latest_release_version(&repository),
             |version| Ok(update::normalize_version(&version)),
         )
-        .map_err(wsl_auto_install_error)?;
+        .map_err(|error| wsl_auto_install_error(&error))?;
     let target =
         non_empty_env(WINDOWS_TARGET_ENV).unwrap_or_else(|| WINDOWS_DEFAULT_TARGET.to_owned());
     let install_dir = default_windows_install_dir()?;
@@ -96,7 +96,7 @@ fn install_windows_tendril_from_release() -> Result<String, TendrilError> {
         &format!("{base_url}/{archive_name}"),
         &archive_path,
     )
-    .map_err(wsl_auto_install_error)?;
+    .map_err(|error| wsl_auto_install_error(&error))?;
     update::download_asset_to_path(
         &repository,
         &tag,
@@ -104,9 +104,11 @@ fn install_windows_tendril_from_release() -> Result<String, TendrilError> {
         &format!("{base_url}/{checksum_name}"),
         &checksum_path,
     )
-    .map_err(wsl_auto_install_error)?;
-    update::verify_checksum(&archive_path, &checksum_path).map_err(wsl_auto_install_error)?;
-    update::extract_archive(&archive_path, &extract_dir).map_err(wsl_auto_install_error)?;
+    .map_err(|error| wsl_auto_install_error(&error))?;
+    update::verify_checksum(&archive_path, &checksum_path)
+        .map_err(|error| wsl_auto_install_error(&error))?;
+    update::extract_archive(&archive_path, &extract_dir)
+        .map_err(|error| wsl_auto_install_error(&error))?;
 
     let extracted_binary = extract_dir
         .join(format!("tendril-{version}-{target}"))
@@ -199,8 +201,7 @@ fn manual_windows_path_to_wsl_path(windows_path: &str) -> Option<PathBuf> {
 fn installed_marker_matches(install_path: &Path, marker_path: &Path, version: &str) -> bool {
     install_path.is_file()
         && fs::read_to_string(marker_path)
-            .map(|text| update::normalize_version(&text) == version)
-            .unwrap_or(false)
+            .is_ok_and(|text| update::normalize_version(&text) == version)
 }
 
 fn non_empty_env(name: &str) -> Option<String> {
@@ -210,7 +211,7 @@ fn non_empty_env(name: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-fn wsl_auto_install_error(error: TendrilError) -> TendrilError {
+fn wsl_auto_install_error(error: &TendrilError) -> TendrilError {
     TendrilError::execution_failure(
         "wsl_tunnel_windows_binary_auto_install_failed",
         format!(
