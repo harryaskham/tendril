@@ -252,7 +252,7 @@
           install -m644 ${releaseManifest} "$out/release-manifest.json"
         '';
 
-        clippy = craneLib.cargoClippy (
+        clippyCheck = craneLib.cargoClippy (
           commonArgs
           // {
             inherit cargoArtifacts;
@@ -314,7 +314,8 @@
           tendril = tendril;
           mcp-cli = mcpCli;
           releaseArtifact = releaseArtifact;
-          inherit clippy tests fmt docs linuxRuntimeDependencyAudit;
+          clippy = clippyCheck;
+          inherit tests fmt docs linuxRuntimeDependencyAudit;
         };
 
         devShells.default = pkgs.mkShell {

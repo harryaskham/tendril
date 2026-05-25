@@ -719,11 +719,11 @@ mod x11_impl {
                 )
             })? {
                 match event {
-                    Event::SelectionRequest(request) => {
-                        if request.owner == window && request.selection == selection_atom {
-                            serve_selection_request(&x11, selection, &request, text)?;
-                            served_requests += 1;
-                        }
+                    Event::SelectionRequest(request)
+                        if request.owner == window && request.selection == selection_atom =>
+                    {
+                        serve_selection_request(&x11, selection, &request, text)?;
+                        served_requests += 1;
                     }
                     Event::SelectionClear(event) if event.owner == window => {
                         notes.push(
