@@ -40,14 +40,19 @@ tendril --remote wslbox --wsl-tunnel --json list
 `tendril.exe`. It strips only `--wsl-tunnel` and preserves the rest of the CLI
 arguments, so JSON/MCP behaviour is the same as a direct Windows Tendril run.
 
-By default the tunnel executes `tendril.exe`. Set `TENDRIL_WSL_WINDOWS_BIN` when
-the Windows binary lives somewhere else from the WSL environment's point of
-view.
+By default the tunnel first tries `TENDRIL_WSL_WINDOWS_BIN`, then
+`tendril.exe` on the WSL-visible Windows PATH. If neither exists, Tendril
+bootstraps the Windows side by downloading the latest Windows release asset from
+GitHub, verifying the published `.sha256`, and installing `tendril.exe` under
+`%LOCALAPPDATA%\\Tendril\\bin` (converted to its WSL mount path). The installed
+binary is reused while its `tendril.version` marker matches the latest release.
 
-If the Windows binary is missing, Tendril returns a structured
-`wsl_tunnel_windows_binary_spawn_failed` error with setup guidance. Automatic
-Windows binary install/bootstrap is tracked separately; today the Windows binary
-must already be visible from WSL.
+Set `TENDRIL_WSL_WINDOWS_BIN` when the Windows binary lives somewhere else from
+the WSL environment's point of view. Set `TENDRIL_WSL_INSTALL_DIR` to override
+the auto-install directory, `TENDRIL_WSL_WINDOWS_RELEASE_VERSION` to pin a
+release for bootstrap, `TENDRIL_WSL_WINDOWS_TARGET` to override the default
+`x86_64-windows` asset, or `TENDRIL_WSL_WINDOWS_REPOSITORY` to download from a
+fork.
 
 ## Composition model
 

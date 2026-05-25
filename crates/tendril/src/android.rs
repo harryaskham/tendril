@@ -502,8 +502,12 @@ impl AndroidNode {
     fn center(&self) -> Option<(i32, i32)> {
         self.bounds.as_ref().map(|bounds| {
             (
-                bounds.x.saturating_add(i32::try_from(bounds.width / 2).unwrap_or(i32::MAX)),
-                bounds.y.saturating_add(i32::try_from(bounds.height / 2).unwrap_or(i32::MAX)),
+                bounds
+                    .x
+                    .saturating_add(i32::try_from(bounds.width / 2).unwrap_or(i32::MAX)),
+                bounds
+                    .y
+                    .saturating_add(i32::try_from(bounds.height / 2).unwrap_or(i32::MAX)),
             )
         })
     }

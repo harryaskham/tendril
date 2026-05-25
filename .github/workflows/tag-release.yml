@@ -151,6 +151,64 @@ jobs:
             dist/macos/*.sha256
           if-no-files-found: error
 
+  build-windows:
+    name: Build Windows release artifacts
+    runs-on: windows-latest
+    timeout-minutes: 30
+    needs: verify
+    if: needs.verify.outputs.should_release == 'true'
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Remove stale local build artifacts
+        shell: pwsh
+        run: Remove-Item -Recurse -Force target, dist -ErrorAction SilentlyContinue
+
+      - name: Verify Rust is available on the hosted runner
+        shell: pwsh
+        run: |
+          rustup show
+          cargo --version
+
+      - name: Build Windows Tendril binary
+        shell: pwsh
+        run: cargo build --release -p tendril
+
+      - name: Stage Windows release artifact
+        shell: pwsh
+        run: |
+          $version = "${{ needs.verify.outputs.release_version }}"
+          $target = "x86_64-windows"
+          $root = "tendril-$version-$target"
+          New-Item -ItemType Directory -Force -Path "stage/$root", "dist/windows" | Out-Null
+          Copy-Item "target/release/tendril.exe" "stage/$root/tendril.exe"
+          tar -czf "dist/windows/$root.tar.gz" -C stage $root
+          $hash = (Get-FileHash -Algorithm SHA256 "dist/windows/$root.tar.gz").Hash.ToLowerInvariant()
+          "$hash  $root.tar.gz" | Set-Content -NoNewline "dist/windows/$root.sha256"
+
+      - name: Smoke packaged Tendril version flow on Windows
+        shell: pwsh
+        run: |
+          $version = "${{ needs.verify.outputs.release_version }}"
+          $target = "x86_64-windows"
+          $root = "tendril-$version-$target"
+          New-Item -ItemType Directory -Force -Path smoke | Out-Null
+          tar -xzf "dist/windows/$root.tar.gz" -C smoke
+          & "smoke/$root/tendril.exe" --version
+
+      - name: Upload Windows release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts-windows
+          path: |
+            dist/windows/*.tar.gz
+            dist/windows/*.sha256
+          if-no-files-found: error
+
   publish:
     name: Publish GitHub release
     runs-on: [self-hosted, linux]
@@ -159,6 +217,7 @@ jobs:
       - verify
       - build-linux
       - build-macos
+      - build-windows
     if: needs.verify.outputs.should_release == 'true'
 
     steps:
@@ -180,6 +239,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: release-artifacts-macos
+          path: dist
+
+      - name: Download Windows release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts-windows
           path: dist
 
       - name: Flatten downloaded artifact directories

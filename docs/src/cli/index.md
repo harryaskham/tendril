@@ -47,6 +47,6 @@ tendril --window <id> list-elements --json
 tendril --window <id> run 'send("hello")'
 ```
 
-For remote desktops, use `--remote user@host`. For Windows host control from WSL, use `--wsl-tunnel` once a Windows `tendril.exe` is visible.
+For remote desktops, use `--remote user@host`. For Windows host control from WSL, use `--wsl-tunnel`; it uses a visible Windows `tendril.exe` when present and otherwise auto-installs the latest Windows release into `%LOCALAPPDATA%\\Tendril\\bin`.
 
 The command-specific pages below document the current shape of each surface and note where the implementation is intentionally probe-first or scaffolded for future work.

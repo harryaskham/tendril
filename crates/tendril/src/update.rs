@@ -9,7 +9,7 @@ use updatable_cli::{AssetStrategy, UpdaterConfig};
 use crate::cli::UpdateCommand;
 use crate::error::TendrilError;
 
-const DEFAULT_REPOSITORY: &str = "harryaskham/tendril";
+pub(crate) const DEFAULT_REPOSITORY: &str = "harryaskham/tendril";
 
 #[must_use]
 pub fn updater_config() -> UpdaterConfig {
@@ -146,7 +146,7 @@ fn install_update(plan: &UpdatePlan, output: &mut UpdateOutput) -> Result<(), Te
 
     let extracted_binary = extract_dir
         .join(format!("tendril-{}-{}", plan.version, plan.platform))
-        .join("tendril");
+        .join(release_binary_name(&plan.platform));
     if !extracted_binary.is_file() {
         return Err(TendrilError::target_not_found(
             "release binary",
@@ -196,11 +196,11 @@ fn build_update_plan(
         checksum_url: format!("{base}/{checksum_name}"),
         archive_name,
         checksum_name,
-        install_path: install_dir.join("tendril"),
+        install_path: install_dir.join(release_binary_name(platform)),
     }
 }
 
-fn query_latest_release_version(repository: &str) -> Result<String, TendrilError> {
+pub(crate) fn query_latest_release_version(repository: &str) -> Result<String, TendrilError> {
     if let Some(tag) = query_latest_release_version_with_gh(repository)? {
         return Ok(tag);
     }
@@ -256,7 +256,7 @@ fn query_latest_release_version_with_gh(repository: &str) -> Result<Option<Strin
     }
 }
 
-fn download_asset_to_path(
+pub(crate) fn download_asset_to_path(
     repository: &str,
     tag: &str,
     asset_name: &str,
@@ -323,7 +323,10 @@ fn download_to_path(url: &str, path: &Path) -> Result<(), TendrilError> {
     }
 }
 
-fn verify_checksum(archive_path: &Path, checksum_path: &Path) -> Result<(), TendrilError> {
+pub(crate) fn verify_checksum(
+    archive_path: &Path,
+    checksum_path: &Path,
+) -> Result<(), TendrilError> {
     let expected_text =
         fs::read_to_string(checksum_path).map_err(|error| io_error(checksum_path, &error))?;
     let expected = expected_text.split_whitespace().next().ok_or_else(|| {
@@ -376,7 +379,7 @@ fn sha256_hex(path: &Path) -> Result<String, TendrilError> {
     }
 }
 
-fn extract_archive(archive_path: &Path, extract_dir: &Path) -> Result<(), TendrilError> {
+pub(crate) fn extract_archive(archive_path: &Path, extract_dir: &Path) -> Result<(), TendrilError> {
     let output = ProcessCommand::new("tar")
         .arg("-xzf")
         .arg(archive_path)
@@ -434,6 +437,8 @@ fn release_target_for(os: &str, arch: &str) -> Result<String, TendrilError> {
         ("linux", "aarch64" | "arm64") => Ok("aarch64-linux".to_owned()),
         ("macos", "aarch64" | "arm64") => Ok("aarch64-darwin".to_owned()),
         ("macos", "x86_64") => Ok("x86_64-darwin".to_owned()),
+        ("windows", "x86_64") => Ok("x86_64-windows".to_owned()),
+        ("windows", "aarch64" | "arm64") => Ok("aarch64-windows".to_owned()),
         _ => Err(TendrilError::unsupported_capability(
             "update_unsupported_platform",
             format!("Tendril release downloads are not available for {os}/{arch}"),
@@ -450,8 +455,16 @@ fn default_install_dir() -> Result<PathBuf, TendrilError> {
     Ok(PathBuf::from(home).join(".local/bin"))
 }
 
-fn normalize_version(version: &str) -> String {
+pub(crate) fn normalize_version(version: &str) -> String {
     version.trim().trim_start_matches('v').to_owned()
+}
+
+fn release_binary_name(platform: &str) -> &'static str {
+    if platform.ends_with("-windows") {
+        "tendril.exe"
+    } else {
+        "tendril"
+    }
 }
 
 fn extract_json_string_field(body: &str, field: &str) -> Option<String> {
@@ -511,6 +524,10 @@ mod tests {
             release_target_for("macos", "aarch64").expect("target"),
             "aarch64-darwin"
         );
+        assert_eq!(
+            release_target_for("windows", "x86_64").expect("target"),
+            "x86_64-windows"
+        );
     }
 
     #[test]
@@ -530,6 +547,21 @@ mod tests {
             "https://github.com/harryaskham/tendril/releases/download/v1.2.3/tendril-1.2.3-x86_64-linux.tar.gz"
         );
         assert_eq!(plan.install_path, std::path::Path::new("/tmp/bin/tendril"));
+
+        let windows_plan = build_update_plan(
+            "harryaskham/tendril",
+            "v1.2.3",
+            "x86_64-windows",
+            std::path::Path::new("/tmp/bin"),
+        );
+        assert_eq!(
+            windows_plan.archive_name,
+            "tendril-1.2.3-x86_64-windows.tar.gz"
+        );
+        assert_eq!(
+            windows_plan.install_path,
+            std::path::Path::new("/tmp/bin/tendril.exe")
+        );
     }
 
     #[test]

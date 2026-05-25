@@ -29,8 +29,8 @@ The workflow is intentionally aligned with the repository's tag-oriented release
 
 - GitHub Actions runs on version tags such as `v0.0.1`
 - the release version source of truth is `[workspace.package].version` in `Cargo.toml`
-- the build runs inside the Nix development environment
-- `nix build .#releaseArtifact` produces the canonical binary release archive, checksum, and manifest for the current Nix system
+- Linux and macOS builds run inside the Nix development environment; Windows builds run natively on a hosted Windows runner
+- `nix build .#releaseArtifact` produces the canonical Unix binary release archive, checksum, and manifest for the current Nix system
 - the resulting `target/book/` directory is uploaded to GitHub Pages
 
 This keeps published docs tied to release snapshots instead of publishing every branch push.
@@ -38,9 +38,12 @@ This keeps published docs tied to release snapshots instead of publishing every 
 ## Release artifacts
 
 Binary release assets use the canonical naming pattern
-`tendril-<semver>-<nix-system>.tar.gz` with a matching `.sha256` file.
-The current tag workflow also publishes `tendril-<semver>-source.tar.gz` and a
-`release-manifest.json` file that records the version, tag, system, and artifact list.
+`tendril-<semver>-<system>.tar.gz` with a matching `.sha256` file. Unix systems
+use Nix system suffixes such as `x86_64-linux` and `aarch64-darwin`; Windows
+uses `x86_64-windows` and contains `tendril.exe` so `--wsl-tunnel` can bootstrap
+the Windows host at runtime. The current tag workflow also publishes
+`tendril-<semver>-source.tar.gz` and a `release-manifest.json` file that records
+the version, tag, system, and artifact list.
 
 ## Local preview
 

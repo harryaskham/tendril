@@ -47,9 +47,14 @@ The flake exposes two release-relevant packages:
 
 - `.#tendril` — the platform-native Tendril binary package.
 - `.#releaseArtifact` — a reproducible output directory containing:
-  - the canonical binary `tar.gz` archive,
+  - the canonical Unix binary `tar.gz` archive,
   - the matching `.sha256` file, and
   - `release-manifest.json` describing the version, tag, system, and asset names.
+
+Windows release assets are produced natively by the tag workflow on
+`windows-latest` as `tendril-<semver>-x86_64-windows.tar.gz` with a matching
+checksum. That archive contains `tendril.exe` under the same
+`tendril-<semver>-<system>/` directory layout used by the Unix packages.
 
 `releaseArtifact` derives its version from the same workspace manifest used by
 Cargo, so Rust package metadata and Nix release assets cannot drift silently.
@@ -83,9 +88,10 @@ Examples:
 
 ## Publication flow
 
-The GitHub Actions workflow runs only on self-hosted Linux and macOS runners and
-assumes Nix is already available on those machines. It starts either from a
-pushed `v*` tag or from a `main` commit that changes the workspace version.
+The GitHub Actions workflow runs Unix release jobs on self-hosted Linux and
+macOS runners with Nix available, and runs the Windows release job on a hosted
+Windows runner with Rust/Cargo. It starts either from a pushed `v*` tag or from a
+`main` commit that changes the workspace version.
 
 1. Update `CHANGELOG.md`, then run `tendril version bump patch`, `tendril version bump minor`, or `tendril version bump major` to create the release bump commit.
 2. Push the matching git tag, for example `v0.0.1`, or land the version bump commit on `main` and let the workflow publish the matching `v<semver>` release.

@@ -193,9 +193,12 @@ flags. `capture`, `run`, and `alias` require exactly one target selector.
 local `--remote` flag, bootstraps common non-login-shell `PATH` entries, and
 then execs `tendril` on the remote host. `--wsl-tunnel` proxies the invocation
 from WSL/Linux to a Windows-host `tendril.exe`; it also composes with `--remote`
-because the flag is forwarded to the remote Tendril process. Set
-`TENDRIL_WSL_WINDOWS_BIN` when the Windows executable is not visible as
-`tendril.exe` from WSL. Set `TENDRIL_REMOTE_BIN` remotely when
+because the flag is forwarded to the remote Tendril process. If no Windows
+binary is visible, the WSL tunnel downloads the latest Windows release asset,
+verifies its checksum, and installs `tendril.exe` under
+`%LOCALAPPDATA%\\Tendril\\bin` for reuse. Set `TENDRIL_WSL_WINDOWS_BIN` when the
+Windows executable lives somewhere else, or `TENDRIL_WSL_INSTALL_DIR` to choose
+the auto-install directory. Set `TENDRIL_REMOTE_BIN` remotely when
 the binary is not named `tendril` or is outside `PATH`. On Linux remotes, the
 bootstrap prefers existing graphical environment variables; if SSH did not
 provide them, it discovers `/run/user/<uid>/wayland-*`, `/tmp/.X11-unix/X*`,
