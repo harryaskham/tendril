@@ -818,6 +818,14 @@ fn build_help_output() -> HelpOutput {
                 command: "tendril clipboard get --json".to_owned(),
                 description: "Read text copied by a browser or app from the Linux/X11 clipboard selection.".to_owned(),
             },
+            HelpWorkflowStep {
+                command: "tendril --wsl-tunnel list --json".to_owned(),
+                description: "Discover Windows-host targets from WSL by proxying to the Windows tendril.exe.".to_owned(),
+            },
+            HelpWorkflowStep {
+                command: "tendril --android <serial> list --json".to_owned(),
+                description: "Discover Android device or emulator targets through adb.".to_owned(),
+            },
         ],
         commands: vec![
             HelpCommandSummary {
@@ -2061,6 +2069,25 @@ mod tests {
                     assert!(
                         command_names.contains(&expected),
                         "expected JSON help command list to include {expected}; got {command_names:?}"
+                    );
+                }
+                let workflow_commands: Vec<&str> = value["data"]["workflow_steps"]
+                    .as_array()
+                    .expect("workflow_steps array")
+                    .iter()
+                    .map(|step| {
+                        step["command"]
+                            .as_str()
+                            .expect("workflow step should include a string command")
+                    })
+                    .collect();
+                for expected in [
+                    "tendril --wsl-tunnel list --json",
+                    "tendril --android <serial> list --json",
+                ] {
+                    assert!(
+                        workflow_commands.contains(&expected),
+                        "expected JSON help workflow_steps to include {expected}; got {workflow_commands:?}"
                     );
                 }
             }
