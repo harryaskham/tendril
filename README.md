@@ -38,6 +38,15 @@ eval "$(direnv export bash)"
 The dev shell includes Rust, cargo, clippy, rustfmt, rust-analyzer, direnv, and
 Nix formatting tools.
 
+> **macOS validation note (bd-c88e56):** the dev shell exports `LIBRARY_PATH`
+> with a Nix `libiconv` so direct foreground `cargo build`/`cargo test`/
+> `cargo clippy` link cleanly. If you validate outside the dev shell and hit
+> `ld: library not found for -liconv`, either enter `nix develop` (recommended)
+> or export a libiconv lib path yourself, e.g.
+> `export LIBRARY_PATH="$(nix build --no-link --print-out-paths nixpkgs#libiconv)/lib"`.
+> The Nix `apple-sdk` alone does not ship `libiconv.tbd`, so relying on whatever
+> SDK `xcrun` resolves is not reliable across managed hosts.
+
 Useful repo-local commands:
 
 ```bash

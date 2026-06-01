@@ -88,9 +88,22 @@
         '';
         src = graftMcpCli "tendril-source-with-mcp-cli" parentSrc;
         fullSrc = graftMcpCli "tendril-full-source-with-mcp-cli" fullParentSrc;
+        # On macOS, linking some dependencies (e.g. anything pulling in
+        # `iconv`) needs a libiconv provider. Relying on the ambient `xcrun`
+        # SDK is brittle: managed agents sometimes only have a Nix `apple-sdk`
+        # on the path that does not ship `libiconv.tbd`, which surfaces as
+        # `ld: library not found for -liconv` during direct `cargo` builds and
+        # tests (see bd-c88e56). Provide libiconv deterministically through the
+        # build/dev environment so validation does not depend on ambient SDK
+        # state.
+        darwinBuildInputs = lib.optionals pkgs.stdenv.isDarwin [
+          pkgs.libiconv
+        ];
+
         commonArgs = {
           inherit src;
           strictDeps = true;
+          buildInputs = darwinBuildInputs;
         };
         cargoArtifacts = craneLib.buildDepsOnly commonArgs;
 
@@ -332,6 +345,13 @@
             rustc
             rustfmt
           ] ++ linuxHeadlessDeps;
+          # Ensure direct foreground `cargo build`/`cargo test`/`cargo clippy`
+          # from this dev shell can link `-liconv` on macOS without depending on
+          # whatever SDK `xcrun` happens to resolve (bd-c88e56). We prepend the
+          # Nix libiconv lib dir to LIBRARY_PATH so the linker always finds it.
+          shellHook = lib.optionalString pkgs.stdenv.isDarwin ''
+            export LIBRARY_PATH="${pkgs.libiconv}/lib''${LIBRARY_PATH:+:$LIBRARY_PATH}"
+          '';
         };
 
         formatter = pkgs.nixpkgs-fmt;
