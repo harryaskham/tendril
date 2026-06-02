@@ -46,6 +46,15 @@ Nix formatting tools.
 > `export LIBRARY_PATH="$(nix build --no-link --print-out-paths nixpkgs#libiconv)/lib"`.
 > The Nix `apple-sdk` alone does not ship `libiconv.tbd`, so relying on whatever
 > SDK `xcrun` resolves is not reliable across managed hosts.
+>
+> **clippy toolchain note (bd-fbe79c):** run clippy from inside `nix develop`
+> (or via the flake check) so `cargo`, `rustc`, and `clippy-driver` come from
+> the same toolchain. If an ambient profile (e.g. `~/.nix-profile` or
+> `~/.cargo/bin`) has a different clippy version than the active `rustc`, a
+> bare `cargo clippy` can fail with a large, misleading `E0514` "incompatible
+> metadata" cascade. The dev shell warns when it detects such a mismatch on
+> PATH. The canonical clippy gate is the flake check:
+> `nix build .#checks.$(nix eval --raw --impure --expr builtins.currentSystem).clippy`.
 
 Useful repo-local commands:
 

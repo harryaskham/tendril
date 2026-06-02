@@ -345,12 +345,37 @@
             rustc
             rustfmt
           ] ++ linuxHeadlessDeps;
-          # Ensure direct foreground `cargo build`/`cargo test`/`cargo clippy`
-          # from this dev shell can link `-liconv` on macOS without depending on
-          # whatever SDK `xcrun` happens to resolve (bd-c88e56). We prepend the
-          # Nix libiconv lib dir to LIBRARY_PATH so the linker always finds it.
-          shellHook = lib.optionalString pkgs.stdenv.isDarwin ''
-            export LIBRARY_PATH="${pkgs.libiconv}/lib''${LIBRARY_PATH:+:$LIBRARY_PATH}"
+          # Dev-shell environment guards for direct foreground cargo validation.
+          #
+          # 1. macOS libiconv (bd-c88e56): the Nix apple-sdk does not ship
+          #    `libiconv.tbd`, so direct `cargo build`/`test`/`clippy` could
+          #    fail with `ld: library not found for -liconv` depending on
+          #    whatever SDK `xcrun` resolved. Export LIBRARY_PATH so the linker
+          #    always finds the Nix libiconv.
+          #
+          # 2. clippy/rustc consistency (bd-fbe79c): if an ambient profile
+          #    (e.g. ~/.nix-profile or ~/.cargo/bin) puts a `cargo-clippy` /
+          #    `clippy-driver` of a different toolchain version ahead of this
+          #    shell's matching tools, `cargo clippy` reads rustc artifacts
+          #    with a mismatched clippy driver and emits a huge misleading
+          #    E0514 "incompatible metadata" cascade. The shell already orders
+          #    its matching toolchain first; this guard warns loudly if a
+          #    mismatch is still resolvable on PATH so agents are not misled.
+          shellHook = ''
+            ${lib.optionalString pkgs.stdenv.isDarwin ''
+              export LIBRARY_PATH="${pkgs.libiconv}/lib''${LIBRARY_PATH:+:$LIBRARY_PATH}"
+            ''}
+            __tendril_rustc_ver="$(rustc -vV 2>/dev/null | awk -F': ' '/^release/{print $2}')"
+            __tendril_clippy_ver="$(clippy-driver -vV 2>/dev/null | awk -F': ' '/^release/{print $2}')"
+            if [ -n "$__tendril_rustc_ver" ] && [ -n "$__tendril_clippy_ver" ] \
+              && [ "$__tendril_rustc_ver" != "$__tendril_clippy_ver" ]; then
+              echo "tendril dev shell warning (bd-fbe79c): rustc $__tendril_rustc_ver != clippy-driver $__tendril_clippy_ver on PATH." >&2
+              echo "  Direct 'cargo clippy' may emit a misleading E0514 cascade. Run clippy via" >&2
+              echo "  the flake check instead: nix build .#checks.\$(nix eval --raw --impure --expr builtins.currentSystem).clippy" >&2
+              echo "  rustc:         $(command -v rustc)" >&2
+              echo "  clippy-driver: $(command -v clippy-driver)" >&2
+            fi
+            unset __tendril_rustc_ver __tendril_clippy_ver
           '';
         };
 
