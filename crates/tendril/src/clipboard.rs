@@ -968,4 +968,20 @@ mod tests {
             "populated notes should be space-joined, got:\n{rendered}"
         );
     }
+
+    #[test]
+    fn clipboard_supported_only_on_linux_x11() {
+        ensure_x11_clipboard_supported(&AdapterContext::linux(DesktopSession::X11, None))
+            .expect("linux/x11 should be supported");
+
+        for context in [
+            AdapterContext::linux(DesktopSession::Wayland, None),
+            AdapterContext::macos(),
+            AdapterContext::windows11(),
+        ] {
+            let err = ensure_x11_clipboard_supported(&context)
+                .expect_err("non linux/x11 should be unsupported");
+            assert_eq!(err.code(), "clipboard_not_supported");
+        }
+    }
 }
