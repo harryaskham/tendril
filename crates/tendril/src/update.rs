@@ -511,7 +511,8 @@ fn make_executable(_path: &Path) -> Result<(), TendrilError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_update_plan, extract_json_string_field, normalize_version, release_target_for,
+        build_update_plan, extract_json_string_field, normalize_version, release_binary_name,
+        release_target_for, render_update_human, UpdateOutput,
     };
 
     #[test]
@@ -578,5 +579,63 @@ mod tests {
     fn strips_optional_v_prefix_from_versions() {
         assert_eq!(normalize_version("v1.2.3"), "1.2.3");
         assert_eq!(normalize_version("1.2.3"), "1.2.3");
+    }
+
+    fn sample_update_output() -> UpdateOutput {
+        UpdateOutput {
+            repository: "harryaskham/tendril".to_owned(),
+            version: "1.2.3".to_owned(),
+            tag: "v1.2.3".to_owned(),
+            platform: "x86_64-linux".to_owned(),
+            archive_url: "https://example.com/tendril.tar.gz".to_owned(),
+            checksum_url: "https://example.com/tendril.sha256".to_owned(),
+            install_path: std::path::PathBuf::from("/tmp/bin/tendril"),
+            installed: false,
+            verified_version: None,
+            notes: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn renders_update_human_planned_without_notes() {
+        let rendered = render_update_human(&sample_update_output());
+        assert!(
+            rendered.starts_with("planned Tendril v1.2.3 for x86_64-linux"),
+            "unexpected header, got:\n{rendered}"
+        );
+        assert!(rendered.contains("install path: /tmp/bin/tendril"));
+        assert!(rendered.contains("verified version: not run"));
+        assert!(rendered.contains("archive: https://example.com/tendril.tar.gz"));
+        assert!(rendered.contains("checksum: https://example.com/tendril.sha256"));
+        assert!(
+            !rendered.contains("notes:"),
+            "empty notes should be omitted, got:\n{rendered}"
+        );
+    }
+
+    #[test]
+    fn renders_update_human_installed_with_notes() {
+        let output = UpdateOutput {
+            installed: true,
+            verified_version: Some("1.2.3".to_owned()),
+            notes: vec!["reused cached archive".to_owned(), "checksum ok".to_owned()],
+            ..sample_update_output()
+        };
+        let rendered = render_update_human(&output);
+        assert!(rendered.starts_with("installed Tendril v1.2.3 for x86_64-linux"));
+        assert!(rendered.contains("verified version: 1.2.3"));
+        assert!(rendered.contains("notes:\n"));
+        assert!(rendered.contains("  - reused cached archive"));
+        assert!(rendered.contains("  - checksum ok"));
+    }
+
+    #[test]
+    fn release_binary_name_is_exe_only_for_windows_platforms() {
+        assert_eq!(release_binary_name("x86_64-windows"), "tendril.exe");
+        assert_eq!(release_binary_name("aarch64-windows"), "tendril.exe");
+        assert_eq!(release_binary_name("x86_64-linux"), "tendril");
+        assert_eq!(release_binary_name("aarch64-linux"), "tendril");
+        assert_eq!(release_binary_name("aarch64-darwin"), "tendril");
+        assert_eq!(release_binary_name("x86_64-darwin"), "tendril");
     }
 }
