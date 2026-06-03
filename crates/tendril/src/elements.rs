@@ -1169,9 +1169,9 @@ fn json_u32(value: &Value, key: &str) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::{
-        atspi_element_in_scope, macos_accessibility_query_targets, normalize_atspi_action,
-        normalize_atspi_role, parse_x11_geometry_from_line, parse_xwininfo_line,
-        window_targets_for_scope,
+        atspi_element_in_scope, macos_accessibility_listing_jxa, macos_accessibility_query_targets,
+        normalize_atspi_action, normalize_atspi_role, parse_x11_geometry_from_line,
+        parse_xwininfo_line, window_targets_for_scope,
     };
     use crate::model::{Bounds, ScaleFactor};
     use crate::platform::{CaptureTargetKind, TargetDescriptor};
@@ -1351,5 +1351,58 @@ mod tests {
             false
         ));
         assert!(atspi_element_in_scope(None, &target_bounds, true));
+    }
+
+    #[test]
+    fn macos_jxa_script_interpolates_pid_bounds_and_cap() {
+        // window_target -> process_id 42, bounds (100, 200, 800, 600).
+        let target = window_target("0x400001", 100, 200, 800, 600);
+        let script = macos_accessibility_listing_jxa(7531, &target, false);
+
+        // Process id is interpolated into the AX application lookup path.
+        assert!(
+            script.contains("var pid = 7531;"),
+            "script should interpolate the process id, got:\n{script}"
+        );
+        // Target bounds are interpolated into the intersect filter target.
+        assert!(
+            script.contains("x: 100")
+                && script.contains("y: 200")
+                && script.contains("width: 800")
+                && script.contains("height: 600"),
+            "script should interpolate target bounds, got:\n{script}"
+        );
+        // The element cap must match the Rust-side constant so the walk is bounded.
+        assert!(
+            script.contains("var maxElements = 512;"),
+            "script should interpolate MAX_MACOS_ELEMENTS, got:\n{script}"
+        );
+        // Core ApplicationServices entry points the listing depends on.
+        assert!(script.contains("ObjC.import('ApplicationServices');"));
+        assert!(script.contains("$.AXUIElementCreateApplication(pid)"));
+        assert!(script.contains("'AXRole'") && script.contains("'AXPosition'"));
+        assert!(
+            script.trim_end().ends_with("}());"),
+            "script should be a self-invoking JXA program, got:\n{script}"
+        );
+    }
+
+    #[test]
+    fn macos_jxa_script_maps_include_offscreen_to_js_boolean_literal() {
+        let target = window_target("0x400001", 0, 0, 10, 10);
+
+        let on = macos_accessibility_listing_jxa(1, &target, true);
+        assert!(
+            on.contains("var includeOffscreen = true;"),
+            "include_offscreen=true should map to JS literal true, got:\n{on}"
+        );
+        assert!(!on.contains("var includeOffscreen = false;"));
+
+        let off = macos_accessibility_listing_jxa(1, &target, false);
+        assert!(
+            off.contains("var includeOffscreen = false;"),
+            "include_offscreen=false should map to JS literal false, got:\n{off}"
+        );
+        assert!(!off.contains("var includeOffscreen = true;"));
     }
 }
