@@ -522,4 +522,55 @@ mod tests {
         assert_eq!(details["backend"], "xdg_desktop_portal_screenshot");
         assert_eq!(details["suggested_action"], "restart the portal backend");
     }
+
+    #[test]
+    fn target_not_found_carries_kind_id_and_contract_fields() {
+        let error = TendrilError::target_not_found("window", "0x4001");
+        let json_error = error.to_json_error();
+
+        assert_eq!(json_error.category, mcp_cli::ErrorCategory::TargetNotFound);
+        assert_eq!(json_error.code, "target_not_found");
+        assert!(
+            json_error.message.contains("window `0x4001` was not found"),
+            "unexpected message: {}",
+            json_error.message
+        );
+        let details = json_error.details.expect("details");
+        assert_eq!(details["target_kind"], "window");
+        assert_eq!(details["target_id"], "0x4001");
+    }
+
+    #[test]
+    fn execution_failure_includes_action_index_only_when_present() {
+        let with_index =
+            TendrilError::execution_failure("tap_failed", "tap did not land", Some(2))
+                .to_json_error();
+        assert_eq!(
+            with_index.category,
+            mcp_cli::ErrorCategory::ExecutionFailure
+        );
+        assert_eq!(with_index.code, "tap_failed");
+        assert_eq!(
+            with_index.details.expect("details")["action_index"],
+            2
+        );
+
+        let without_index =
+            TendrilError::execution_failure("tap_failed", "tap did not land", None).to_json_error();
+        assert!(
+            without_index.details.is_none(),
+            "execution_failure without an action index should carry no details"
+        );
+    }
+
+    #[test]
+    fn detail_entry_merge_preserves_existing_entries() {
+        let error = TendrilError::validation("bad value")
+            .with_field("compression")
+            .with_detail_entry("hint", serde_json::Value::String("0-100".to_owned()));
+        let details = error.to_json_error().details.expect("details");
+
+        assert_eq!(details["field"], "compression");
+        assert_eq!(details["hint"], "0-100");
+    }
 }
