@@ -292,7 +292,10 @@ fn is_posix_safe_character(character: char) -> bool {
 mod tests {
     use std::ffi::OsString;
 
-    use super::{build_remote_shell_command, strip_remote_args};
+    use super::{
+        build_remote_shell_command, is_posix_safe_character, quote_posix, remote_failure_message,
+        should_wrap_remote_failure, strip_remote_args,
+    };
 
     #[test]
     fn strips_remote_flag_and_preserves_remaining_arguments() {
@@ -352,5 +355,50 @@ mod tests {
             script.contains("exec \"$remote_bin\" --window 'window 1' run 'send(\"hi, there\")'")
         );
         assert!(!script.contains("exec \"$remote_bin\" --remote"));
+    }
+
+    #[test]
+    fn quote_posix_passes_safe_tokens_and_quotes_the_rest() {
+        assert_eq!(quote_posix("window-1"), "window-1");
+        assert_eq!(quote_posix("a/b.c:d=e,f"), "a/b.c:d=e,f");
+        // Empty strings must be quoted so they survive as a real argument.
+        assert_eq!(quote_posix(""), "''");
+        assert_eq!(quote_posix("hi there"), "'hi there'");
+        // Embedded single quotes use the '\"'\"' close/reopen escape.
+        assert_eq!(quote_posix("it's"), "'it'\"'\"'s'");
+    }
+
+    #[test]
+    fn posix_safe_character_set_is_restricted() {
+        for c in ['a', 'Z', '9', '-', '_', '.', '/', ':', '=', ','] {
+            assert!(is_posix_safe_character(c), "{c} should be safe");
+        }
+        for c in [' ', '\'', '"', ';', '&', '|', '$', '`', '*'] {
+            assert!(!is_posix_safe_character(c), "{c} should be unsafe");
+        }
+    }
+
+    #[test]
+    fn should_wrap_remote_failure_matches_255_and_empty_json_stdout() {
+        assert!(should_wrap_remote_failure(false, Some(255), b"output"));
+        assert!(should_wrap_remote_failure(true, Some(1), b""));
+        assert!(!should_wrap_remote_failure(false, Some(1), b""));
+        assert!(!should_wrap_remote_failure(true, Some(1), b"{}"));
+    }
+
+    #[test]
+    fn remote_failure_message_describes_signal_status_and_stderr() {
+        assert_eq!(
+            remote_failure_message("box", None, ""),
+            "remote `box` failed over ssh with exit status terminated by signal"
+        );
+        assert_eq!(
+            remote_failure_message("box", Some(2), ""),
+            "remote `box` failed over ssh with exit status 2"
+        );
+        assert_eq!(
+            remote_failure_message("box", Some(2), "boom"),
+            "remote `box` failed over ssh with exit status 2: boom"
+        );
     }
 }
