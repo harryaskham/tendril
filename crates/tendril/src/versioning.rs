@@ -411,8 +411,9 @@ fn parse_semver_component(value: &str, name: &str) -> Result<u64, TendrilError> 
 #[cfg(test)]
 mod tests {
     use super::{
-        bump_version, extract_version_in_section, update_cargo_lock_versions,
-        update_package_manifest_version, update_workspace_manifest_version,
+        bump_version, extract_version_in_section, render_version_bump_human,
+        update_cargo_lock_versions, update_package_manifest_version,
+        update_workspace_manifest_version, version_line_value, VersionBumpOutput,
     };
     use crate::cli::VersionBumpLevel;
 
@@ -490,5 +491,42 @@ version = "1.2.3"
         let lock_text = std::fs::read_to_string(lock).expect("read");
         assert!(lock_text.contains("name = \"tendril\"\nversion = \"0.1.0\""));
         assert!(lock_text.contains("name = \"serde\"\nversion = \"0.0.1\""));
+    }
+
+    #[test]
+    fn renders_version_bump_summary() {
+        let output = VersionBumpOutput {
+            previous_version: "0.1.0".to_owned(),
+            new_version: "0.2.0".to_owned(),
+            level: VersionBumpLevel::Minor,
+            updated_files: vec!["Cargo.toml".to_owned(), "Cargo.lock".to_owned()],
+            commit: "abc1234".to_owned(),
+            tag: "v0.2.0".to_owned(),
+        };
+        let rendered = render_version_bump_human(&output);
+        assert!(rendered.contains("bumped Tendril from 0.1.0 to 0.2.0 (Minor)"));
+        assert!(rendered.contains("commit: abc1234"));
+        assert!(rendered.contains("tag: v0.2.0"));
+        assert!(rendered.contains("  - Cargo.toml"));
+        assert!(rendered.contains("  - Cargo.lock"));
+    }
+
+    #[test]
+    fn version_line_value_extracts_quoted_version() {
+        assert_eq!(version_line_value("version = \"1.2.3\""), Some("1.2.3"));
+        assert_eq!(version_line_value("  version = \"0.0.1\"  "), Some("0.0.1"));
+        assert_eq!(version_line_value("edition = \"2024\""), None);
+        assert_eq!(version_line_value("not a version line"), None);
+    }
+
+    #[test]
+    fn bump_version_rejects_malformed_semver() {
+        let non_three = bump_version("1.2", VersionBumpLevel::Patch)
+            .expect_err("two-part version should be rejected");
+        assert_eq!(non_three.code(), "version_bump_invalid_semver");
+
+        let non_numeric = bump_version("1.x.3", VersionBumpLevel::Patch)
+            .expect_err("non-numeric component should be rejected");
+        assert_eq!(non_numeric.code(), "version_bump_invalid_semver");
     }
 }
