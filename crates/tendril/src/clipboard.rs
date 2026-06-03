@@ -901,4 +901,71 @@ mod tests {
             .is_err()
         );
     }
+
+    fn sample_adapter() -> AdapterInfo {
+        AdapterInfo::from_context(&AdapterContext {
+            platform: PlatformKind::Linux,
+            session: DesktopSession::X11,
+            audio_backend: None,
+        })
+    }
+
+    #[test]
+    fn renders_clipboard_get_human_with_and_without_notes() {
+        let base = ClipboardGetOutput {
+            adapter: sample_adapter(),
+            selection: ClipboardSelection::Clipboard,
+            text: "hello".to_owned(),
+            text_len: 5,
+            notes: Vec::new(),
+        };
+        let rendered = render_clipboard_get_human(&base);
+        assert!(rendered.contains("clipboard selection: Clipboard"));
+        assert!(rendered.contains("platform: Linux / X11"));
+        assert!(rendered.contains("text_len: 5"));
+        assert!(rendered.contains("text: hello"));
+        assert!(
+            rendered.contains("notes: none"),
+            "empty notes should render as none, got:\n{rendered}"
+        );
+
+        let with_notes = ClipboardGetOutput {
+            notes: vec!["first".to_owned(), "second".to_owned()],
+            ..base
+        };
+        let rendered = render_clipboard_get_human(&with_notes);
+        assert!(
+            rendered.contains("notes: first second"),
+            "populated notes should be space-joined, got:\n{rendered}"
+        );
+    }
+
+    #[test]
+    fn renders_clipboard_set_human_with_and_without_notes() {
+        let base = ClipboardSetOutput {
+            adapter: sample_adapter(),
+            selection: ClipboardSelection::Primary,
+            text_len: 12,
+            serve_ms: 250,
+            served_requests: 3,
+            notes: Vec::new(),
+        };
+        let rendered = render_clipboard_set_human(&base);
+        assert!(rendered.contains("clipboard selection: Primary"));
+        assert!(rendered.contains("platform: Linux / X11"));
+        assert!(rendered.contains("text_len: 12"));
+        assert!(rendered.contains("serve_ms: 250"));
+        assert!(rendered.contains("served_requests: 3"));
+        assert!(rendered.contains("notes: none"));
+
+        let with_notes = ClipboardSetOutput {
+            notes: vec!["served".to_owned(), "timeout".to_owned()],
+            ..base
+        };
+        let rendered = render_clipboard_set_human(&with_notes);
+        assert!(
+            rendered.contains("notes: served timeout"),
+            "populated notes should be space-joined, got:\n{rendered}"
+        );
+    }
 }
