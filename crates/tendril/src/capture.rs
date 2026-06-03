@@ -317,7 +317,10 @@ mod tests {
     use image::{DynamicImage, ImageBuffer, Rgba};
     use proptest::prelude::*;
 
-    use super::{build_capture_output, current_timestamp, resized_dimensions};
+    use super::{
+        build_capture_output, current_timestamp, matches_target_kind, media_type_for_format,
+        render_capture_human, resized_dimensions,
+    };
     use crate::config::ImageFormat;
     use crate::model::{CaptureInput, TargetSelector};
     use crate::platform::{
@@ -479,5 +482,79 @@ mod tests {
             .write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)
             .expect("sample png should encode");
         bytes
+    }
+
+    #[test]
+    fn matches_target_kind_pairs_window_and_display() {
+        let window = TargetSelector::Window {
+            id: "w".to_owned(),
+        };
+        let display = TargetSelector::Display {
+            id: "d".to_owned(),
+        };
+        assert!(matches_target_kind(&window, CaptureTargetKind::Window));
+        assert!(matches_target_kind(&display, CaptureTargetKind::Display));
+        assert!(!matches_target_kind(&window, CaptureTargetKind::Display));
+        assert!(!matches_target_kind(&display, CaptureTargetKind::Window));
+    }
+
+    #[test]
+    fn media_type_maps_each_image_format() {
+        assert_eq!(media_type_for_format(ImageFormat::Png), "image/png");
+        assert_eq!(media_type_for_format(ImageFormat::Jpeg), "image/jpeg");
+    }
+
+    #[test]
+    fn render_capture_human_includes_key_fields() {
+        let artifact = CaptureArtifact {
+            target_id: "window-9".to_owned(),
+            media_type: "image/png".to_owned(),
+            image_bytes: sample_png(120, 80),
+            captured_at: current_timestamp(),
+        };
+        let target = TargetDescriptor {
+            id: "window-9".to_owned(),
+            title: Some("Example".to_owned()),
+            kind: CaptureTargetKind::Window,
+            name: "Example".to_owned(),
+            bounds: crate::model::Bounds {
+                x: 0,
+                y: 0,
+                width: 120,
+                height: 80,
+            },
+            scale_factor: crate::model::ScaleFactor::identity(),
+            capture_supported: true,
+            input_supported: true,
+            app_name: Some("app".to_owned()),
+            process_id: Some(1),
+            diagnostics: Vec::new(),
+        };
+        let input = CaptureInput {
+            target: TargetSelector::Window {
+                id: "window-9".to_owned(),
+            },
+            max_width: None,
+            max_height: None,
+            format: ImageFormat::Png,
+            compression: 85,
+            timeout_ms: None,
+        };
+        let output = build_capture_output(
+            &input,
+            &target,
+            artifact,
+            &AdapterInfo::from_context(&AdapterContext::windows11()),
+        )
+        .expect("capture output should build");
+
+        let rendered = render_capture_human(&output);
+        assert!(rendered.contains("window-9"));
+        assert!(rendered.contains("original: 120x80"));
+        assert!(rendered.contains("output: 120x80"));
+        assert!(rendered.contains("resized: false"));
+        assert!(rendered.contains("format: Png"));
+        assert!(rendered.contains("media_type: image/png"));
+        assert!(rendered.contains("captured_at: "));
     }
 }
