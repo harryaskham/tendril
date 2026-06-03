@@ -351,7 +351,10 @@ mod tests {
     use std::ffi::OsString;
     use std::path::PathBuf;
 
-    use super::{installed_marker_matches, manual_windows_path_to_wsl_path, strip_wsl_tunnel_args};
+    use super::{
+        installed_marker_matches, manual_windows_path_to_wsl_path, should_wrap_windows_failure,
+        strip_wsl_tunnel_args, windows_failure_message,
+    };
 
     #[test]
     fn strips_wsl_tunnel_flag_and_preserves_remaining_arguments() {
@@ -399,5 +402,29 @@ mod tests {
         std::fs::write(&exe, b"fake exe").expect("exe");
         assert!(installed_marker_matches(&exe, &marker, "1.2.3"));
         assert!(!installed_marker_matches(&exe, &marker, "1.2.4"));
+    }
+
+    #[test]
+    fn should_wrap_windows_failure_only_for_empty_json_stdout() {
+        assert!(should_wrap_windows_failure(true, b""));
+        assert!(!should_wrap_windows_failure(true, b"{}"));
+        assert!(!should_wrap_windows_failure(false, b""));
+        assert!(!should_wrap_windows_failure(false, b"output"));
+    }
+
+    #[test]
+    fn windows_failure_message_describes_signal_status_and_stderr() {
+        assert_eq!(
+            windows_failure_message("tendril.exe", None, ""),
+            "Windows Tendril binary `tendril.exe` failed with exit status terminated by signal"
+        );
+        assert_eq!(
+            windows_failure_message("tendril.exe", Some(3), ""),
+            "Windows Tendril binary `tendril.exe` failed with exit status 3"
+        );
+        assert_eq!(
+            windows_failure_message("tendril.exe", Some(3), "boom"),
+            "Windows Tendril binary `tendril.exe` failed with exit status 3: boom"
+        );
     }
 }
