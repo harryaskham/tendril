@@ -663,4 +663,42 @@ mod tests {
         assert!(permit.report().acquired);
         assert_eq!(permit.report().stale_locks_reaped, 1);
     }
+
+    #[test]
+    fn validate_request_rejects_zero_timeout_and_stale() {
+        let base = request(PathBuf::from("/tmp/lock"));
+
+        let zero_timeout = ExecutionLockRequest {
+            timeout_ms: 0,
+            ..request(PathBuf::from("/tmp/lock"))
+        };
+        let err = validate_request(&zero_timeout).expect_err("zero timeout must error");
+        assert_eq!(err.code(), "invalid_run_input");
+        assert_eq!(
+            err.to_json_error().details.expect("details")["field"],
+            "lock_timeout_ms"
+        );
+
+        let zero_stale = ExecutionLockRequest {
+            stale_ms: 0,
+            ..request(PathBuf::from("/tmp/lock"))
+        };
+        let err = validate_request(&zero_stale).expect_err("zero stale must error");
+        assert_eq!(err.code(), "invalid_run_input");
+        assert_eq!(
+            err.to_json_error().details.expect("details")["field"],
+            "lock_stale_ms"
+        );
+
+        validate_request(&base).expect("valid request should pass");
+    }
+
+    #[test]
+    fn sanitize_path_component_replaces_unsafe_characters() {
+        assert_eq!(sanitize_path_component("window-1.demo_2"), "window-1.demo_2");
+        assert_eq!(sanitize_path_component("a b/c:d"), "a_b_c_d");
+        assert_eq!(sanitize_path_component("../etc"), ".._etc");
+        assert_eq!(sanitize_path_component(""), "default");
+        assert_eq!(sanitize_path_component("///"), "___");
+    }
 }
