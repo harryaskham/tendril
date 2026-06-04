@@ -401,4 +401,25 @@ mod tests {
         assert!(cli.json);
         assert!(matches!(cli.command, Some(Command::List(_))));
     }
+
+    #[test]
+    fn command_name_maps_each_subcommand_to_its_stable_label() {
+        fn name_of(args: &[&str]) -> &'static str {
+            TendrilCli::parse_from(args)
+                .command
+                .expect("a subcommand should parse")
+                .name()
+        }
+
+        assert_eq!(name_of(&["tendril", "list"]), "list");
+        assert_eq!(name_of(&["tendril", "list-elements"]), "list-elements");
+        assert_eq!(name_of(&["tendril", "capture"]), "capture");
+        assert_eq!(name_of(&["tendril", "run"]), "run");
+        assert_eq!(name_of(&["tendril", "listen"]), "listen");
+        assert_eq!(name_of(&["tendril", "clipboard", "get"]), "clipboard");
+        assert_eq!(name_of(&["tendril", "alias", "--name", "desk"]), "alias");
+        assert_eq!(name_of(&["tendril", "update"]), "update");
+        assert_eq!(name_of(&["tendril", "version", "bump", "minor"]), "version");
+        assert_eq!(name_of(&["tendril", "mcp", "stdio"]), "mcp");
+    }
 }
