@@ -1461,11 +1461,12 @@ fn scaled_coordinate(value: i32, numerator: u32, denominator: u32) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_absolute_unix_path, is_absolute_windows_drive_path, is_absolute_windows_unc_path,
-        looks_like_navigation_text, parse_dsl_sequence, parse_duration_ms, parse_input_definition,
-        parse_key_token, parse_quoted_string, reject_unsafe_browser_navigation_chord,
-        relative_point_to_absolute, remap_output_point_to_source, scaled_coordinate,
-        summarize_navigation_text,
+        contains_top_level_comma, is_absolute_unix_path, is_absolute_windows_drive_path,
+        is_absolute_windows_unc_path, is_known_bare_key_token, looks_like_navigation_text,
+        parse_dsl_sequence, parse_duration_ms, parse_input_definition, parse_key_token,
+        parse_quoted_string, reject_unsafe_browser_navigation_chord, relative_point_to_absolute,
+        remap_output_point_to_source, scaled_coordinate, summarize_navigation_text,
+        top_level_semicolon_offset,
     };
     use crate::model::{
         Bounds, CoordinateTransform, InputAction, ModifierKey, MouseButton, RunInputPayload,
@@ -2162,6 +2163,49 @@ mod tests {
         assert!(parse_quoted_string("\"a\\x\"", 0, "send(...)").is_err());
         // A trailing backslash is an unterminated escape.
         assert!(parse_quoted_string("\"a\\\"", 0, "send(...)").is_err());
+    }
+
+    #[test]
+    fn top_level_semicolon_offset_skips_strings_and_parens() {
+        // A bare top-level separator is found at its byte offset.
+        assert_eq!(top_level_semicolon_offset("click();wait(10)"), Some(7));
+        // A semicolon inside a parenthesized argument group is not top-level.
+        assert_eq!(top_level_semicolon_offset("move(1;2)"), None);
+        // A semicolon inside a double-quoted string literal is not top-level.
+        assert_eq!(top_level_semicolon_offset("send(\"a;b\")"), None);
+        // An escaped quote does not prematurely end the string, so the trailing
+        // semicolon stays inside the literal and is not reported.
+        assert_eq!(top_level_semicolon_offset("send(\"a\\\";b\")"), None);
+        // No separator at all.
+        assert_eq!(top_level_semicolon_offset("click()"), None);
+    }
+
+    #[test]
+    fn contains_top_level_comma_respects_strings_and_parens() {
+        // A top-level comma between two actions is detected.
+        assert!(contains_top_level_comma("enter,tab"));
+        // A comma inside an argument group is not top-level.
+        assert!(!contains_top_level_comma("move(1,2)"));
+        // A comma inside a string literal is not top-level.
+        assert!(!contains_top_level_comma("send(\"a,b\")"));
+        // No comma present.
+        assert!(!contains_top_level_comma("click()"));
+    }
+
+    #[test]
+    fn is_known_bare_key_token_recognizes_named_keys_case_insensitively() {
+        // Function keys and named aliases are recognized regardless of case
+        // and surrounding whitespace.
+        assert!(is_known_bare_key_token("F5"));
+        assert!(is_known_bare_key_token("  enter "));
+        assert!(is_known_bare_key_token("ESC"));
+        assert!(is_known_bare_key_token("page_down"));
+        assert!(is_known_bare_key_token("PgUp"));
+        // Unknown tokens (including a bare letter or an out-of-range F-key) are
+        // not recognized as named bare keys.
+        assert!(!is_known_bare_key_token("a"));
+        assert!(!is_known_bare_key_token("f13"));
+        assert!(!is_known_bare_key_token(""));
     }
 
     proptest! {
