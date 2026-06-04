@@ -1462,9 +1462,10 @@ fn scaled_coordinate(value: i32, numerator: u32, denominator: u32) -> i32 {
 mod tests {
     use super::{
         is_absolute_unix_path, is_absolute_windows_drive_path, is_absolute_windows_unc_path,
-        looks_like_navigation_text, parse_dsl_sequence, parse_input_definition,
-        reject_unsafe_browser_navigation_chord, relative_point_to_absolute,
-        remap_output_point_to_source, scaled_coordinate, summarize_navigation_text,
+        looks_like_navigation_text, parse_dsl_sequence, parse_duration_ms, parse_input_definition,
+        parse_key_token, parse_quoted_string, reject_unsafe_browser_navigation_chord,
+        relative_point_to_absolute, remap_output_point_to_source, scaled_coordinate,
+        summarize_navigation_text,
     };
     use crate::model::{
         Bounds, CoordinateTransform, InputAction, ModifierKey, MouseButton, RunInputPayload,
@@ -2093,6 +2094,74 @@ mod tests {
         assert!(summary.ends_with('\u{2026}'));
         assert_eq!(summary.chars().count(), 97);
         assert_eq!(summary.chars().filter(|&c| c == 'a').count(), 96);
+    }
+
+    #[test]
+    fn parse_duration_ms_handles_units_and_defaulting() {
+        // A bare number defaults to milliseconds.
+        assert_eq!(parse_duration_ms("250", 0, "wait(250)").unwrap(), 250);
+        // An explicit `ms` suffix is integer milliseconds.
+        assert_eq!(parse_duration_ms("250ms", 0, "wait(250ms)").unwrap(), 250);
+        // A `s` suffix is parsed as (fractional) seconds and converted to ms.
+        assert_eq!(parse_duration_ms("2s", 0, "wait(2s)").unwrap(), 2000);
+        assert_eq!(parse_duration_ms("1.5s", 0, "wait(1.5s)").unwrap(), 1500);
+        // Surrounding whitespace is tolerated.
+        assert_eq!(parse_duration_ms("  10  ", 0, "wait( 10 )").unwrap(), 10);
+    }
+
+    #[test]
+    fn parse_duration_ms_rejects_invalid_and_zero_durations() {
+        // Empty input is a parse-stage error.
+        let empty = parse_duration_ms("", 1, "wait()").expect_err("empty is rejected");
+        assert_eq!(empty.code(), "invalid_run_input");
+        assert_eq!(empty.details().expect("details")["stage"], "parse");
+        // A non-numeric millisecond value fails at the parse stage.
+        let bad_ms = parse_duration_ms("abcms", 0, "wait(abcms)")
+            .expect_err("non-numeric ms is rejected");
+        assert_eq!(bad_ms.details().expect("details")["stage"], "parse");
+        // A zero millisecond duration is rejected at the validate stage.
+        let zero = parse_duration_ms("0", 0, "wait(0)").expect_err("zero is rejected");
+        assert_eq!(zero.details().expect("details")["stage"], "validate");
+        // A non-positive seconds value is a validate-stage error.
+        let zero_secs =
+            parse_duration_ms("0s", 0, "wait(0s)").expect_err("zero seconds is rejected");
+        assert_eq!(zero_secs.details().expect("details")["stage"], "validate");
+        // A suffix with no number is rejected.
+        assert!(parse_duration_ms("ms", 0, "wait(ms)").is_err());
+    }
+
+    #[test]
+    fn parse_key_token_normalizes_and_filters_charset() {
+        // Allowed charset is alphanumerics plus `_`, `-`, `+`; result lowercases.
+        assert_eq!(parse_key_token("Enter").as_deref(), Some("enter"));
+        assert_eq!(parse_key_token("CTRL+A").as_deref(), Some("ctrl+a"));
+        assert_eq!(parse_key_token("page_down").as_deref(), Some("page_down"));
+        // Surrounding whitespace is trimmed before validation.
+        assert_eq!(parse_key_token("  tab  ").as_deref(), Some("tab"));
+        // Empty, internal whitespace, and out-of-charset tokens are rejected.
+        assert_eq!(parse_key_token(""), None);
+        assert_eq!(parse_key_token("ctrl a"), None);
+        assert_eq!(parse_key_token("key!"), None);
+    }
+
+    #[test]
+    fn parse_quoted_string_decodes_escapes_and_rejects_bad_input() {
+        // A plain quoted literal round-trips its contents.
+        assert_eq!(
+            parse_quoted_string("\"hello\"", 0, "send(\"hello\")").unwrap(),
+            "hello"
+        );
+        // Supported escapes are decoded.
+        assert_eq!(
+            parse_quoted_string("\"a\\n\\t\\\"b\"", 0, "send(...)").unwrap(),
+            "a\n\t\"b"
+        );
+        // Unquoted input is rejected.
+        assert!(parse_quoted_string("hello", 0, "send(hello)").is_err());
+        // An unsupported escape is rejected.
+        assert!(parse_quoted_string("\"a\\x\"", 0, "send(...)").is_err());
+        // A trailing backslash is an unterminated escape.
+        assert!(parse_quoted_string("\"a\\\"", 0, "send(...)").is_err());
     }
 
     proptest! {
