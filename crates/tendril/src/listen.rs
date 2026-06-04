@@ -799,4 +799,40 @@ mod tests {
         let success = std::process::ExitStatus::from_raw(0);
         assert!(is_acceptable_exit("afrecord", success));
     }
+
+    #[test]
+    fn resolve_output_path_returns_explicit_path_with_existing_parent() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let target = dir.path().join("capture.wav");
+        assert_eq!(
+            resolve_output_path(Some(&target)).expect("existing parent is accepted"),
+            target
+        );
+    }
+
+    #[test]
+    fn resolve_output_path_accepts_bare_filename_without_parent() {
+        // A bare filename has an empty parent component, so the existence check
+        // is skipped and the path is returned unchanged.
+        let bare = PathBuf::from("output.wav");
+        assert_eq!(
+            resolve_output_path(Some(&bare)).expect("bare filename is accepted"),
+            bare
+        );
+    }
+
+    #[test]
+    fn resolve_output_path_generates_default_wav_under_temp_dir() {
+        let resolved = resolve_output_path(None).expect("default path is generated");
+        assert!(resolved.starts_with(std::env::temp_dir()));
+        assert_eq!(
+            resolved.extension().and_then(|ext| ext.to_str()),
+            Some("wav")
+        );
+        let name = resolved
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("file name");
+        assert!(name.starts_with("tendril-listen-"));
+    }
 }
