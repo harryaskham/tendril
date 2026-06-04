@@ -387,6 +387,70 @@ capture:
         let error = TendrilConfig::load_from_file(&path).expect_err("invalid config should fail");
 
         assert_eq!(error.code(), "invalid_config");
+        assert_eq!(
+            error.details().expect("details")["field"],
+            "capture.compression"
+        );
+    }
+
+    #[test]
+    fn zero_capture_max_width_is_rejected() {
+        let tempdir = tempfile::tempdir().expect("tempdir should be created");
+        let path = write_temp_config(
+            tempdir.path(),
+            r"
+capture:
+  max_width: 0
+",
+        );
+
+        let error =
+            TendrilConfig::load_from_file(&path).expect_err("zero max_width should be rejected");
+        assert_eq!(error.code(), "invalid_config");
+        assert_eq!(
+            error.details().expect("details")["field"],
+            "capture.max_width"
+        );
+    }
+
+    #[test]
+    fn zero_capture_max_height_is_rejected() {
+        let tempdir = tempfile::tempdir().expect("tempdir should be created");
+        let path = write_temp_config(
+            tempdir.path(),
+            r"
+capture:
+  max_height: 0
+",
+        );
+
+        let error =
+            TendrilConfig::load_from_file(&path).expect_err("zero max_height should be rejected");
+        assert_eq!(error.code(), "invalid_config");
+        assert_eq!(
+            error.details().expect("details")["field"],
+            "capture.max_height"
+        );
+    }
+
+    #[test]
+    fn zero_capture_timeout_ms_is_rejected() {
+        let tempdir = tempfile::tempdir().expect("tempdir should be created");
+        let path = write_temp_config(
+            tempdir.path(),
+            r"
+capture:
+  timeout_ms: 0
+",
+        );
+
+        let error =
+            TendrilConfig::load_from_file(&path).expect_err("zero timeout_ms should be rejected");
+        assert_eq!(error.code(), "invalid_config");
+        assert_eq!(
+            error.details().expect("details")["field"],
+            "capture.timeout_ms"
+        );
     }
 
     fn write_temp_config(dir: &std::path::Path, contents: &str) -> std::path::PathBuf {
