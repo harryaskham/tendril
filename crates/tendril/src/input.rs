@@ -1461,9 +1461,10 @@ fn scaled_coordinate(value: i32, numerator: u32, denominator: u32) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::{
+        is_absolute_unix_path, is_absolute_windows_drive_path, is_absolute_windows_unc_path,
         looks_like_navigation_text, parse_dsl_sequence, parse_input_definition,
         reject_unsafe_browser_navigation_chord, relative_point_to_absolute,
-        remap_output_point_to_source,
+        remap_output_point_to_source, scaled_coordinate, summarize_navigation_text,
     };
     use crate::model::{
         Bounds, CoordinateTransform, InputAction, ModifierKey, MouseButton, RunInputPayload,
@@ -2020,6 +2021,78 @@ mod tests {
             process_id: Some(4242),
             diagnostics: Vec::new(),
         }
+    }
+
+    #[test]
+    fn unix_absolute_path_requires_leading_slash() {
+        assert!(is_absolute_unix_path("/tmp/file.txt"));
+        assert!(is_absolute_unix_path("/"));
+        assert!(!is_absolute_unix_path("tmp/file.txt"));
+        assert!(!is_absolute_unix_path(""));
+        assert!(!is_absolute_unix_path("./relative"));
+    }
+
+    #[test]
+    fn windows_drive_path_requires_letter_colon_separator() {
+        assert!(is_absolute_windows_drive_path("C:\\Users\\me"));
+        // Forward-slash variant is also accepted.
+        assert!(is_absolute_windows_drive_path("D:/data"));
+        // A drive letter with a colon but no separator is not absolute.
+        assert!(!is_absolute_windows_drive_path("C:"));
+        // The first character must be an ASCII letter.
+        assert!(!is_absolute_windows_drive_path("1:\\x"));
+        assert!(!is_absolute_windows_drive_path("relative\\path"));
+    }
+
+    #[test]
+    fn windows_unc_path_requires_double_slash_and_two_components() {
+        assert!(is_absolute_windows_unc_path("\\\\server\\share"));
+        // Forward-slash UNC form is also recognized.
+        assert!(is_absolute_windows_unc_path("//server/share"));
+        // A single component after the double slash is not a full UNC path.
+        assert!(!is_absolute_windows_unc_path("\\\\server"));
+        // A single leading slash is not UNC.
+        assert!(!is_absolute_windows_unc_path("\\server\\share"));
+        assert!(!is_absolute_windows_unc_path(""));
+    }
+
+    #[test]
+    fn scaled_coordinate_rounds_to_nearest_and_handles_edges() {
+        // Identity scale leaves the value unchanged.
+        assert_eq!(scaled_coordinate(100, 1, 1), 100);
+        // 100 * 1/2 = 50.
+        assert_eq!(scaled_coordinate(100, 1, 2), 50);
+        // Round to nearest: 5 * 1/2 = 2.5 -> rounds up to 3 via + denominator/2.
+        assert_eq!(scaled_coordinate(5, 1, 2), 3);
+        // 2x upscale.
+        assert_eq!(scaled_coordinate(50, 2, 1), 100);
+        // A zero denominator returns the value unchanged (guards div-by-zero).
+        assert_eq!(scaled_coordinate(77, 3, 0), 77);
+        // Negative inputs: the round-half-up bias (+ denominator/2) combined
+        // with Rust's truncate-toward-zero integer division rounds half values
+        // toward positive infinity, so -100 * 1/2 = (-100 + 1)/2 = -49.
+        assert_eq!(scaled_coordinate(-100, 1, 2), -49);
+        // A negative value with no fractional part is exact.
+        assert_eq!(scaled_coordinate(-50, 2, 1), -100);
+    }
+
+    #[test]
+    fn scaled_coordinate_saturates_on_overflow() {
+        // A large upscale that exceeds i32::MAX saturates instead of wrapping.
+        assert_eq!(scaled_coordinate(i32::MAX, 1_000_000, 1), i32::MAX);
+        assert_eq!(scaled_coordinate(i32::MIN, 1_000_000, 1), i32::MIN);
+    }
+
+    #[test]
+    fn navigation_summary_truncates_long_text_with_ellipsis() {
+        let short = "https://example.com";
+        assert_eq!(summarize_navigation_text(short), short);
+        // A 97-character string is truncated to 96 chars plus an ellipsis.
+        let long = "a".repeat(97);
+        let summary = summarize_navigation_text(&long);
+        assert!(summary.ends_with('\u{2026}'));
+        assert_eq!(summary.chars().count(), 97);
+        assert_eq!(summary.chars().filter(|&c| c == 'a').count(), 96);
     }
 
     proptest! {
