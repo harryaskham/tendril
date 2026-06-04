@@ -721,4 +721,82 @@ mod tests {
         assert_eq!(format_seconds(Duration::from_secs(3)), "3");
         assert_eq!(format_seconds(Duration::from_millis(1_500)), "1.500");
     }
+
+    #[test]
+    fn afrecord_args_request_time_bounded_wav() {
+        let plan = RecorderPlan {
+            program: "afrecord",
+            sample_rate_hz: 44_100,
+            channels: 1,
+            build_args: build_afrecord_args,
+        };
+        let args = (plan.build_args)(
+            &plan,
+            &input(AudioSourceKind::Microphone, AudioFormat::Wav, 2_000),
+            std::path::Path::new("/tmp/clip.wav"),
+            "2",
+        );
+        // WAVE container with 16-bit little-endian PCM.
+        assert!(args.windows(2).any(|w| w[0] == "-f" && w[1] == "WAVE"));
+        assert!(args.windows(2).any(|w| w[0] == "-d" && w[1] == "LEI16"));
+        // The caller-provided duration string is passed through verbatim as the
+        // time bound so afrecord stops on its own.
+        assert!(args.windows(2).any(|w| w[0] == "-t" && w[1] == "2"));
+        // The output path is always the final argument.
+        assert_eq!(args.last().map(String::as_str), Some("/tmp/clip.wav"));
+    }
+
+    #[test]
+    fn recorders_for_selects_afrecord_on_macos() {
+        let plans = recorders_for(PlatformKind::MacOs, None);
+        assert_eq!(plans.len(), 1);
+        assert_eq!(plans[0].program, "afrecord");
+        assert_eq!(plans[0].sample_rate_hz, 44_100);
+        assert_eq!(plans[0].channels, 1);
+    }
+
+    #[test]
+    fn recorders_for_uses_parecord_for_pulseaudio() {
+        let plans = recorders_for(PlatformKind::Linux, Some(AudioBackend::PulseAudio));
+        assert_eq!(plans.len(), 1);
+        assert_eq!(plans[0].program, "parecord");
+    }
+
+    #[test]
+    fn recorders_for_prefers_pw_record_on_unknown_linux_backend() {
+        let plans = recorders_for(PlatformKind::Linux, None);
+        let programs: Vec<&str> = plans.iter().map(|p| p.program).collect();
+        // pw-record is the preferred path; parecord is the fallback.
+        assert_eq!(programs, vec!["pw-record", "parecord"]);
+    }
+
+    #[test]
+    fn recorders_for_is_empty_on_windows_and_android() {
+        assert!(recorders_for(PlatformKind::Windows11, None).is_empty());
+        assert!(recorders_for(PlatformKind::Android, None).is_empty());
+    }
+
+    #[test]
+    fn only_parecord_runs_until_killed() {
+        assert!(program_runs_until_killed("parecord"));
+        assert!(!program_runs_until_killed("pw-record"));
+        assert!(!program_runs_until_killed("afrecord"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn nonzero_exit_is_only_acceptable_for_run_until_killed_recorders() {
+        use std::os::unix::process::ExitStatusExt;
+        // SIGTERM-style failure (exit code 1) is the normal path for parecord,
+        // which we deliberately kill after the requested duration.
+        let failure = std::process::ExitStatus::from_raw(1 << 8);
+        assert!(is_acceptable_exit("parecord", failure));
+        // The same non-success exit is NOT acceptable for recorders that exit
+        // on their own (pw-record, afrecord) — a failure there is a real error.
+        assert!(!is_acceptable_exit("pw-record", failure));
+        assert!(!is_acceptable_exit("afrecord", failure));
+        // A clean exit is acceptable for any recorder.
+        let success = std::process::ExitStatus::from_raw(0);
+        assert!(is_acceptable_exit("afrecord", success));
+    }
 }
