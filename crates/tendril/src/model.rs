@@ -967,4 +967,71 @@ mod tests {
         .validate()
         .expect("a non-empty target id should pass the identifier guard");
     }
+
+    #[test]
+    fn alias_validation_rejects_empty_name() {
+        let input = AliasInput {
+            target: TargetSelector::Window {
+                id: "window-1".into(),
+            },
+            shell: ShellKind::Bash,
+            name: String::new(),
+        };
+        let error = input.validate().expect_err("empty alias name is rejected");
+        assert_eq!(error.code(), "invalid_alias_input");
+        assert_eq!(error.details().expect("details")["field"], "name");
+    }
+
+    #[test]
+    fn alias_validation_rejects_out_of_charset_name() {
+        // Only ASCII alphanumerics plus `_` and `-` are allowed; a dot is not.
+        let input = AliasInput {
+            target: TargetSelector::Window {
+                id: "window-1".into(),
+            },
+            shell: ShellKind::Bash,
+            name: "bad.name".into(),
+        };
+        let error = input
+            .validate()
+            .expect_err("out-of-charset alias name is rejected");
+        assert_eq!(error.code(), "invalid_alias_input");
+        assert_eq!(error.details().expect("details")["field"], "name");
+    }
+
+    #[test]
+    fn run_validation_rejects_whitespace_only_dsl_sequence() {
+        let input = RunInput {
+            target: TargetSelector::Window {
+                id: "window-1".into(),
+            },
+            payload: RunInputPayload::Dsl {
+                sequence: "   ".into(),
+            },
+            restore_focus: true,
+        };
+        let error = input
+            .validate()
+            .expect_err("whitespace-only dsl sequence is rejected");
+        assert_eq!(error.code(), "invalid_run_input");
+        assert_eq!(error.details().expect("details")["field"], "sequence");
+    }
+
+    #[test]
+    fn run_validation_rejects_empty_actions_payload() {
+        let input = RunInput {
+            target: TargetSelector::Window {
+                id: "window-1".into(),
+            },
+            payload: RunInputPayload::Actions {
+                actions: Vec::new(),
+            },
+            restore_focus: true,
+        };
+        let error = input
+            .validate()
+            .expect_err("empty actions payload is rejected");
+        assert_eq!(error.code(), "invalid_run_input");
+        assert_eq!(error.details().expect("details")["field"], "actions");
+    }
 }
