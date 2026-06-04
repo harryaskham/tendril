@@ -389,6 +389,26 @@ mod tests {
             Some(PathBuf::from("/mnt/c/Users/Agent/AppData/Local"))
         );
         assert_eq!(manual_windows_path_to_wsl_path(r"\\server\share"), None);
+        // The drive letter is normalized to lowercase, and a bare drive root
+        // maps to /mnt/<drive>/.
+        assert_eq!(
+            manual_windows_path_to_wsl_path(r"D:\Tools\bin"),
+            Some(PathBuf::from("/mnt/d/Tools/bin"))
+        );
+        assert_eq!(
+            manual_windows_path_to_wsl_path(r"E:\"),
+            Some(PathBuf::from("/mnt/e/"))
+        );
+        // Trailing carriage-return/newline (e.g. captured from command output)
+        // is trimmed before conversion.
+        assert_eq!(
+            manual_windows_path_to_wsl_path("F:\\tmp\r\n"),
+            Some(PathBuf::from("/mnt/f/tmp"))
+        );
+        // Too-short input and a non-alphabetic drive letter are rejected.
+        assert_eq!(manual_windows_path_to_wsl_path("C:"), None);
+        assert_eq!(manual_windows_path_to_wsl_path("C"), None);
+        assert_eq!(manual_windows_path_to_wsl_path(r"1:\foo"), None);
     }
 
     #[test]
