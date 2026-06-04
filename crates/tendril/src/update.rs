@@ -529,6 +529,42 @@ mod tests {
             release_target_for("windows", "x86_64").expect("target"),
             "x86_64-windows"
         );
+        // Remaining supported pairs.
+        assert_eq!(
+            release_target_for("linux", "aarch64").expect("target"),
+            "aarch64-linux"
+        );
+        assert_eq!(
+            release_target_for("macos", "x86_64").expect("target"),
+            "x86_64-darwin"
+        );
+        assert_eq!(
+            release_target_for("windows", "aarch64").expect("target"),
+            "aarch64-windows"
+        );
+        // The `arm64` spelling is an accepted alias for aarch64 on every OS.
+        assert_eq!(
+            release_target_for("linux", "arm64").expect("target"),
+            "aarch64-linux"
+        );
+        assert_eq!(
+            release_target_for("macos", "arm64").expect("target"),
+            "aarch64-darwin"
+        );
+        assert_eq!(
+            release_target_for("windows", "arm64").expect("target"),
+            "aarch64-windows"
+        );
+    }
+
+    #[test]
+    fn unsupported_platform_target_is_rejected_with_os_arch_details() {
+        let error = release_target_for("freebsd", "riscv64")
+            .expect_err("an unknown os/arch pair should be rejected");
+        assert_eq!(error.code(), "update_unsupported_platform");
+        let details = error.details().expect("details");
+        assert_eq!(details["os"], "freebsd");
+        assert_eq!(details["arch"], "riscv64");
     }
 
     #[test]
