@@ -1221,6 +1221,57 @@ mod tests {
         );
     }
 
+    #[test]
+    fn parse_simple_geometry_reads_positive_and_negative_offsets() {
+        // Standard positive offset token.
+        assert_eq!(
+            parse_simple_geometry("1920x1080+100+200"),
+            Some(Bounds {
+                x: 100,
+                y: 200,
+                width: 1920,
+                height: 1080,
+            })
+        );
+        // Both offsets negative.
+        assert_eq!(
+            parse_simple_geometry("800x600-10-20"),
+            Some(Bounds {
+                x: -10,
+                y: -20,
+                width: 800,
+                height: 600,
+            })
+        );
+    }
+
+    #[test]
+    fn parse_simple_geometry_rejects_malformed_tokens() {
+        // Missing the `x` size separator.
+        assert_eq!(parse_simple_geometry("800+10+20"), None);
+        // Missing the second (y) offset.
+        assert_eq!(parse_simple_geometry("800x600+10"), None);
+        // No offsets at all.
+        assert_eq!(parse_simple_geometry("800x600"), None);
+        // Non-numeric width/height.
+        assert_eq!(parse_simple_geometry("axb+1+2"), None);
+    }
+
+    #[test]
+    fn parse_wlr_randr_mode_extracts_embedded_geometry_token() {
+        // The geometry token is selected from among other whitespace-separated
+        // tokens (it must contain both `x` and an offset sign).
+        assert_eq!(
+            parse_wlr_randr_mode("  current 2560x1440+1920+0 preferred"),
+            Some(Bounds {
+                x: 1920,
+                y: 0,
+                width: 2560,
+                height: 1440,
+            })
+        );
+    }
+
     struct MockWindowsDiscoveryBackend;
 
     impl WindowsDiscoveryBackend for MockWindowsDiscoveryBackend {
