@@ -1169,9 +1169,11 @@ fn json_u32(value: &Value, key: &str) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::{
-        atspi_element_in_scope, macos_accessibility_listing_jxa, macos_accessibility_query_targets,
-        normalize_atspi_action, normalize_atspi_role, parse_x11_geometry_from_line,
-        parse_xwininfo_line, window_targets_for_scope,
+        atspi_element_in_scope, bounds_overlap, json_i32, json_str, json_u32,
+        macos_accessibility_listing_jxa, macos_accessibility_query_targets, normalize_atspi_action,
+        normalize_atspi_role, parent_path_for_child, parse_offset_only, parse_size_offset,
+        parse_x11_geometry_from_line, parse_xwininfo_line, split_geometry_offsets,
+        window_targets_for_scope,
     };
     use crate::model::{Bounds, ScaleFactor};
     use crate::platform::{CaptureTargetKind, TargetDescriptor};
@@ -1404,5 +1406,119 @@ mod tests {
             "include_offscreen=false should map to JS literal false, got:\n{off}"
         );
         assert!(!off.contains("var includeOffscreen = true;"));
+    }
+
+    #[test]
+    fn split_geometry_offsets_requires_three_segments() {
+        // The sign scan skips index 0, so a leading non-sign segment plus two
+        // signed offsets yields three parts.
+        assert_eq!(
+            split_geometry_offsets("24+10+20"),
+            Some(("24", "+10", "+20"))
+        );
+        // Negative offsets are captured with their sign intact.
+        assert_eq!(
+            split_geometry_offsets("24-10-20"),
+            Some(("24", "-10", "-20"))
+        );
+        // Only two segments (a single leading sign + one offset) is rejected:
+        // there is no second sign after index 0 of the remainder.
+        assert_eq!(split_geometry_offsets("+110+220"), None);
+        // A bare value with no signs is rejected.
+        assert_eq!(split_geometry_offsets("800"), None);
+    }
+
+    #[test]
+    fn parse_size_offset_reads_width_height_and_relative_offsets() {
+        assert_eq!(parse_size_offset("80x24+10+20"), Some((80, 24, 10, 20)));
+        // Negative relative offsets are preserved as signed values.
+        assert_eq!(parse_size_offset("5x6-1-2"), Some((5, 6, -1, -2)));
+        // A token without the `WxH` size prefix is not a size+offset token.
+        assert_eq!(parse_size_offset("0+110+220"), None);
+    }
+
+    #[test]
+    fn parse_offset_only_rejects_size_tokens_and_two_part_offsets() {
+        // An offset-only token must have a non-sign leading segment plus two
+        // signed offsets; `0+110+220` qualifies and yields the two offsets.
+        assert_eq!(parse_offset_only("0+110+220"), Some((110, 220)));
+        // Tokens containing `x` are size tokens, not pure offsets.
+        assert_eq!(parse_offset_only("80x24+10+20"), None);
+        // A leading-sign two-part token has no second sign and is rejected.
+        assert_eq!(parse_offset_only("+110+220"), None);
+    }
+
+    #[test]
+    fn bounds_overlap_is_true_only_for_real_intersection() {
+        let base = Bounds {
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 100,
+        };
+        let overlapping = Bounds {
+            x: 50,
+            y: 50,
+            width: 100,
+            height: 100,
+        };
+        assert!(bounds_overlap(&base, &overlapping));
+        assert!(bounds_overlap(&overlapping, &base));
+        // Edge-touching rectangles (base right edge == other left edge) do not
+        // count as overlapping.
+        let edge_touch = Bounds {
+            x: 100,
+            y: 0,
+            width: 10,
+            height: 100,
+        };
+        assert!(!bounds_overlap(&base, &edge_touch));
+        // Fully disjoint rectangles do not overlap.
+        let disjoint = Bounds {
+            x: 500,
+            y: 500,
+            width: 10,
+            height: 10,
+        };
+        assert!(!bounds_overlap(&base, &disjoint));
+    }
+
+    #[test]
+    fn parent_path_for_child_appends_unless_duplicate_tail() {
+        let parent = vec!["root".to_owned(), "window".to_owned()];
+        assert_eq!(
+            parent_path_for_child(&parent, "button"),
+            vec!["root", "window", "button"]
+        );
+        // If the child name already equals the last segment, it is not
+        // appended again (avoids self-duplicating paths).
+        assert_eq!(
+            parent_path_for_child(&parent, "window"),
+            vec!["root", "window"]
+        );
+        // Appending to an empty path always pushes the name.
+        assert_eq!(parent_path_for_child(&[], "only"), vec!["only"]);
+    }
+
+    #[test]
+    fn json_helpers_extract_typed_values_with_range_checks() {
+        let value = serde_json::json!({
+            "name": "widget",
+            "x": -5,
+            "width": 42,
+            "huge": 5_000_000_000_i64,
+            "negative_width": -1,
+        });
+        assert_eq!(json_str(&value, "name"), Some("widget"));
+        assert_eq!(json_str(&value, "missing"), None);
+        // i32 accepts negatives; u32 does not.
+        assert_eq!(json_i32(&value, "x"), Some(-5));
+        assert_eq!(json_u32(&value, "width"), Some(42));
+        assert_eq!(json_u32(&value, "negative_width"), None);
+        // Out-of-range integers fail the checked conversion and return None.
+        assert_eq!(json_i32(&value, "huge"), None);
+        assert_eq!(json_u32(&value, "huge"), None);
+        // A string field is not a number.
+        assert_eq!(json_i32(&value, "name"), None);
     }
 }
