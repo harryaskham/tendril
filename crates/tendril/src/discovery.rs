@@ -1135,9 +1135,10 @@ mod tests {
         Bounds, WindowsDiscoveryBackend, command_output_means_backend_unavailable,
         discover_windows_targets_with_backend, headless_wayland_capture_diagnostic,
         is_filtered_system_window, is_headless_wayland_monitor, is_macos_permission_error,
-        macos_discovery_script, parse_simple_geometry, parse_wlr_randr_mode,
+        macos_discovery_script, parse_simple_geometry, parse_wlr_randr_mode, scale_factor_from_float,
         wayland_discovery_backend_error, wayland_discovery_backend_tools_on_path,
     };
+    use crate::model::ScaleFactor;
     use crate::platform::{
         AdapterContext, Capability, CaptureTargetKind, DesktopSession, PlatformAdapterError,
         PlatformKind,
@@ -1426,5 +1427,44 @@ mod tests {
             }
             other => panic!("unexpected error: {other:?}"),
         }
+    }
+
+    #[test]
+    fn scale_factor_from_float_reduces_and_falls_back_for_invalid_scales() {
+        // Whole and fractional scales reduce to their simplest ratio.
+        assert_eq!(scale_factor_from_float(1.0), ScaleFactor::identity());
+        let two_x = scale_factor_from_float(2.0);
+        assert_eq!((two_x.numerator, two_x.denominator), (2, 1));
+        let one_point_five = scale_factor_from_float(1.5);
+        assert_eq!((one_point_five.numerator, one_point_five.denominator), (3, 2));
+        // Non-finite or non-positive scales fall back to identity (1/1).
+        assert_eq!(scale_factor_from_float(0.0), ScaleFactor::identity());
+        assert_eq!(scale_factor_from_float(-2.0), ScaleFactor::identity());
+        assert_eq!(scale_factor_from_float(f64::NAN), ScaleFactor::identity());
+        assert_eq!(scale_factor_from_float(f64::INFINITY), ScaleFactor::identity());
+    }
+
+    #[test]
+    fn backend_unavailable_classifier_matches_known_markers_only() {
+        // Markers in stderr are detected.
+        assert!(command_output_means_backend_unavailable(
+            "",
+            "error: is hyprland running?"
+        ));
+        assert!(command_output_means_backend_unavailable("", "unknown socket"));
+        // Markers in stdout are detected.
+        assert!(command_output_means_backend_unavailable(
+            "no running instance",
+            ""
+        ));
+        assert!(command_output_means_backend_unavailable(
+            "unable to connect",
+            ""
+        ));
+        // Unrelated output is not classified as a backend-unavailable signal.
+        assert!(!command_output_means_backend_unavailable(
+            "[{\"id\":1}]",
+            ""
+        ));
     }
 }
