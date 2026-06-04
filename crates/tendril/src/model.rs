@@ -917,4 +917,54 @@ mod tests {
                 .expect("legacy 1000/1000 payload should deserialize");
         assert_eq!(value, ScaleFactor::identity());
     }
+
+    fn capture_with_target(target: TargetSelector) -> CaptureInput {
+        CaptureInput {
+            target,
+            max_width: None,
+            max_height: None,
+            format: ImageFormat::Png,
+            compression: 0,
+            timeout_ms: None,
+        }
+    }
+
+    #[test]
+    fn validate_identifier_rejects_empty_window_id_with_id_field() {
+        let error = capture_with_target(TargetSelector::Window { id: String::new() })
+            .validate()
+            .expect_err("empty window id should be rejected");
+        assert_eq!(error.code(), "invalid_capture_input");
+        // The shared identifier guard tags the offending field as `id`.
+        assert_eq!(error.details().expect("details")["field"], "id");
+    }
+
+    #[test]
+    fn validate_identifier_rejects_whitespace_only_id() {
+        // A whitespace-only id is empty after trim() and must be rejected so
+        // blank-but-non-empty selectors cannot slip past the guard.
+        let error = capture_with_target(TargetSelector::Window { id: "   ".into() })
+            .validate()
+            .expect_err("whitespace-only id should be rejected");
+        assert_eq!(error.code(), "invalid_capture_input");
+        assert_eq!(error.details().expect("details")["field"], "id");
+    }
+
+    #[test]
+    fn validate_identifier_rejects_empty_display_id() {
+        let error = capture_with_target(TargetSelector::Display { id: String::new() })
+            .validate()
+            .expect_err("empty display id should be rejected");
+        assert_eq!(error.code(), "invalid_capture_input");
+        assert_eq!(error.details().expect("details")["field"], "id");
+    }
+
+    #[test]
+    fn validate_identifier_accepts_non_empty_id() {
+        capture_with_target(TargetSelector::Window {
+            id: "window-1".into(),
+        })
+        .validate()
+        .expect("a non-empty target id should pass the identifier guard");
+    }
 }
