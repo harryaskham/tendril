@@ -512,7 +512,7 @@ fn make_executable(_path: &Path) -> Result<(), TendrilError> {
 mod tests {
     use super::{
         build_update_plan, extract_json_string_field, normalize_version, release_binary_name,
-        release_target_for, render_update_human, UpdateOutput,
+        release_target_for, render_update_human, verify_checksum, UpdateOutput,
     };
 
     #[test]
@@ -673,5 +673,50 @@ mod tests {
         assert_eq!(release_binary_name("aarch64-linux"), "tendril");
         assert_eq!(release_binary_name("aarch64-darwin"), "tendril");
         assert_eq!(release_binary_name("x86_64-darwin"), "tendril");
+    }
+
+    // sha256("tendril-test-archive") computed with `shasum -a 256`.
+    const KNOWN_ARCHIVE_PAYLOAD: &[u8] = b"tendril-test-archive";
+    const KNOWN_ARCHIVE_SHA256: &str =
+        "d7d43dc4ce9c4d08e14948da097048df27dbba6cbd4e4648b3ebab25a2f7b05f";
+
+    #[test]
+    fn verify_checksum_accepts_matching_digest() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let archive = dir.path().join("tendril.tar.gz");
+        let checksum = dir.path().join("tendril.tar.gz.sha256");
+        std::fs::write(&archive, KNOWN_ARCHIVE_PAYLOAD).expect("archive");
+        // Standard `<hash>  <filename>` checksum line; only the first token is used.
+        std::fs::write(&checksum, format!("{KNOWN_ARCHIVE_SHA256}  tendril.tar.gz\n"))
+            .expect("checksum");
+        verify_checksum(&archive, &checksum).expect("matching checksum should verify");
+    }
+
+    #[test]
+    fn verify_checksum_rejects_mismatched_digest_with_expected_and_actual() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let archive = dir.path().join("tendril.tar.gz");
+        let checksum = dir.path().join("tendril.tar.gz.sha256");
+        std::fs::write(&archive, KNOWN_ARCHIVE_PAYLOAD).expect("archive");
+        let wrong = "0".repeat(64);
+        std::fs::write(&checksum, &wrong).expect("checksum");
+        let error =
+            verify_checksum(&archive, &checksum).expect_err("mismatched checksum is rejected");
+        assert_eq!(error.code(), "update_checksum_mismatch");
+        let details = error.details().expect("details");
+        assert_eq!(details["expected"], wrong);
+        assert_eq!(details["actual"], KNOWN_ARCHIVE_SHA256);
+    }
+
+    #[test]
+    fn verify_checksum_rejects_empty_checksum_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let archive = dir.path().join("tendril.tar.gz");
+        let checksum = dir.path().join("tendril.tar.gz.sha256");
+        std::fs::write(&archive, KNOWN_ARCHIVE_PAYLOAD).expect("archive");
+        std::fs::write(&checksum, "   \n").expect("checksum");
+        let error =
+            verify_checksum(&archive, &checksum).expect_err("empty checksum is rejected");
+        assert_eq!(error.code(), "update_empty_checksum");
     }
 }
