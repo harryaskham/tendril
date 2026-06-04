@@ -1135,8 +1135,9 @@ mod tests {
         Bounds, WindowsDiscoveryBackend, command_output_means_backend_unavailable,
         discover_windows_targets_with_backend, headless_wayland_capture_diagnostic,
         is_filtered_system_window, is_headless_wayland_monitor, is_macos_permission_error,
-        macos_discovery_script, parse_simple_geometry, parse_wlr_randr_mode, scale_factor_from_float,
-        wayland_discovery_backend_error, wayland_discovery_backend_tools_on_path,
+        json_array_i32_pair, json_array_u32_pair, macos_discovery_script, parse_simple_geometry,
+        parse_wlr_randr_mode, scale_factor_from_float, wayland_discovery_backend_error,
+        wayland_discovery_backend_tools_on_path,
     };
     use crate::model::ScaleFactor;
     use crate::platform::{
@@ -1466,5 +1467,39 @@ mod tests {
             "[{\"id\":1}]",
             ""
         ));
+    }
+
+    #[test]
+    fn json_array_i32_pair_reads_pair_and_rejects_malformed_inputs() {
+        let object = json!({
+            "origin": [-10, 20],
+            "too_short": [1],
+            "not_array": "10,20",
+            "out_of_range": [i64::from(i32::MAX) + 1, 0],
+        });
+        // A well-formed two-element array (including negatives) is read.
+        assert_eq!(json_array_i32_pair(&object, "origin"), Some((-10, 20)));
+        // Missing key, non-array, short array, and out-of-range all return None.
+        assert_eq!(json_array_i32_pair(&object, "missing"), None);
+        assert_eq!(json_array_i32_pair(&object, "not_array"), None);
+        assert_eq!(json_array_i32_pair(&object, "too_short"), None);
+        assert_eq!(json_array_i32_pair(&object, "out_of_range"), None);
+    }
+
+    #[test]
+    fn json_array_u32_pair_reads_pair_and_rejects_negative_or_out_of_range() {
+        let object = json!({
+            "size": [1920, 1080],
+            "negative": [-1, 1080],
+            "out_of_range": [i64::from(u32::MAX) + 1, 0],
+            "short": [800],
+        });
+        // A well-formed size pair is read.
+        assert_eq!(json_array_u32_pair(&object, "size"), Some((1920, 1080)));
+        // Negative, out-of-range, short, and missing all return None.
+        assert_eq!(json_array_u32_pair(&object, "negative"), None);
+        assert_eq!(json_array_u32_pair(&object, "out_of_range"), None);
+        assert_eq!(json_array_u32_pair(&object, "short"), None);
+        assert_eq!(json_array_u32_pair(&object, "missing"), None);
     }
 }
