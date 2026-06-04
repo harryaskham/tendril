@@ -862,6 +862,36 @@ mod tests {
             ClipboardSelection::Primary
         );
         assert!(ClipboardSelection::parse(Some("secondary")).is_err());
+        // Parsing is case-insensitive and trims surrounding whitespace.
+        assert_eq!(
+            ClipboardSelection::parse(Some("  PRIMARY  ")).expect("normalized primary"),
+            ClipboardSelection::Primary
+        );
+        assert_eq!(
+            ClipboardSelection::parse(Some("Clipboard")).expect("normalized clipboard"),
+            ClipboardSelection::Clipboard
+        );
+    }
+
+    #[test]
+    fn unsupported_clipboard_selection_reports_code_and_field() {
+        let error = ClipboardSelection::parse(Some("secondary"))
+            .expect_err("an unsupported selection should be rejected");
+        assert_eq!(error.code(), "invalid_clipboard_input");
+        assert_eq!(error.details().expect("details")["field"], "selection");
+    }
+
+    #[test]
+    fn clipboard_selection_as_str_round_trips() {
+        assert_eq!(ClipboardSelection::Clipboard.as_str(), "clipboard");
+        assert_eq!(ClipboardSelection::Primary.as_str(), "primary");
+        // as_str produces a value that parse round-trips back to the same variant.
+        for selection in [ClipboardSelection::Clipboard, ClipboardSelection::Primary] {
+            assert_eq!(
+                ClipboardSelection::parse(Some(selection.as_str())).expect("round trip"),
+                selection
+            );
+        }
     }
 
     #[test]
