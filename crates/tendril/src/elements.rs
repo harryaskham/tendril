@@ -1169,13 +1169,13 @@ fn json_u32(value: &Value, key: &str) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::{
-        atspi_element_in_scope, bounds_overlap, json_i32, json_str, json_u32,
+        assign_snapshot_ids, atspi_element_in_scope, bounds_overlap, json_i32, json_str, json_u32,
         macos_accessibility_listing_jxa, macos_accessibility_query_targets, normalize_atspi_action,
         normalize_atspi_role, parent_path_for_child, parse_offset_only, parse_size_offset,
-        parse_x11_geometry_from_line, parse_xwininfo_line, split_geometry_offsets,
-        window_targets_for_scope,
+        parse_x11_geometry_from_line, parse_xwininfo_line, selector_matches_kind,
+        split_geometry_offsets, target_selector_from_platform, window_targets_for_scope,
     };
-    use crate::model::{Bounds, ScaleFactor};
+    use crate::model::{Bounds, ElementDescriptor, ScaleFactor, TargetSelector};
     use crate::platform::{CaptureTargetKind, TargetDescriptor};
 
     fn target() -> TargetDescriptor {
@@ -1222,6 +1222,68 @@ mod tests {
             process_id: None,
             diagnostics: Vec::new(),
         }
+    }
+
+    #[test]
+    fn selector_matches_kind_pairs_window_and_display_only() {
+        let window = TargetSelector::Window {
+            id: "0x1".to_owned(),
+        };
+        let display = TargetSelector::Display {
+            id: "1".to_owned(),
+        };
+        assert!(selector_matches_kind(&window, CaptureTargetKind::Window));
+        assert!(selector_matches_kind(&display, CaptureTargetKind::Display));
+        assert!(!selector_matches_kind(&window, CaptureTargetKind::Display));
+        assert!(!selector_matches_kind(&display, CaptureTargetKind::Window));
+    }
+
+    #[test]
+    fn target_selector_from_platform_maps_kind_and_clones_id() {
+        let mut window = window_target("0x400001", 0, 0, 100, 100);
+        window.kind = CaptureTargetKind::Window;
+        assert_eq!(
+            target_selector_from_platform(&window),
+            TargetSelector::Window {
+                id: "0x400001".to_owned(),
+            }
+        );
+
+        let mut display = window_target("2", 0, 0, 1920, 1080);
+        display.kind = CaptureTargetKind::Display;
+        assert_eq!(
+            target_selector_from_platform(&display),
+            TargetSelector::Display {
+                id: "2".to_owned(),
+            }
+        );
+    }
+
+    #[test]
+    fn assign_snapshot_ids_renumbers_blank_and_auto_ids_but_keeps_real_ones() {
+        fn element(id: &str) -> ElementDescriptor {
+            ElementDescriptor {
+                id: id.to_owned(),
+                role: "button".to_owned(),
+                name: "OK".to_owned(),
+                description: None,
+                value: None,
+                bounds: None,
+                target: None,
+                path: Vec::new(),
+                actions: Vec::new(),
+                app_name: None,
+                process_id: None,
+            }
+        }
+
+        let mut elements = vec![element("btn"), element("   "), element("auto:xyz")];
+        assign_snapshot_ids(&mut elements);
+        // A real id is preserved; a blank id and an auto: id are replaced with
+        // their 1-based positions.
+        assert_eq!(elements[0].id, "btn");
+        assert_eq!(elements[1].id, "2");
+        assert_eq!(elements[2].id, "3");
     }
 
     #[test]
