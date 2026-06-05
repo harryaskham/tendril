@@ -291,11 +291,16 @@ fn is_posix_safe_character(character: char) -> bool {
 #[cfg(test)]
 mod tests {
     use std::ffi::OsString;
+    use std::io;
+
+    use serde_json::json;
 
     use super::{
-        build_remote_shell_command, is_posix_safe_character, quote_posix, remote_failure_message,
-        should_wrap_remote_failure, strip_remote_args,
+        build_remote_shell_command, is_mcp_stdio, is_posix_safe_character, quote_posix,
+        remote_failure_message, remote_spawn_error, should_wrap_remote_failure, strip_remote_args,
     };
+    use crate::cli::TendrilCli;
+    use clap::Parser as _;
 
     #[test]
     fn strips_remote_flag_and_preserves_remaining_arguments() {
@@ -400,5 +405,27 @@ mod tests {
             remote_failure_message("box", Some(2), "boom"),
             "remote `box` failed over ssh with exit status 2: boom"
         );
+    }
+
+    #[test]
+    fn remote_spawn_error_carries_code_and_remote_detail() {
+        let io_error = io::Error::new(io::ErrorKind::NotFound, "ssh: command not found");
+        let error = remote_spawn_error("build-box", &io_error);
+        assert_eq!(error.code(), "remote_ssh_spawn_failed");
+        let details = error.details().expect("spawn error should carry details");
+        assert_eq!(details["remote"], json!("build-box"));
+        assert!(
+            error.to_string().contains("build-box"),
+            "message should name the remote host"
+        );
+    }
+
+    #[test]
+    fn is_mcp_stdio_only_matches_the_mcp_stdio_subcommand() {
+        let mcp = TendrilCli::parse_from(["tendril", "mcp", "stdio"]);
+        assert!(is_mcp_stdio(&mcp));
+        // A non-mcp subcommand must not be treated as the stdio bridge.
+        let listing = TendrilCli::parse_from(["tendril", "list"]);
+        assert!(!is_mcp_stdio(&listing));
     }
 }
