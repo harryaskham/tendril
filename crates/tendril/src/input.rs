@@ -1467,11 +1467,12 @@ mod tests {
         parse_modifier, parse_quoted_string, parse_scroll_delta,
         reject_unsafe_browser_navigation_chord, relative_point_to_absolute,
         remap_output_point_to_source, scaled_coordinate, summarize_navigation_text,
-        top_level_semicolon_offset,
+        top_level_semicolon_offset, bare_key_token_hint, looks_like_bare_key_sequence,
+        matches_target_kind,
     };
     use crate::model::{
         Bounds, CoordinateTransform, InputAction, ModifierKey, MouseButton, RunInputPayload,
-        ScaleFactor,
+        ScaleFactor, TargetSelector,
     };
     use crate::platform::{
         AdapterInfo, AudioBackend, CaptureTargetKind, DesktopSession, PlatformKind,
@@ -2218,6 +2219,48 @@ mod tests {
             parse_modifier("hyper", 2, "hold(hyper)").expect_err("unknown modifier is rejected");
         assert_eq!(bad.code(), "invalid_run_input");
         assert_eq!(bad.details().expect("details")["stage"], "parse");
+    }
+
+    #[test]
+    fn matches_target_kind_pairs_window_and_display_only() {
+        let window = TargetSelector::Window {
+            id: "w1".to_owned(),
+        };
+        let display = TargetSelector::Display {
+            id: "d1".to_owned(),
+        };
+        assert!(matches_target_kind(&window, CaptureTargetKind::Window));
+        assert!(matches_target_kind(&display, CaptureTargetKind::Display));
+        // Cross pairs never match.
+        assert!(!matches_target_kind(&window, CaptureTargetKind::Display));
+        assert!(!matches_target_kind(&display, CaptureTargetKind::Window));
+    }
+
+    #[test]
+    fn looks_like_bare_key_sequence_accepts_only_clean_key_segments() {
+        // A single bare key token and a clean comma-separated sequence are accepted.
+        assert!(looks_like_bare_key_sequence("f1"));
+        assert!(looks_like_bare_key_sequence("ctrl,c"));
+        // A segment with surrounding whitespace is rejected (raw != raw.trim()).
+        assert!(!looks_like_bare_key_sequence("f1, f2"));
+        // A segment that is not a valid key token is rejected.
+        assert!(!looks_like_bare_key_sequence("f1,bad!"));
+        // Commas inside quotes do not split, so the whole input is one
+        // non-key segment and the sequence is rejected.
+        assert!(!looks_like_bare_key_sequence("\"a,b\""));
+        // An empty input has no valid final key token.
+        assert!(!looks_like_bare_key_sequence(""));
+    }
+
+    #[test]
+    fn bare_key_token_hint_names_token_and_send_literal() {
+        let hint = bare_key_token_hint("Return");
+        assert!(hint.contains("Return"), "hint should name the token");
+        // The send(...) remediation uses a JSON-escaped literal of the token.
+        assert!(
+            hint.contains("send(\"Return\")"),
+            "hint should suggest the escaped send literal: {hint}"
+        );
     }
 
     #[test]
