@@ -1173,8 +1173,8 @@ mod tests {
         macos_accessibility_listing_jxa, macos_accessibility_query_targets, matching_targets,
         normalize_atspi_action, normalize_atspi_role, parent_path_for_child, parse_offset_only,
         parse_size_offset, parse_x11_geometry_from_line, parse_xwininfo_line, push_unique_target,
-        selector_matches_kind, split_geometry_offsets, target_selector_from_platform,
-        window_targets_for_scope,
+        quoted_segment, selector_matches_kind, split_geometry_offsets,
+        target_selector_from_platform, window_targets_for_scope,
     };
     use crate::model::{Bounds, ElementDescriptor, ElementListInput, ScaleFactor, TargetSelector};
     use crate::platform::{CaptureTargetKind, TargetDescriptor, TargetInventory};
@@ -1356,6 +1356,26 @@ mod tests {
         )
         .expect_err("an id match with the wrong kind is rejected");
         assert_eq!(kind_mismatch.code(), "target_not_found");
+    }
+
+    #[test]
+    fn quoted_segment_extracts_first_quoted_pair_or_none() {
+        // A normal quoted name yields its inner text.
+        assert_eq!(
+            quoted_segment(r#"0x123 "OK": ("button")  80x24+0+0"#),
+            Some("OK".to_owned())
+        );
+        // Empty quotes yield an empty string (Some, not None).
+        assert_eq!(quoted_segment(r#"0x1 "": ()"#), Some(String::new()));
+        // No quotes yields None.
+        assert_eq!(quoted_segment("0x1 no quotes here"), None);
+        // A single unmatched quote yields None.
+        assert_eq!(quoted_segment(r#"0x1 "unterminated"#), None);
+        // The first quoted pair wins when several are present.
+        assert_eq!(
+            quoted_segment(r#"0x1 "first" then "second""#),
+            Some("first".to_owned())
+        );
     }
 
     #[test]
