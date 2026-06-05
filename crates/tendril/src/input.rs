@@ -1461,18 +1461,18 @@ fn scaled_coordinate(value: i32, numerator: u32, denominator: u32) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        contains_top_level_comma, is_absolute_unix_path, is_absolute_windows_drive_path,
-        is_absolute_windows_unc_path, is_known_bare_key_token, looks_like_navigation_text,
-        parse_dsl_sequence, parse_duration_ms, parse_i32, parse_input_definition, parse_key_token,
-        parse_modifier, parse_quoted_string, parse_scroll_delta,
-        reject_unsafe_browser_navigation_chord, relative_point_to_absolute,
+        contains_top_level_comma, element_click_to_pointer_action, is_absolute_unix_path,
+        is_absolute_windows_drive_path, is_absolute_windows_unc_path, is_known_bare_key_token,
+        looks_like_navigation_text, parse_dsl_sequence, parse_duration_ms, parse_i32,
+        parse_input_definition, parse_key_token, parse_modifier, parse_quoted_string,
+        parse_scroll_delta, reject_unsafe_browser_navigation_chord, relative_point_to_absolute,
         remap_output_point_to_source, scaled_coordinate, summarize_navigation_text,
         top_level_semicolon_offset, validate_relative_point, bare_key_token_hint,
         looks_like_bare_key_sequence, matches_target_kind,
     };
     use crate::model::{
-        Bounds, CoordinateTransform, InputAction, ModifierKey, MouseButton, RunInputPayload,
-        ScaleFactor, TargetSelector,
+        Bounds, CoordinateTransform, ElementDescriptor, InputAction, ModifierKey, MouseButton,
+        RunInputPayload, ScaleFactor, TargetSelector,
     };
     use crate::platform::{
         AdapterInfo, AudioBackend, CaptureTargetKind, DesktopSession, PlatformKind,
@@ -2001,6 +2001,80 @@ mod tests {
             assert_eq!(details["action_index"], 2);
             assert_eq!(details["action_number"], 3);
         }
+    }
+
+    #[test]
+    fn element_click_to_pointer_action_maps_center_into_target_relative_space() {
+        fn target_descriptor(x: i32, y: i32) -> TargetDescriptor {
+            TargetDescriptor {
+                id: "window-1".to_owned(),
+                title: Some("App".to_owned()),
+                kind: CaptureTargetKind::Window,
+                name: "App".to_owned(),
+                bounds: Bounds {
+                    x,
+                    y,
+                    width: 1000,
+                    height: 800,
+                },
+                scale_factor: ScaleFactor::identity(),
+                capture_supported: true,
+                input_supported: true,
+                app_name: None,
+                process_id: None,
+                diagnostics: Vec::new(),
+            }
+        }
+        fn element(id: &str, bounds: Option<Bounds>) -> ElementDescriptor {
+            ElementDescriptor {
+                id: id.to_owned(),
+                role: "button".to_owned(),
+                name: "OK".to_owned(),
+                description: None,
+                value: None,
+                bounds,
+                target: None,
+                path: Vec::new(),
+                actions: Vec::new(),
+                app_name: None,
+                process_id: None,
+            }
+        }
+
+        let target = target_descriptor(50, 80);
+        let elements = vec![element(
+            "42",
+            Some(Bounds {
+                x: 100,
+                y: 200,
+                width: 40,
+                height: 20,
+            }),
+        )];
+
+        // Success: element center (120, 210) minus target origin (50, 80) -> (70, 130).
+        let action = element_click_to_pointer_action("42", &target, &elements)
+            .expect("a resolvable element click maps to a pointer action");
+        assert_eq!(
+            action,
+            InputAction::Click {
+                button: MouseButton::Left,
+                x: 70,
+                y: 130,
+            }
+        );
+
+        // Not found: an unknown id yields a target-not-found error with remediation.
+        let missing = element_click_to_pointer_action("does-not-exist", &target, &elements)
+            .expect_err("an unknown element id is rejected");
+        assert_eq!(missing.code(), "target_not_found");
+        assert!(missing.details().expect("details")["remediation"].is_string());
+
+        // No bounds: an element without bounds cannot be clicked.
+        let bounded_less = vec![element("42", None)];
+        let no_bounds = element_click_to_pointer_action("42", &target, &bounded_less)
+            .expect_err("an element without bounds is rejected");
+        assert_eq!(no_bounds.code(), "element_bounds_unavailable");
     }
 
     fn x11_adapter_info() -> AdapterInfo {
