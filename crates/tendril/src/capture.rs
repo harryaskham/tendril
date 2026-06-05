@@ -319,7 +319,7 @@ mod tests {
 
     use super::{
         build_capture_output, current_timestamp, matches_target_kind, media_type_for_format,
-        render_capture_human, resized_dimensions,
+        render_capture_human, resized_dimensions, rounded_ratio,
     };
     use crate::config::ImageFormat;
     use crate::model::{CaptureInput, TargetSelector};
@@ -338,6 +338,37 @@ mod tests {
             (1920, 1080)
         );
         assert_eq!(resized_dimensions(1600, 1200, None, Some(600)), (800, 600));
+    }
+
+    #[test]
+    fn rounded_ratio_rounds_half_up_and_saturates() {
+        // Exact division is unchanged.
+        assert_eq!(rounded_ratio(10, 1, 4), 3); // 2.5 rounds up to 3
+        assert_eq!(rounded_ratio(8, 1, 4), 2); // 2.0 stays 2
+        // The half boundary rounds up.
+        assert_eq!(rounded_ratio(3, 1, 2), 2); // 1.5 -> 2
+        assert_eq!(rounded_ratio(2, 1, 2), 1); // 1.0 -> 1
+        // A unit ratio (numerator == denominator) is the identity.
+        assert_eq!(rounded_ratio(7, 1, 1), 7);
+        // Zero scales to zero.
+        assert_eq!(rounded_ratio(0, 5, 1), 0);
+        // Multiplication saturates instead of overflowing.
+        assert_eq!(rounded_ratio(u64::MAX, 2, 1), u64::MAX);
+    }
+
+    #[test]
+    fn resized_dimensions_returns_original_without_constraints() {
+        // With no max_width/max_height, the dimensions are returned unchanged.
+        assert_eq!(resized_dimensions(1280, 720, None, None), (1280, 720));
+        // A constraint that is not smaller than the source is also a no-op.
+        assert_eq!(resized_dimensions(800, 600, Some(800), Some(600)), (800, 600));
+    }
+
+    #[test]
+    fn resized_dimensions_floors_collapsed_dimension_to_one() {
+        // An extreme downscale rounds the tiny height to zero, but the result is
+        // floored to 1 so a captured image never has a zero-sized dimension.
+        assert_eq!(resized_dimensions(2000, 1, Some(2), None), (2, 1));
     }
 
     #[test]
