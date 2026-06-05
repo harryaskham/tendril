@@ -494,6 +494,56 @@ version = "1.2.3"
     }
 
     #[test]
+    fn workspace_manifest_update_is_gated_to_the_workspace_package_section() {
+        // A version line that sits in [package] (not [workspace.package]) is not a
+        // workspace-package version, so the workspace updater leaves it alone and
+        // reports the not-found error.
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let manifest = tempdir.path().join("Cargo.toml");
+        std::fs::write(
+            &manifest,
+            "[package]\nname = \"tendril\"\nversion = \"1.0.0\"\n",
+        )
+        .expect("manifest");
+        let mut updated = Vec::new();
+        let error = update_workspace_manifest_version(&manifest, "1.0.0", "1.1.0", &mut updated)
+            .expect_err("a non-workspace-package version line should not match");
+        assert_eq!(error.code(), "version_bump_expected_version_not_found");
+        assert!(updated.is_empty());
+        // The file is untouched by the failed workspace update.
+        assert!(
+            std::fs::read_to_string(&manifest)
+                .expect("read")
+                .contains("version = \"1.0.0\"")
+        );
+        // The package-level updater is not section-gated, so it rewrites the same line.
+        update_package_manifest_version(&manifest, "1.0.0", "1.1.0", &mut updated)
+            .expect("package update succeeds");
+        assert!(
+            std::fs::read_to_string(&manifest)
+                .expect("read")
+                .contains("version = \"1.1.0\"")
+        );
+    }
+
+    #[test]
+    fn version_line_update_reports_not_found_for_mismatched_previous_version() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let manifest = tempdir.path().join("Cargo.toml");
+        std::fs::write(
+            &manifest,
+            "[workspace.package]\nversion = \"2.0.0\"\n",
+        )
+        .expect("manifest");
+        let mut updated = Vec::new();
+        // The expected previous version does not match the file contents.
+        let error = update_workspace_manifest_version(&manifest, "1.9.0", "2.1.0", &mut updated)
+            .expect_err("a mismatched previous version should not match");
+        assert_eq!(error.code(), "version_bump_expected_version_not_found");
+        assert!(updated.is_empty());
+    }
+
+    #[test]
     fn renders_version_bump_summary() {
         let output = VersionBumpOutput {
             previous_version: "0.1.0".to_owned(),
