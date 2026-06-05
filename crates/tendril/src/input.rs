@@ -1463,8 +1463,9 @@ mod tests {
     use super::{
         contains_top_level_comma, is_absolute_unix_path, is_absolute_windows_drive_path,
         is_absolute_windows_unc_path, is_known_bare_key_token, looks_like_navigation_text,
-        parse_dsl_sequence, parse_duration_ms, parse_input_definition, parse_key_token,
-        parse_quoted_string, reject_unsafe_browser_navigation_chord, relative_point_to_absolute,
+        parse_dsl_sequence, parse_duration_ms, parse_i32, parse_input_definition, parse_key_token,
+        parse_modifier, parse_quoted_string, parse_scroll_delta,
+        reject_unsafe_browser_navigation_chord, relative_point_to_absolute,
         remap_output_point_to_source, scaled_coordinate, summarize_navigation_text,
         top_level_semicolon_offset,
     };
@@ -2163,6 +2164,60 @@ mod tests {
         assert!(parse_quoted_string("\"a\\x\"", 0, "send(...)").is_err());
         // A trailing backslash is an unterminated escape.
         assert!(parse_quoted_string("\"a\\\"", 0, "send(...)").is_err());
+    }
+
+    #[test]
+    fn parse_i32_accepts_integers_and_rejects_non_numeric() {
+        assert_eq!(parse_i32("42", 0, "move(42,0)", "x").unwrap(), 42);
+        assert_eq!(parse_i32("  -7 ", 0, "move(-7,0)", "x").unwrap(), -7);
+        let bad = parse_i32("x", 3, "move(x,0)", "x").expect_err("non-integer is rejected");
+        assert_eq!(bad.code(), "invalid_run_input");
+        assert_eq!(bad.details().expect("details")["stage"], "parse");
+    }
+
+    #[test]
+    fn parse_scroll_delta_validates_range_and_nonzero() {
+        // A valid in-range non-zero delta is returned unchanged.
+        assert_eq!(parse_scroll_delta("5", 0, "scroll(5)").unwrap(), 5);
+        assert_eq!(parse_scroll_delta("-120", 0, "scroll(-120)").unwrap(), -120);
+        // Zero is a validate-stage rejection.
+        let zero = parse_scroll_delta("0", 0, "scroll(0)").expect_err("zero dy is rejected");
+        assert_eq!(zero.code(), "invalid_run_input");
+        assert_eq!(zero.details().expect("details")["stage"], "validate");
+        // Beyond MAX_SCROLL_TICKS (120) is a validate-stage rejection.
+        let too_big =
+            parse_scroll_delta("121", 0, "scroll(121)").expect_err("out-of-range dy is rejected");
+        assert_eq!(too_big.details().expect("details")["stage"], "validate");
+        // A non-integer fails at the parse stage via parse_i32.
+        let bad = parse_scroll_delta("up", 0, "scroll(up)").expect_err("non-integer is rejected");
+        assert_eq!(bad.details().expect("details")["stage"], "parse");
+    }
+
+    #[test]
+    fn parse_modifier_maps_aliases_and_rejects_unknown() {
+        for alias in ["ctrl", "control", "  CTRL "] {
+            assert_eq!(
+                parse_modifier(alias, 0, "hold(ctrl)").unwrap(),
+                ModifierKey::Ctrl
+            );
+        }
+        for alias in ["alt", "option"] {
+            assert_eq!(parse_modifier(alias, 0, "hold(alt)").unwrap(), ModifierKey::Alt);
+        }
+        assert_eq!(
+            parse_modifier("shift", 0, "hold(shift)").unwrap(),
+            ModifierKey::Shift
+        );
+        for alias in ["meta", "cmd", "command", "super", "win", "windows"] {
+            assert_eq!(
+                parse_modifier(alias, 0, "hold(meta)").unwrap(),
+                ModifierKey::Meta
+            );
+        }
+        let bad =
+            parse_modifier("hyper", 2, "hold(hyper)").expect_err("unknown modifier is rejected");
+        assert_eq!(bad.code(), "invalid_run_input");
+        assert_eq!(bad.details().expect("details")["stage"], "parse");
     }
 
     #[test]
