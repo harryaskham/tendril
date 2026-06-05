@@ -1463,8 +1463,8 @@ mod tests {
     use super::{
         contains_top_level_comma, element_click_to_pointer_action, is_absolute_unix_path,
         is_absolute_windows_drive_path, is_absolute_windows_unc_path, is_known_bare_key_token,
-        looks_like_navigation_text, parse_dsl_sequence, parse_duration_ms, parse_i32,
-        parse_input_definition, parse_key_token, parse_modifier, parse_quoted_string,
+        looks_like_navigation_text, parse_dsl_sequence, parse_duration_ms, parse_element_id,
+        parse_i32, parse_input_definition, parse_key_token, parse_modifier, parse_quoted_string,
         parse_scroll_delta, reject_unsafe_browser_navigation_chord, relative_point_to_absolute,
         remap_output_point_to_source, scaled_coordinate, summarize_navigation_text,
         top_level_semicolon_offset, validate_relative_point, bare_key_token_hint,
@@ -2075,6 +2075,44 @@ mod tests {
         let no_bounds = element_click_to_pointer_action("42", &target, &bounded_less)
             .expect_err("an element without bounds is rejected");
         assert_eq!(no_bounds.code(), "element_bounds_unavailable");
+    }
+
+    #[test]
+    fn parse_element_id_handles_bare_quoted_and_empty_arguments() {
+        // A bare id is trimmed and returned verbatim, including slashes.
+        assert_eq!(
+            parse_element_id("foo/bar", 0, "element(foo/bar)").expect("bare id"),
+            "foo/bar"
+        );
+        assert_eq!(
+            parse_element_id("  33  ", 0, "click(33)").expect("surrounding whitespace is trimmed"),
+            "33"
+        );
+        // A quoted id is decoded through parse_quoted_string.
+        assert_eq!(
+            parse_element_id("\"sidebar-new-note\"", 0, "press(\"sidebar-new-note\")")
+                .expect("quoted id"),
+            "sidebar-new-note"
+        );
+
+        // An empty bare id is a validate-stage DSL error with 1-based action_number.
+        let empty = parse_element_id("   ", 1, "element()")
+            .expect_err("an empty id is rejected");
+        assert_eq!(empty.code(), "invalid_run_input");
+        let details = empty.details().expect("details");
+        assert_eq!(details["stage"], "validate");
+        assert_eq!(details["action_index"], 1);
+        assert_eq!(details["action_number"], 2);
+        assert_eq!(details["action"], "element()");
+
+        // An empty quoted id is rejected the same way.
+        let empty_quoted = parse_element_id("\"\"", 0, "press(\"\")")
+            .expect_err("an empty quoted id is rejected");
+        assert_eq!(empty_quoted.code(), "invalid_run_input");
+        assert_eq!(
+            empty_quoted.details().expect("details")["stage"],
+            "validate"
+        );
     }
 
     fn x11_adapter_info() -> AdapterInfo {
