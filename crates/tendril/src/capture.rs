@@ -318,8 +318,8 @@ mod tests {
     use proptest::prelude::*;
 
     use super::{
-        build_capture_output, current_timestamp, matches_target_kind, media_type_for_format,
-        render_capture_human, resized_dimensions, rounded_ratio,
+        build_capture_output, current_timestamp, ensure_capture_supported, matches_target_kind,
+        media_type_for_format, render_capture_human, resized_dimensions, rounded_ratio,
     };
     use crate::config::ImageFormat;
     use crate::model::{CaptureInput, TargetSelector};
@@ -527,6 +527,41 @@ mod tests {
         assert!(matches_target_kind(&display, CaptureTargetKind::Display));
         assert!(!matches_target_kind(&window, CaptureTargetKind::Display));
         assert!(!matches_target_kind(&display, CaptureTargetKind::Window));
+    }
+
+    #[test]
+    fn ensure_capture_supported_gates_on_the_capability_flag() {
+        let mut target = TargetDescriptor {
+            id: "window-9".to_owned(),
+            title: Some("Example".to_owned()),
+            kind: CaptureTargetKind::Window,
+            name: "Example".to_owned(),
+            bounds: crate::model::Bounds {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 100,
+            },
+            scale_factor: crate::model::ScaleFactor::identity(),
+            capture_supported: true,
+            input_supported: true,
+            app_name: Some("app".to_owned()),
+            process_id: Some(1),
+            diagnostics: Vec::new(),
+        };
+
+        // A capture-capable target passes the gate.
+        assert!(ensure_capture_supported(&target).is_ok());
+
+        // An incapable target is rejected with the capture-not-supported code
+        // and a target_id detail identifying the offending target.
+        target.capture_supported = false;
+        let error = ensure_capture_supported(&target).expect_err("incapable target is rejected");
+        assert_eq!(error.code(), "capture_not_supported_for_target");
+        assert_eq!(
+            error.details().expect("details")["target_id"],
+            serde_json::json!("window-9")
+        );
     }
 
     #[test]
