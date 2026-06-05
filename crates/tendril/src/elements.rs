@@ -1170,13 +1170,15 @@ fn json_u32(value: &Value, key: &str) -> Option<u32> {
 mod tests {
     use super::{
         assign_snapshot_ids, atspi_element_in_scope, bounds_overlap, json_i32, json_str, json_u32,
-        macos_accessibility_listing_jxa, macos_accessibility_query_targets, normalize_atspi_action,
-        normalize_atspi_role, parent_path_for_child, parse_offset_only, parse_size_offset,
-        parse_x11_geometry_from_line, parse_xwininfo_line, selector_matches_kind,
-        split_geometry_offsets, target_selector_from_platform, window_targets_for_scope,
+        macos_accessibility_listing_jxa, macos_accessibility_query_targets, matching_targets,
+        normalize_atspi_action, normalize_atspi_role, parent_path_for_child, parse_offset_only,
+        parse_size_offset, parse_x11_geometry_from_line, parse_xwininfo_line, push_unique_target,
+        selector_matches_kind, split_geometry_offsets, target_selector_from_platform,
+        window_targets_for_scope,
     };
-    use crate::model::{Bounds, ElementDescriptor, ScaleFactor, TargetSelector};
-    use crate::platform::{CaptureTargetKind, TargetDescriptor};
+    use crate::model::{Bounds, ElementDescriptor, ElementListInput, ScaleFactor, TargetSelector};
+    use crate::platform::{CaptureTargetKind, TargetDescriptor, TargetInventory};
+    use std::collections::HashSet;
 
     fn target() -> TargetDescriptor {
         window_target("0x400001", 100, 200, 800, 600)
@@ -1284,6 +1286,76 @@ mod tests {
         assert_eq!(elements[0].id, "btn");
         assert_eq!(elements[1].id, "2");
         assert_eq!(elements[2].id, "3");
+    }
+
+    #[test]
+    fn push_unique_target_dedups_by_kind_and_id() {
+        let mut window = window_target("0x1", 0, 0, 100, 100);
+        window.kind = CaptureTargetKind::Window;
+        let mut display_same_id = window_target("0x1", 0, 0, 1920, 1080);
+        display_same_id.kind = CaptureTargetKind::Display;
+        let mut window_other = window_target("0x2", 0, 0, 100, 100);
+        window_other.kind = CaptureTargetKind::Window;
+
+        let mut targets = Vec::new();
+        let mut seen = HashSet::new();
+
+        push_unique_target(&mut targets, &mut seen, &window);
+        // The same kind+id is deduped.
+        push_unique_target(&mut targets, &mut seen, &window);
+        assert_eq!(targets.len(), 1);
+        // The same id with a different kind is a distinct entry.
+        push_unique_target(&mut targets, &mut seen, &display_same_id);
+        assert_eq!(targets.len(), 2);
+        // A different id is added.
+        push_unique_target(&mut targets, &mut seen, &window_other);
+        assert_eq!(targets.len(), 3);
+    }
+
+    #[test]
+    fn matching_targets_filters_by_selector_and_reports_not_found() {
+        let mut window = window_target("a", 0, 0, 100, 100);
+        window.kind = CaptureTargetKind::Window;
+        let mut display = window_target("1", 0, 0, 1920, 1080);
+        display.kind = CaptureTargetKind::Display;
+        let inventory = TargetInventory {
+            targets: vec![window, display],
+        };
+        let list_input = |target| ElementListInput {
+            target,
+            include_offscreen: false,
+        };
+
+        // No selector returns every target.
+        let all = matching_targets(&inventory, &list_input(None)).expect("no selector returns all");
+        assert_eq!(all.len(), 2);
+
+        // A matching Window selector returns just that window.
+        let only_window = matching_targets(
+            &inventory,
+            &list_input(Some(TargetSelector::Window { id: "a".to_owned() })),
+        )
+        .expect("a matching selector returns its target");
+        assert_eq!(only_window.len(), 1);
+        assert_eq!(only_window[0].id, "a");
+
+        // A selector with no matching id is a target-not-found error.
+        let missing = matching_targets(
+            &inventory,
+            &list_input(Some(TargetSelector::Window {
+                id: "zzz".to_owned(),
+            })),
+        )
+        .expect_err("an unknown id is rejected");
+        assert_eq!(missing.code(), "target_not_found");
+
+        // A selector whose id matches a target but whose kind differs does not match.
+        let kind_mismatch = matching_targets(
+            &inventory,
+            &list_input(Some(TargetSelector::Display { id: "a".to_owned() })),
+        )
+        .expect_err("an id match with the wrong kind is rejected");
+        assert_eq!(kind_mismatch.code(), "target_not_found");
     }
 
     #[test]
