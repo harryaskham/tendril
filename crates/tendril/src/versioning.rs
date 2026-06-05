@@ -411,7 +411,7 @@ fn parse_semver_component(value: &str, name: &str) -> Result<u64, TendrilError> 
 #[cfg(test)]
 mod tests {
     use super::{
-        bump_version, extract_version_in_section, render_version_bump_human,
+        bump_version, extract_version_in_section, read_workspace_version, render_version_bump_human,
         update_cargo_lock_versions, update_package_manifest_version,
         update_workspace_manifest_version, version_line_value, VersionBumpOutput,
     };
@@ -578,5 +578,43 @@ version = "1.2.3"
         let non_numeric = bump_version("1.x.3", VersionBumpLevel::Patch)
             .expect_err("non-numeric component should be rejected");
         assert_eq!(non_numeric.code(), "version_bump_invalid_semver");
+    }
+
+    #[test]
+    fn read_workspace_version_reads_section_and_reports_distinct_errors() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+
+        // Success: a manifest with [workspace.package] returns its version.
+        let ok_manifest = tempdir.path().join("Cargo.toml");
+        std::fs::write(
+            &ok_manifest,
+            "[workspace.package]\nversion = \"1.2.3\"\nedition = \"2024\"\n",
+        )
+        .expect("ok manifest");
+        assert_eq!(
+            read_workspace_version(&ok_manifest).expect("reads ok version"),
+            "1.2.3"
+        );
+
+        // Missing-section: a manifest with no [workspace.package] table is
+        // rejected with version_bump_missing_workspace_version.
+        let missing_manifest = tempdir.path().join("missing-section.toml");
+        std::fs::write(
+            &missing_manifest,
+            "[package]\nname = \"x\"\nversion = \"0.0.1\"\n",
+        )
+        .expect("missing-section manifest");
+        let missing_error = read_workspace_version(&missing_manifest)
+            .expect_err("no [workspace.package] is rejected");
+        assert_eq!(
+            missing_error.code(),
+            "version_bump_missing_workspace_version"
+        );
+
+        // Unreadable: a non-existent path is rejected with version_bump_io_error.
+        let absent_manifest = tempdir.path().join("does-not-exist.toml");
+        let io_error_actual = read_workspace_version(&absent_manifest)
+            .expect_err("a missing file is rejected as io error");
+        assert_eq!(io_error_actual.code(), "version_bump_io_error");
     }
 }
