@@ -1137,13 +1137,13 @@ mod tests {
         is_filtered_system_window, is_headless_wayland_monitor, is_macos_permission_error,
         json_array_i32_pair, json_array_u32_pair, json_bool, json_f64, json_i32, json_str,
         json_u32, macos_discovery_script, parse_simple_geometry,
-        parse_wlr_randr_mode, scale_factor_from_float, wayland_discovery_backend_error,
-        wayland_discovery_backend_tools_on_path,
+        parse_wlr_randr_mode, scale_factor_from_float, sort_inventory, target_kind_rank,
+        wayland_discovery_backend_error, wayland_discovery_backend_tools_on_path,
     };
     use crate::model::ScaleFactor;
     use crate::platform::{
         AdapterContext, Capability, CaptureTargetKind, DesktopSession, PlatformAdapterError,
-        PlatformKind,
+        PlatformKind, TargetDescriptor, TargetInventory,
     };
     use serde_json::json;
 
@@ -1322,6 +1322,69 @@ mod tests {
         assert_eq!(inventory.targets[1].title.as_deref(), Some("Inbox"));
         assert_eq!(inventory.targets[1].name, "OUTLOOK");
         assert_eq!(inventory.targets[1].process_id, Some(4242));
+    }
+
+    #[test]
+    fn sort_inventory_orders_displays_first_then_renumbers_them() {
+        fn descriptor(id: &str, kind: CaptureTargetKind, name: &str, x: i32, y: i32) -> TargetDescriptor {
+            TargetDescriptor {
+                id: id.to_owned(),
+                title: None,
+                kind,
+                name: name.to_owned(),
+                bounds: Bounds {
+                    x,
+                    y,
+                    width: 100,
+                    height: 100,
+                },
+                scale_factor: ScaleFactor::identity(),
+                capture_supported: true,
+                input_supported: true,
+                app_name: None,
+                process_id: None,
+                diagnostics: Vec::new(),
+            }
+        }
+
+        // Deliberately unsorted: a window above a display, displays out of order,
+        // and two windows that tie on y so x breaks the tie.
+        let inventory = TargetInventory {
+            targets: vec![
+                descriptor("win-b", CaptureTargetKind::Window, "Beta", 200, 0),
+                descriptor("mon-bottom", CaptureTargetKind::Display, "DISPLAY2", 0, 1080),
+                descriptor("win-a", CaptureTargetKind::Window, "Alpha", 0, 0),
+                descriptor("mon-top", CaptureTargetKind::Display, "DISPLAY1", 0, 0),
+            ],
+        };
+
+        let sorted = sort_inventory(inventory);
+        let kinds: Vec<_> = sorted.targets.iter().map(|t| t.kind).collect();
+        // All displays sort before all windows (display rank < window rank).
+        assert_eq!(
+            kinds,
+            vec![
+                CaptureTargetKind::Display,
+                CaptureTargetKind::Display,
+                CaptureTargetKind::Window,
+                CaptureTargetKind::Window,
+            ]
+        );
+        // Displays are renumbered 1,2 in sorted (top-to-bottom) order; the
+        // originally-bottom display keeps its position after the top one.
+        assert_eq!(sorted.targets[0].name, "DISPLAY1");
+        assert_eq!(sorted.targets[0].id, "1");
+        assert_eq!(sorted.targets[1].name, "DISPLAY2");
+        assert_eq!(sorted.targets[1].id, "2");
+        // Windows keep their original ids and sort by y then x (both y==0 here,
+        // so x decides: win-a at x=0 before win-b at x=200).
+        assert_eq!(sorted.targets[2].id, "win-a");
+        assert_eq!(sorted.targets[3].id, "win-b");
+    }
+
+    #[test]
+    fn target_kind_rank_orders_displays_before_windows() {
+        assert!(target_kind_rank(CaptureTargetKind::Display) < target_kind_rank(CaptureTargetKind::Window));
     }
 
     #[test]
