@@ -1467,8 +1467,8 @@ mod tests {
         parse_modifier, parse_quoted_string, parse_scroll_delta,
         reject_unsafe_browser_navigation_chord, relative_point_to_absolute,
         remap_output_point_to_source, scaled_coordinate, summarize_navigation_text,
-        top_level_semicolon_offset, bare_key_token_hint, looks_like_bare_key_sequence,
-        matches_target_kind,
+        top_level_semicolon_offset, validate_relative_point, bare_key_token_hint,
+        looks_like_bare_key_sequence, matches_target_kind,
     };
     use crate::model::{
         Bounds, CoordinateTransform, InputAction, ModifierKey, MouseButton, RunInputPayload,
@@ -1972,6 +1972,35 @@ mod tests {
         };
 
         assert_eq!(relative_point_to_absolute(&bounds, 10, 20), (60, 100));
+    }
+
+    #[test]
+    fn validate_relative_point_accepts_interior_and_rejects_out_of_bounds() {
+        let bounds = Bounds {
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 50,
+        };
+        // The accept box is half-open [0,width) x [0,height): both corners inclusive
+        // at the low end, exclusive at the high end.
+        validate_relative_point(0, 0, &bounds, 0, "point").expect("lower corner is inside");
+        validate_relative_point(99, 49, &bounds, 0, "point")
+            .expect("upper interior corner is inside");
+        validate_relative_point(50, 25, &bounds, 0, "point").expect("a middle point is inside");
+
+        // Each rejection edge reports structured validate-stage details with the
+        // passed field and a 1-based action_number.
+        for (x, y) in [(-1, 0), (0, -1), (100, 0), (0, 50)] {
+            let error = validate_relative_point(x, y, &bounds, 2, "origin")
+                .expect_err("an out-of-bounds point should be rejected");
+            assert_eq!(error.code(), "invalid_run_input");
+            let details = error.details().expect("details");
+            assert_eq!(details["stage"], "validate");
+            assert_eq!(details["field"], "origin");
+            assert_eq!(details["action_index"], 2);
+            assert_eq!(details["action_number"], 3);
+        }
     }
 
     fn x11_adapter_info() -> AdapterInfo {
