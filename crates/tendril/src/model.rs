@@ -717,9 +717,10 @@ fn validate_identifier(id: &str, kind: TargetKind) -> Result<(), TendrilError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        AliasInput, AudioFormat, AudioSourceKind, AudioSourceSelector, CaptureInput, ImageFormat,
-        InputAction, ListInput, ListenInput, MAX_SCROLL_TICKS, RunInput, RunInputPayload,
-        ScaleFactor, ShellKind, TargetSelector,
+        AliasInput, AudioFormat, AudioSourceKind, AudioSourceSelector, CaptureInput,
+        ElementListInput, ImageFormat, InputAction, ListInput, ListenInput, MAX_SCROLL_TICKS,
+        ModifierKey, MouseButton, RunInput, RunInputPayload, ScaleFactor, ShellKind,
+        TargetSelector,
     };
 
     #[test]
@@ -1033,5 +1034,72 @@ mod tests {
             .expect_err("empty actions payload is rejected");
         assert_eq!(error.code(), "invalid_run_input");
         assert_eq!(error.details().expect("details")["field"], "actions");
+    }
+
+    #[test]
+    fn input_action_validate_rejects_each_invalid_variant() {
+        // Every rejection arm reports invalid_run_input tagged to the actions field.
+        let cases = [
+            InputAction::KeyTap { key: "   ".into() },
+            InputAction::Send { text: String::new() },
+            InputAction::Wait { duration_ms: 0 },
+            InputAction::Scroll { x: 0, y: 0, dy: 0 },
+            InputAction::Scroll {
+                x: 0,
+                y: 0,
+                dy: i32::try_from(MAX_SCROLL_TICKS).expect("tick cap fits i32") + 1,
+            },
+            InputAction::ElementClick { id: " ".into() },
+        ];
+        for action in cases {
+            let error = action
+                .validate()
+                .expect_err("invalid action variant should be rejected");
+            assert_eq!(error.code(), "invalid_run_input");
+            assert_eq!(error.details().expect("details")["field"], "actions");
+        }
+    }
+
+    #[test]
+    fn input_action_validate_accepts_well_formed_variants() {
+        // Representative valid variants fall through to the Ok catch-all.
+        InputAction::KeyTap { key: "a".into() }
+            .validate()
+            .expect("a non-empty key tap is valid");
+        InputAction::Click {
+            button: MouseButton::Left,
+            x: 10,
+            y: 20,
+        }
+        .validate()
+        .expect("a click is valid");
+        InputAction::Hold {
+            modifier: ModifierKey::Ctrl,
+        }
+        .validate()
+        .expect("a modifier hold is valid");
+        InputAction::Scroll { x: 0, y: 0, dy: 3 }
+            .validate()
+            .expect("an in-range non-zero scroll is valid");
+    }
+
+    #[test]
+    fn element_list_input_validate_checks_optional_target_identifier() {
+        // No target is always valid.
+        ElementListInput {
+            target: None,
+            include_offscreen: false,
+        }
+        .validate()
+        .expect("a None target is valid");
+        // An invalid target identifier is re-coded for the element-list surface.
+        let error = ElementListInput {
+            target: Some(TargetSelector::Window { id: String::new() }),
+            include_offscreen: true,
+        }
+        .validate()
+        .expect_err("an empty target id should be rejected");
+        assert_eq!(error.code(), "invalid_list_elements_input");
+        assert_eq!(error.details().expect("details")["field"], "id");
     }
 }
