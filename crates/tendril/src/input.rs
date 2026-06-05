@@ -1461,14 +1461,14 @@ fn scaled_coordinate(value: i32, numerator: u32, denominator: u32) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        contains_top_level_comma, element_click_to_pointer_action, is_absolute_unix_path,
-        is_absolute_windows_drive_path, is_absolute_windows_unc_path, is_known_bare_key_token,
-        looks_like_navigation_text, parse_dsl_sequence, parse_duration_ms, parse_element_id,
-        parse_i32, parse_input_definition, parse_key_token, parse_modifier, parse_quoted_string,
-        parse_scroll_delta, reject_unsafe_browser_navigation_chord, relative_point_to_absolute,
-        remap_output_point_to_source, scaled_coordinate, summarize_navigation_text,
-        top_level_semicolon_offset, validate_relative_point, bare_key_token_hint,
-        looks_like_bare_key_sequence, matches_target_kind,
+        contains_top_level_comma, element_click_to_pointer_action, ensure_input_supported,
+        is_absolute_unix_path, is_absolute_windows_drive_path, is_absolute_windows_unc_path,
+        is_known_bare_key_token, looks_like_navigation_text, parse_dsl_sequence, parse_duration_ms,
+        parse_element_id, parse_i32, parse_input_definition, parse_key_token, parse_modifier,
+        parse_quoted_string, parse_scroll_delta, reject_unsafe_browser_navigation_chord,
+        relative_point_to_absolute, remap_output_point_to_source, scaled_coordinate,
+        summarize_navigation_text, top_level_semicolon_offset, validate_relative_point,
+        bare_key_token_hint, looks_like_bare_key_sequence, matches_target_kind,
     };
     use crate::model::{
         Bounds, CoordinateTransform, ElementDescriptor, InputAction, ModifierKey, MouseButton,
@@ -2112,6 +2112,24 @@ mod tests {
         assert_eq!(
             empty_quoted.details().expect("details")["stage"],
             "validate"
+        );
+    }
+
+    #[test]
+    fn ensure_input_supported_gates_on_the_capability_flag() {
+        let mut target = browser_target("window-9", "firefox", Some("Browser"));
+
+        // A target with input enabled passes the gate.
+        assert!(ensure_input_supported(&target).is_ok());
+
+        // Flipping input_supported off rejects with the input-not-supported
+        // code and a target_id detail identifying the offending target.
+        target.input_supported = false;
+        let error = ensure_input_supported(&target).expect_err("incapable target is rejected");
+        assert_eq!(error.code(), "input_not_supported_for_target");
+        assert_eq!(
+            error.details().expect("details")["target_id"],
+            serde_json::json!("window-9")
         );
     }
 
