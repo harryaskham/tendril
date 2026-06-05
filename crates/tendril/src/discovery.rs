@@ -1135,7 +1135,8 @@ mod tests {
         Bounds, WindowsDiscoveryBackend, command_output_means_backend_unavailable,
         discover_windows_targets_with_backend, headless_wayland_capture_diagnostic,
         is_filtered_system_window, is_headless_wayland_monitor, is_macos_permission_error,
-        json_array_i32_pair, json_array_u32_pair, macos_discovery_script, parse_simple_geometry,
+        json_array_i32_pair, json_array_u32_pair, json_bool, json_f64, json_i32, json_str,
+        json_u32, macos_discovery_script, parse_simple_geometry,
         parse_wlr_randr_mode, scale_factor_from_float, wayland_discovery_backend_error,
         wayland_discovery_backend_tools_on_path,
     };
@@ -1552,5 +1553,40 @@ mod tests {
         assert_eq!(json_array_u32_pair(&object, "out_of_range"), None);
         assert_eq!(json_array_u32_pair(&object, "short"), None);
         assert_eq!(json_array_u32_pair(&object, "missing"), None);
+    }
+
+    #[test]
+    fn scalar_json_extractors_read_correct_types_and_reject_others() {
+        let object = json!({
+            "name": "DISPLAY1",
+            "scale": 1.5,
+            "primary": true,
+            "width": 1920,
+            "signed": -7,
+            "i32_overflow": i64::from(i32::MAX) + 1,
+            "u32_overflow": i64::from(u32::MAX) + 1,
+            "u32_negative": -1,
+            "wrong_type": [1, 2],
+        });
+        // Present-and-correct-type values are extracted.
+        assert_eq!(json_str(&object, "name"), Some("DISPLAY1"));
+        assert_eq!(json_f64(&object, "scale"), Some(1.5));
+        assert_eq!(json_bool(&object, "primary"), Some(true));
+        assert_eq!(json_i32(&object, "width"), Some(1920));
+        assert_eq!(json_i32(&object, "signed"), Some(-7));
+        assert_eq!(json_u32(&object, "width"), Some(1920));
+        // Missing keys return None for every extractor.
+        assert_eq!(json_str(&object, "missing"), None);
+        assert_eq!(json_f64(&object, "missing"), None);
+        assert_eq!(json_bool(&object, "missing"), None);
+        assert_eq!(json_i32(&object, "missing"), None);
+        assert_eq!(json_u32(&object, "missing"), None);
+        // Wrong-type values return None.
+        assert_eq!(json_str(&object, "primary"), None);
+        assert_eq!(json_bool(&object, "name"), None);
+        // The i32/u32 try_from guards reject out-of-range and negative values.
+        assert_eq!(json_i32(&object, "i32_overflow"), None);
+        assert_eq!(json_u32(&object, "u32_overflow"), None);
+        assert_eq!(json_u32(&object, "u32_negative"), None);
     }
 }
