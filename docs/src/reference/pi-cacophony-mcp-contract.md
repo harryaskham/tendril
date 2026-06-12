@@ -22,7 +22,7 @@ nix run .#tendril -- mcp stdio
 ### Process expectations
 
 - Tendril serves MCP over the child process **stdin/stdout** pair.
-- Clients must send framed JSON-RPC messages with `Content-Length` headers.
+- Clients must send newline-delimited JSON-RPC messages: one compact JSON object per line terminated by `\n` (the MCP stdio transport framing — no `Content-Length` headers, no embedded newlines). Blank separator lines are tolerated.
 - Tendril writes MCP responses to stdout and keeps stderr available for diagnostics.
 - Closing stdin cleanly ends the server; no daemon or background service is required.
 - Tendril is stateless between calls apart from optional config defaults in `$TENDRIL_CONFIG_DIR/config.yaml`.

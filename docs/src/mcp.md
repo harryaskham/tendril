@@ -34,7 +34,7 @@ The `crates/mcp-cli` git submodule (`https://github.com/harryaskham/mcp-cli`) pr
 - stable success and error envelopes,
 - tool metadata and JSON Schema generation,
 - typed tool routing, and
-- framed stdio transport handling.
+- newline-delimited JSON (NDJSON) stdio transport handling.
 
 ### Nix/crane source-grafting footgun
 

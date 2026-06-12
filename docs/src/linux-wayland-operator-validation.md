@@ -171,7 +171,8 @@ Use the same framing helper pattern as the macOS validation page:
 ```bash
 frame() {
   body="$1"
-  printf 'Content-Length: %s\r\n\r\n%s' "$(printf %s "$body" | wc -c | tr -d ' ')" "$body"
+  # MCP stdio framing is newline-delimited JSON: one compact JSON object per line.
+  printf '%s\n' "$body"
 }
 
 {

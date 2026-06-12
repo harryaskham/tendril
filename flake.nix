@@ -5,7 +5,7 @@
     crane.url = "github:ipetkov/crane";
     flake-utils.url = "github:numtide/flake-utils";
     mcp-cli = {
-      url = "github:harryaskham/mcp-cli/9e2f1fc3fe71cd757cea3cbd4943b2b60525a548";
+      url = "github:harryaskham/mcp-cli/941015b41aeb71a1af7efafc4d66727a93048696";
       flake = false;
     };
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";

@@ -136,14 +136,15 @@ Minimal launch:
 nix run .#tendril -- mcp stdio
 ```
 
-That starts the MCP server and waits for framed JSON-RPC messages on stdin.
+That starts the MCP server and waits for newline-delimited JSON-RPC messages on stdin (one compact JSON object per line).
 
 If you want a copy-pasteable end-to-end probe that initializes the server and asks for `tools/list`, use:
 
 ```bash
 frame() {
   body="$1"
-  printf 'Content-Length: %s\r\n\r\n%s' "$(printf %s "$body" | wc -c | tr -d ' ')" "$body"
+  # MCP stdio framing is newline-delimited JSON: one compact JSON object per line.
+  printf '%s\n' "$body"
 }
 
 {
@@ -155,7 +156,7 @@ frame() {
 
 Expected success:
 
-- the output contains framed JSON-RPC responses,
+- the output contains newline-delimited JSON-RPC responses,
 - the first response includes `"serverInfo":{"name":"tendril"`, and
 - the `tools/list` response includes the `list`, `capture`, and `run` tools.
 
@@ -242,4 +243,4 @@ Try this sequence:
 That usually means Tendril is waiting for properly framed MCP input.
 
 - `nix run .#tendril -- mcp stdio` is supposed to wait on stdin.
-- Use an MCP client, or use the `frame()` shell helper above so the request includes `Content-Length` headers.
+- Use an MCP client, or use the `frame()` shell helper above so each request is sent as one newline-terminated JSON line.

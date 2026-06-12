@@ -1276,7 +1276,7 @@ dependencies = [
 [[package]]
 name = "mcp-cli"
 version = "0.0.1"
-source = "git+https://github.com/harryaskham/mcp-cli?branch=main#9e2f1fc3fe71cd757cea3cbd4943b2b60525a548"
+source = "git+https://github.com/harryaskham/mcp-cli?branch=main#941015b41aeb71a1af7efafc4d66727a93048696"
 dependencies = [
  "schemars",
  "serde",
