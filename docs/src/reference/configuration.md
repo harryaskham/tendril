@@ -65,7 +65,7 @@ Optional breakage/feedback reporting via [`feedback-cli`](https://github.com/har
 - `strategy.type`: `webhook` (POST to a caco feedback endpoint that files a bead), `caco_cli` (shell out to `caco log error` / file a bead), `file` (append JSON lines), `stderr`, or `disabled`
 - webhook strategy: `url`, optional `token_env` (env var holding the bearer token) / `token`, optional `headers`, and `blocking: false` for best-effort background delivery
 
-When no `feedback` block is configured, Tendril falls back to the `FEEDBACK_WEBHOOK_URL` environment variable (and is otherwise silent). An explicit config block takes precedence over the environment.
+When no `feedback` block is configured, Tendril falls back to the `FEEDBACK_WEBHOOK_URL` environment variable (and is otherwise silent). An explicit config block takes precedence over the environment. The env-driven webhook fallback defaults to **non-blocking** (best-effort background) delivery so breakage reporting never adds a synchronous HTTP round-trip to the CLI's error-exit path; configure `[feedback]` with `blocking: true` if you need synchronous delivery.
 
 ## Behavior
 

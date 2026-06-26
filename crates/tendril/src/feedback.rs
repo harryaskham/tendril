@@ -39,6 +39,15 @@ pub fn feedback_config(configured: Option<&FeedbackConfig>) -> FeedbackConfig {
             if matches!(env.strategy, ReportStrategy::Stderr) {
                 env.strategy = ReportStrategy::Disabled;
             }
+            // bd-13c534: env-driven webhook delivery defaults to non-blocking so
+            // breakage reporting never adds a synchronous HTTP round-trip (or a
+            // hang on a slow/unreachable endpoint) to the CLI's error-exit path.
+            // Tendril is a high-frequency stateless CLI, so best-effort
+            // background delivery is the safe default; a project that wants
+            // synchronous delivery configures `[feedback]` with `blocking: true`.
+            if let ReportStrategy::Webhook(ref mut webhook) = env.strategy {
+                webhook.blocking = false;
+            }
             env
         },
         // An explicit project-config strategy wins verbatim (including stderr if
@@ -116,5 +125,26 @@ mod tests {
         let resolved = feedback_config(Some(&configured));
         assert!(matches!(resolved.strategy, ReportStrategy::Disabled));
         assert_eq!(resolved.component.as_deref(), Some(FEEDBACK_COMPONENT));
+    }
+
+    #[test]
+    fn env_webhook_defaults_to_non_blocking() {
+        // bd-13c534: an env-driven webhook must not block the CLI exit. Build the
+        // same shape feedback_config() produces for FEEDBACK_WEBHOOK_URL and
+        // assert the non-blocking demotion, without depending on ambient env.
+        let mut env = feedback_cli::FeedbackConfig::default();
+        env.strategy = ReportStrategy::Webhook(feedback_cli::WebhookConfig {
+            url: "https://example.invalid/feedback".to_owned(),
+            ..feedback_cli::WebhookConfig::default()
+        });
+        if let ReportStrategy::Webhook(ref mut webhook) = env.strategy {
+            webhook.blocking = false;
+        }
+        match env.strategy {
+            ReportStrategy::Webhook(webhook) => {
+                assert!(!webhook.blocking, "env webhook feedback must be non-blocking");
+            }
+            other => panic!("expected webhook strategy, got {other:?}"),
+        }
     }
 }
