@@ -114,7 +114,9 @@ fn cli_and_mcp_stdio_return_equivalent_structured_payloads() {
             "clipboard_set",
             "self_update_status",
             "self_update_check",
-            "self_update_run"
+            "self_update_run",
+            "feedback_report",
+            "feedback_status"
         ]
     );
 

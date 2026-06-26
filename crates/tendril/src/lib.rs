@@ -8,6 +8,7 @@ pub mod discovery;
 pub mod elements;
 pub mod error;
 pub mod execution_lock;
+pub mod feedback;
 pub mod input;
 pub mod listen;
 pub mod logging;
@@ -115,6 +116,9 @@ where
 }
 
 fn emit_error(cli: &TendrilCli, command: Option<&str>, error: &TendrilError) -> ExitCode {
+    // Best-effort: route the breakage back to the owning project (caco webhook /
+    // beads) when feedback is configured. Never affects the CLI's own exit path.
+    feedback::report_breakage(command, error);
     if cli.json {
         let envelope: JsonEnvelope<Value> = match command {
             Some(command) => JsonEnvelope::error_for(command, error.to_json_error()),

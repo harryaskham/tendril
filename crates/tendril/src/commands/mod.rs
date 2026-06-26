@@ -695,6 +695,9 @@ fn build_tool_router() -> ToolRouter<CommandContext> {
         },
     );
     updatable_cli::register_update_tool(&mut router, |_context: &CommandContext| updater_config());
+    feedback_cli::register_feedback_tools(&mut router, |_context: &CommandContext| {
+        crate::feedback::feedback_config()
+    });
     router
 }
 
@@ -2201,7 +2204,9 @@ mod tests {
                 "clipboard_set",
                 "self_update_status",
                 "self_update_check",
-                "self_update_run"
+                "self_update_run",
+                "feedback_report",
+                "feedback_status"
             ]
         );
     }

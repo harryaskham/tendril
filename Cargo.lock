@@ -758,6 +758,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "feedback-cli"
+version = "0.1.0"
+source = "git+https://github.com/harryaskham/feedback-cli?branch=main#08cf87f10a62a5fc43b1d3d405205a7dd3f5536e"
+dependencies = [
+ "mcp-cli 0.0.1 (git+https://github.com/harryaskham/mcp-cli?branch=main)",
+ "schemars",
+ "serde",
+ "serde_json",
+ "ureq",
+]
+
+[[package]]
 name = "filetime"
 version = "0.2.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2170,6 +2182,7 @@ dependencies = [
  "ashpd",
  "base64",
  "clap",
+ "feedback-cli",
  "image",
  "mcp-cli 0.0.1 (git+https://github.com/harryaskham/mcp-cli?branch=main)",
  "pollster",

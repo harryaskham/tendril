@@ -2153,13 +2153,11 @@ fn dispatch_macos_action(
             Some(action_index),
             Some(label),
         )),
-        InputAction::DoubleClick { .. } => Err(input_execution_error(
-            "unsupported_double_click_action",
-            "dblclick(...) is currently implemented for Linux/X11 input delivery; this adapter does not yet support native double-click injection".to_owned(),
-            "dispatch",
-            Some(action_index),
-            Some(label),
-        )),
+        InputAction::DoubleClick { x, y } => {
+            let (absolute_x, absolute_y) = relative_point_to_absolute(&request.bounds, *x, *y);
+            let script = macos_double_click_jxa_script(MouseButton::Left, absolute_x, absolute_y);
+            run_macos_osascript_jxa_for_input(&script, "dispatch", Some(action_index), Some(label))
+        }
         InputAction::Drag { x0, y0, x1, y1 } => {
             let (start_x, start_y) = relative_point_to_absolute(&request.bounds, *x0, *y0);
             let (end_x, end_y) = relative_point_to_absolute(&request.bounds, *x1, *y1);
@@ -2167,13 +2165,11 @@ fn dispatch_macos_action(
                 macos_mouse_jxa_script(MouseButton::Left, start_x, start_y, Some((end_x, end_y)));
             run_macos_osascript_jxa_for_input(&script, "dispatch", Some(action_index), Some(label))
         }
-        InputAction::Scroll { .. } => Err(input_execution_error(
-            "unsupported_scroll_action",
-            "scroll(...) is currently implemented for Linux/X11 input delivery; this adapter does not yet support native wheel injection".to_owned(),
-            "dispatch",
-            Some(action_index),
-            Some(label),
-        )),
+        InputAction::Scroll { x, y, dy } => {
+            let (absolute_x, absolute_y) = relative_point_to_absolute(&request.bounds, *x, *y);
+            let script = macos_scroll_jxa_script(absolute_x, absolute_y, *dy);
+            run_macos_osascript_jxa_for_input(&script, "dispatch", Some(action_index), Some(label))
+        }
         InputAction::ElementClick { .. } => Err(input_execution_error(
             "unresolved_element_click_action",
             "click(<element-id>) should be resolved to target coordinates before reaching the macOS input adapter".to_owned(),
@@ -2905,6 +2901,79 @@ fn macos_mouse_jxa_script(
     }
 }
 
+/// Build a JXA script that posts a native macOS scroll-wheel event at the
+/// given screen coordinates through CoreGraphics.
+///
+/// `dy` follows the Tendril model convention (positive scrolls the content
+/// down, negative scrolls up) measured in wheel ticks. CoreGraphics scroll
+/// events use the opposite sign — a positive `wheel1` scrolls up — so we
+/// negate `dy` before handing it to `CGEventCreateScrollWheelEvent`. Line
+/// units (`1` == `kCGScrollEventUnitLine`) map one tick to one line, the
+/// natural analogue of an X11 wheel notch. The cursor is warped to the target
+/// point and the event location is set explicitly so the scroll is hit-tested
+/// against the window under that point.
+fn macos_scroll_jxa_script(x: i32, y: i32, dy: i32) -> String {
+    // Tendril `dy`: positive == down. CoreGraphics `wheel1`: positive == up.
+    let wheel1 = dy.saturating_neg();
+    format!(
+        r"ObjC.import('CoreGraphics');
+(function () {{
+    function point(px, py) {{
+        return $.CGPointMake(px, py);
+    }}
+    $.CGWarpMouseCursorPosition(point({x}, {y}));
+    // CGEventCreateScrollWheelEvent(source, units, wheelCount, wheel1):
+    // units 1 == kCGScrollEventUnitLine, one tick per line.
+    var event = $.CGEventCreateScrollWheelEvent(null, 1, 1, {wheel1});
+    if (!event) {{
+        throw new Error('failed to create scroll wheel event');
+    }}
+    $.CGEventSetLocation(event, point({x}, {y}));
+    $.CGEventPost($.kCGHIDEventTap, event);
+}}());
+"
+    )
+}
+
+/// Build a JXA script that posts a native macOS double-click at the given
+/// screen coordinates through CoreGraphics.
+///
+/// A faithful double-click is two mouse down/up pairs at the same point with
+/// the `kCGMouseEventClickState` field (`CGEventField` index `1`) set to `1` for
+/// the first click and `2` for the second, so the target treats them as a
+/// single double-click rather than two independent clicks.
+fn macos_double_click_jxa_script(button: MouseButton, x: i32, y: i32) -> String {
+    let (down_event, up_event, button_code) = match button {
+        MouseButton::Left => ("kCGEventLeftMouseDown", "kCGEventLeftMouseUp", 0),
+        MouseButton::Right => ("kCGEventRightMouseDown", "kCGEventRightMouseUp", 1),
+        MouseButton::Middle => ("kCGEventOtherMouseDown", "kCGEventOtherMouseUp", 2),
+    };
+    format!(
+        r"ObjC.import('CoreGraphics');
+(function () {{
+    function point(px, py) {{
+        return $.CGPointMake(px, py);
+    }}
+    function postMouse(eventType, clickState) {{
+        var event = $.CGEventCreateMouseEvent(null, $[eventType], point({x}, {y}), {button_code});
+        if (!event) {{
+            throw new Error('failed to create mouse event');
+        }}
+        // CGEventField index 1 == kCGMouseEventClickState.
+        $.CGEventSetIntegerValueField(event, 1, clickState);
+        $.CGEventPost($.kCGHIDEventTap, event);
+    }}
+    $.CGWarpMouseCursorPosition(point({x}, {y}));
+    postMouse('kCGEventMouseMoved', 0);
+    postMouse('{down_event}', 1);
+    postMouse('{up_event}', 1);
+    postMouse('{down_event}', 2);
+    postMouse('{up_event}', 2);
+}}());
+"
+    )
+}
+
 fn run_macos_osascript_jxa_for_input(
     script: &str,
     stage: &'static str,
@@ -3214,6 +3283,7 @@ mod tests {
         crop_wayland_portal_capture_to_target, detect_linux_audio_backend, detect_linux_session,
         execute_windows_input_with_runtime, is_macos_input_permission_error,
         javascript_string_literal, macos_focus_pid_jxa_script, macos_focus_window_jxa_script,
+        macos_double_click_jxa_script, macos_scroll_jxa_script,
         macos_text_jxa_script, wayland_capture_program_on_path, wayland_portal_attempt_timeout,
         wayland_workspace_origin, windows_key_is_supported,
     };
@@ -3699,6 +3769,51 @@ mod tests {
         assert!(text_script.contains("System Events"));
         assert!(!focus_script.contains("swift"));
         assert!(!text_script.contains("swift"));
+    }
+
+    #[test]
+    fn macos_scroll_script_posts_native_wheel_event_at_target_point() {
+        // dy is positive == scroll down in the Tendril model; CoreGraphics
+        // wheel1 is positive == scroll up, so the script must negate it.
+        let script = macos_scroll_jxa_script(120, 240, 7);
+
+        assert!(script.contains("ObjC.import('CoreGraphics')"));
+        // Native wheel injection via CoreGraphics, not osascript keystrokes.
+        assert!(script.contains("CGEventCreateScrollWheelEvent(null, 1, 1, -7)"));
+        assert!(script.contains("CGEventPost($.kCGHIDEventTap"));
+        // Cursor is warped and the event location pinned to the target point so
+        // the scroll is hit-tested against the window under (x, y).
+        assert!(script.contains("CGWarpMouseCursorPosition(point(120, 240))"));
+        assert!(script.contains("CGEventSetLocation(event, point(120, 240))"));
+        // It is plain JXA, not the AppleScript timeout path.
+        assert!(!script.starts_with("with timeout of"));
+    }
+
+    #[test]
+    fn macos_scroll_script_negates_upward_delta() {
+        // A negative model dy (scroll up) becomes a positive CoreGraphics wheel1.
+        let script = macos_scroll_jxa_script(10, 20, -3);
+        assert!(script.contains("CGEventCreateScrollWheelEvent(null, 1, 1, 3)"));
+    }
+
+    #[test]
+    fn macos_double_click_script_posts_two_click_state_pairs() {
+        let script = macos_double_click_jxa_script(MouseButton::Left, 55, 66);
+
+        assert!(script.contains("ObjC.import('CoreGraphics')"));
+        assert!(script.contains("CGEventCreateMouseEvent"));
+        assert!(script.contains("kCGEventLeftMouseDown"));
+        assert!(script.contains("kCGEventLeftMouseUp"));
+        // Cursor is warped to the target before the click pairs are posted.
+        assert!(script.contains("CGWarpMouseCursorPosition(point(55, 66))"));
+        // A faithful double-click sets the click-state field (index 1) to 1 for
+        // the first down/up pair and 2 for the second.
+        assert!(script.contains("CGEventSetIntegerValueField(event, 1, clickState)"));
+        assert!(script.contains("postMouse('kCGEventLeftMouseDown', 1)"));
+        assert!(script.contains("postMouse('kCGEventLeftMouseUp', 1)"));
+        assert!(script.contains("postMouse('kCGEventLeftMouseDown', 2)"));
+        assert!(script.contains("postMouse('kCGEventLeftMouseUp', 2)"));
+        assert!(!script.starts_with("with timeout of"));
     }
 
     #[test]

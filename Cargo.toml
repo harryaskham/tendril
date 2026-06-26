@@ -34,6 +34,7 @@ time = { version = "0.3.39", features = ["formatting"] }
 tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
 updatable-cli = { git = "https://github.com/harryaskham/updatable-cli", branch = "main" }
+feedback-cli = { git = "https://github.com/harryaskham/feedback-cli", branch = "main" }
 zbus = "4.4.0"
 
 [workspace.metadata.crane]
