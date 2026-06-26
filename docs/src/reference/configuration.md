@@ -21,6 +21,15 @@ execution_lock:
   timeout_ms: 60000
   stale_ms: 30000
   path: null
+# Optional: route Tendril breakages back to the owning project (feedback-cli).
+# Omit entirely to keep feedback off (the default).
+feedback:
+  enabled: true
+  component: tendril
+  strategy:
+    type: webhook        # webhook | caco_cli | file | stderr | disabled
+    url: https://example.invalid/feedback
+    token_env: TENDRIL_FEEDBACK_TOKEN
 ```
 
 ## Current fields
@@ -45,6 +54,18 @@ execution_lock:
 - `path`: optional lock root override; leave `null` to use the default temp-dir user/session namespace
 
 See [Execution lock and queue](execution-lock.md) for CLI and environment overrides.
+
+### `feedback`
+
+Optional breakage/feedback reporting via [`feedback-cli`](https://github.com/harryaskham/feedback-cli). When present, Tendril forwards every CLI/MCP breakage (the structured error that reaches its error sink) so the owning project can turn it into a bead / logged error. Omit the whole `feedback` block to keep it off.
+
+- `enabled`: master on/off switch (default `true` when the block is present)
+- `component`: source label on events (defaults to `tendril`)
+- `project`: optional default project label on events
+- `strategy.type`: `webhook` (POST to a caco feedback endpoint that files a bead), `caco_cli` (shell out to `caco log error` / file a bead), `file` (append JSON lines), `stderr`, or `disabled`
+- webhook strategy: `url`, optional `token_env` (env var holding the bearer token) / `token`, optional `headers`, and `blocking: false` for best-effort background delivery
+
+When no `feedback` block is configured, Tendril falls back to the `FEEDBACK_WEBHOOK_URL` environment variable (and is otherwise silent). An explicit config block takes precedence over the environment.
 
 ## Behavior
 

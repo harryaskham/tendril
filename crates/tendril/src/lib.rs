@@ -54,6 +54,7 @@ where
             Err(error) => emit_error(
                 &cli,
                 cli.command.as_ref().map(crate::cli::Command::name),
+                None,
                 &error,
             ),
         };
@@ -65,6 +66,7 @@ where
             Err(error) => emit_error(
                 &cli,
                 cli.command.as_ref().map(crate::cli::Command::name),
+                None,
                 &error,
             ),
         };
@@ -76,13 +78,13 @@ where
                 output.print();
                 ExitCode::SUCCESS
             }
-            Err(error) => emit_error(&cli, None, &error),
+            Err(error) => emit_error(&cli, None, None, &error),
         };
     }
 
     let config = match TendrilConfig::load() {
         Ok(config) => config,
-        Err(error) => return emit_error(&cli, None, &error),
+        Err(error) => return emit_error(&cli, None, None, &error),
     };
 
     let logging_mode = match &cli.command {
@@ -99,7 +101,7 @@ where
     };
 
     if let Err(error) = logging::init_logging(effective_log_level, logging_mode) {
-        return emit_error(&cli, None, &error);
+        return emit_error(&cli, None, config.feedback.as_ref(), &error);
     }
 
     match commands::dispatch(&cli, &config) {
@@ -110,15 +112,21 @@ where
         Err(error) => emit_error(
             &cli,
             cli.command.as_ref().map(crate::cli::Command::name),
+            config.feedback.as_ref(),
             &error,
         ),
     }
 }
 
-fn emit_error(cli: &TendrilCli, command: Option<&str>, error: &TendrilError) -> ExitCode {
+fn emit_error(
+    cli: &TendrilCli,
+    command: Option<&str>,
+    feedback_config: Option<&feedback_cli::FeedbackConfig>,
+    error: &TendrilError,
+) -> ExitCode {
     // Best-effort: route the breakage back to the owning project (caco webhook /
     // beads) when feedback is configured. Never affects the CLI's own exit path.
-    feedback::report_breakage(command, error);
+    feedback::report_breakage(feedback_config, command, error);
     if cli.json {
         let envelope: JsonEnvelope<Value> = match command {
             Some(command) => JsonEnvelope::error_for(command, error.to_json_error()),

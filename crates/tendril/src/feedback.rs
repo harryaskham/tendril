@@ -20,26 +20,34 @@ use crate::error::TendrilError;
 /// Component label stamped on every Tendril feedback event.
 pub const FEEDBACK_COMPONENT: &str = "tendril";
 
-/// Resolve the feedback configuration from the environment.
+/// Resolve the feedback configuration.
 ///
-/// Defaults the component to `tendril` and demotes the unconfigured
+/// Prefers an explicit project-config feedback strategy (`[feedback]` in the
+/// Tendril config). When the project does not configure one, falls back to the
+/// environment (`FEEDBACK_WEBHOOK_URL`) and demotes the unconfigured
 /// `FeedbackConfig::from_env()` stderr fallback to [`ReportStrategy::Disabled`],
-/// so Tendril feedback is strictly opt-in: it is enabled by configuring
-/// `FEEDBACK_WEBHOOK_URL` (or, in future, a project config feedback strategy),
-/// and is otherwise silent.
+/// so Tendril feedback is strictly opt-in and otherwise silent. The component is
+/// defaulted to `tendril`.
 #[must_use]
-pub fn feedback_config() -> FeedbackConfig {
-    let mut config = FeedbackConfig::from_env();
+pub fn feedback_config(configured: Option<&FeedbackConfig>) -> FeedbackConfig {
+    let mut config = configured.map_or_else(
+        || {
+            // `from_env()` falls back to the stderr strategy when no webhook URL
+            // is set; demote that to Disabled so an unconfigured Tendril CLI
+            // never writes an extra feedback line to stderr or files beads.
+            let mut env = FeedbackConfig::from_env();
+            if matches!(env.strategy, ReportStrategy::Stderr) {
+                env.strategy = ReportStrategy::Disabled;
+            }
+            env
+        },
+        // An explicit project-config strategy wins verbatim (including stderr if
+        // the project really wants it).
+        FeedbackConfig::clone,
+    );
     config
         .component
         .get_or_insert_with(|| FEEDBACK_COMPONENT.to_owned());
-    // `from_env()` falls back to the stderr strategy when no webhook URL is set;
-    // demote that to Disabled so an unconfigured Tendril CLI never writes an
-    // extra feedback line to stderr or files beads. Any explicitly configured
-    // strategy (webhook/caco-cli/file) is preserved.
-    if matches!(config.strategy, ReportStrategy::Stderr) {
-        config.strategy = ReportStrategy::Disabled;
-    }
     config
 }
 
@@ -50,8 +58,12 @@ pub fn feedback_config() -> FeedbackConfig {
 /// errors are swallowed, because the breakage is already surfaced to the user
 /// via `emit_error`. When feedback is unconfigured the reporter is disabled and
 /// this is a no-op.
-pub fn report_breakage(command: Option<&str>, error: &TendrilError) {
-    let reporter = Reporter::from_config(&feedback_config());
+pub fn report_breakage(
+    configured: Option<&FeedbackConfig>,
+    command: Option<&str>,
+    error: &TendrilError,
+) {
+    let reporter = Reporter::from_config(&feedback_config(configured));
     let mut event = FeedbackEvent::from_structured_error(FEEDBACK_COMPONENT, error);
     if let Some(command) = command {
         event = event.with_field("command", command);
@@ -88,11 +100,21 @@ mod tests {
 
     #[test]
     fn feedback_config_stamps_tendril_component() {
-        let config = feedback_config();
+        let config = feedback_config(None);
         assert_eq!(config.component.as_deref(), Some(FEEDBACK_COMPONENT));
         assert!(
             !matches!(config.strategy, ReportStrategy::Stderr),
             "Tendril demotes the stderr fallback to Disabled"
         );
+    }
+
+    #[test]
+    fn project_config_feedback_strategy_is_preferred() {
+        // An explicit project-config strategy wins over the env fallback.
+        let mut configured = feedback_cli::FeedbackConfig::default();
+        configured.strategy = ReportStrategy::Disabled;
+        let resolved = feedback_config(Some(&configured));
+        assert!(matches!(resolved.strategy, ReportStrategy::Disabled));
+        assert_eq!(resolved.component.as_deref(), Some(FEEDBACK_COMPONENT));
     }
 }

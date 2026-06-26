@@ -695,8 +695,8 @@ fn build_tool_router() -> ToolRouter<CommandContext> {
         },
     );
     updatable_cli::register_update_tool(&mut router, |_context: &CommandContext| updater_config());
-    feedback_cli::register_feedback_tools(&mut router, |_context: &CommandContext| {
-        crate::feedback::feedback_config()
+    feedback_cli::register_feedback_tools(&mut router, |context: &CommandContext| {
+        crate::feedback::feedback_config(context.config.feedback.as_ref())
     });
     router
 }
