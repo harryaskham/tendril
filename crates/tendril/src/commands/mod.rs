@@ -14,7 +14,8 @@ use crate::capture::{execute_capture, render_capture_human};
 use crate::cli::{
     AliasCommand, CaptureCommand, ClipboardCommand, ClipboardGetCommand, ClipboardSetCommand,
     ClipboardSubcommand, Command, ElementListCommand, ListCommand, ListenCommand, McpSubcommand,
-    RunCommand, TendrilCli, UpdateCommand, VersionCommand, VersionSubcommand, WORKFLOW_HINT,
+    PermissionsCommand, RunCommand, TendrilCli, UpdateCommand, VersionCommand, VersionSubcommand,
+    WORKFLOW_HINT,
 };
 use crate::clipboard::{
     ClipboardGetInput, ClipboardSelection, ClipboardSetInput, DEFAULT_CLIPBOARD_SERVE_MS,
@@ -37,8 +38,9 @@ use crate::model::{
 };
 use crate::platform::{
     AdapterContext, AdapterInfo, AudioCapabilityReport, AudioProbeRequest,
-    AudioSourceKind as PlatformAudioSourceKind, Capability, CaptureTargetKind, PlatformAdapter,
-    TargetDiscoveryRequest, adapter_for_context,
+    AudioSourceKind as PlatformAudioSourceKind, Capability, CaptureTargetKind, PermissionKind,
+    PermissionState, PermissionStatus, PlatformAdapter, TargetDiscoveryRequest,
+    adapter_for_context,
 };
 use crate::update::{execute_update, render_update_human, updater_config};
 use crate::versioning::{execute_version_bump, render_version_bump_human};
@@ -302,6 +304,7 @@ fn dispatch_cli_command(
         Command::Alias(command) => dispatch_alias_command(cli, command),
         Command::Update(command) => dispatch_update_command(command, cli.json),
         Command::Version(command) => dispatch_version_command(command, cli.json),
+        Command::Permissions(command) => Ok(dispatch_permissions_command(command, cli.json)),
         Command::Mcp(_) => unreachable!("MCP commands are dispatched separately"),
     }
 }
@@ -392,6 +395,7 @@ fn dispatch_android_cli_command(
         | Command::Alias(_)
         | Command::Update(_)
         | Command::Version(_)
+        | Command::Permissions(_)
         | Command::Mcp(_) => Err(TendrilError::unsupported_capability(
             "android_command_unsupported",
             format!(
@@ -767,6 +771,66 @@ fn model_target_from_platform(target: crate::platform::TargetDescriptor) -> Targ
         app_name: target.app_name,
         process_id: target.process_id,
     }
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct PermissionsReport {
+    adapter: AdapterInfo,
+    permissions: Vec<PermissionStatus>,
+}
+
+fn dispatch_permissions_command(_command: &PermissionsCommand, json_mode: bool) -> CommandOutput {
+    let adapter = adapter_for_context(AdapterContext::detect());
+    let report = PermissionsReport {
+        adapter: adapter.info(),
+        permissions: adapter.permissions(),
+    };
+    render_command_output("permissions", json_mode, report, render_permissions_human)
+}
+
+fn permission_kind_label(kind: PermissionKind) -> &'static str {
+    match kind {
+        PermissionKind::ScreenCapture => "Screen Recording",
+        PermissionKind::Accessibility => "Accessibility (input control)",
+        PermissionKind::Microphone => "Microphone",
+    }
+}
+
+fn permission_state_label(state: PermissionState) -> &'static str {
+    match state {
+        PermissionState::Granted => "granted",
+        PermissionState::NotRequired => "not required",
+        PermissionState::Unknown => "unknown",
+        PermissionState::Denied => "denied",
+    }
+}
+
+fn render_permissions_human(report: &PermissionsReport) -> String {
+    let mut rendered = String::new();
+    let _ = writeln!(
+        rendered,
+        "platform: {:?} ({:?} session)",
+        report.adapter.platform, report.adapter.session
+    );
+    if report.permissions.is_empty() {
+        let _ = writeln!(rendered, "no platform permissions are required");
+        return rendered;
+    }
+    for status in &report.permissions {
+        let _ = writeln!(
+            rendered,
+            "- {}: {}",
+            permission_kind_label(status.permission),
+            permission_state_label(status.state)
+        );
+        if !status.summary.is_empty() {
+            let _ = writeln!(rendered, "    {}", status.summary);
+        }
+        if let Some(action) = &status.suggested_action {
+            let _ = writeln!(rendered, "    -> {action}");
+        }
+    }
+    rendered
 }
 
 fn render_command_output<T, Render>(
@@ -1737,11 +1801,14 @@ mod tests {
         dispatch_listen_command, execute_alias, execute_list_elements, execute_list_with_adapter,
         render_command_output, render_list_elements_human, render_list_human,
     };
+    use super::{
+        CommandOutput, PermissionsReport, dispatch_permissions_command, render_permissions_human,
+    };
     use crate::capture::{execute_capture, render_capture_human};
     use crate::cli::{
         AliasCommand, CaptureCommand, ClipboardGetCommand, ClipboardSetCommand, Command,
-        ListCommand, ListenCommand, McpCommand, McpSubcommand, RunCommand, TendrilCli,
-        WORKFLOW_HINT,
+        ListCommand, ListenCommand, McpCommand, McpSubcommand, PermissionsCommand, RunCommand,
+        TendrilCli, WORKFLOW_HINT,
     };
     use crate::clipboard::{
         ClipboardSelection, DEFAULT_CLIPBOARD_SERVE_MS, DEFAULT_CLIPBOARD_TIMEOUT_MS,
@@ -1757,11 +1824,59 @@ mod tests {
         AdapterContext, AdapterInfo, AudioBackend, AudioCapabilityProbe, AudioCapabilityReport,
         AudioProbeRequest, CaptureAdapter, CaptureArtifact,
         CaptureRequest as PlatformCaptureRequest, CaptureTargetKind, DesktopSession,
-        FeatureSupport, InputControlAdapter, InputOutcome, PermissionAdapter, PlatformAdapter,
-        PlatformAdapterError, PlatformKind, TargetDescriptor as PlatformTargetDescriptor,
-        TargetDiscoveryAdapter, TargetDiscoveryRequest, TargetInventory,
+        FeatureSupport, InputControlAdapter, InputOutcome, PermissionAdapter, PermissionKind,
+        PermissionStatus, PlatformAdapter, PlatformAdapterError, PlatformKind,
+        TargetDescriptor as PlatformTargetDescriptor, TargetDiscoveryAdapter,
+        TargetDiscoveryRequest, TargetInventory,
     };
     use mcp_cli::ErrorCategory;
+
+    #[test]
+    fn permissions_human_render_lists_states_and_actions() {
+        let report = PermissionsReport {
+            adapter: AdapterInfo::from_context(&AdapterContext::windows11()),
+            permissions: vec![
+                PermissionStatus::granted(PermissionKind::ScreenCapture, "screen ok"),
+                PermissionStatus::denied(
+                    PermissionKind::Accessibility,
+                    "accessibility missing",
+                    "open settings",
+                ),
+                PermissionStatus::not_required(PermissionKind::Microphone, "mic not needed"),
+            ],
+        };
+        let rendered = render_permissions_human(&report);
+        assert!(rendered.contains("Screen Recording: granted"));
+        assert!(rendered.contains("screen ok"));
+        assert!(rendered.contains("Accessibility (input control): denied"));
+        assert!(rendered.contains("-> open settings"));
+        assert!(rendered.contains("Microphone: not required"));
+    }
+
+    #[test]
+    fn permissions_human_render_handles_empty_permissions() {
+        let report = PermissionsReport {
+            adapter: AdapterInfo::from_context(&AdapterContext::windows11()),
+            permissions: Vec::new(),
+        };
+        let rendered = render_permissions_human(&report);
+        assert!(rendered.contains("no platform permissions are required"));
+    }
+
+    #[test]
+    fn permissions_command_returns_json_envelope_on_host_adapter() {
+        let output = dispatch_permissions_command(&PermissionsCommand::default(), true);
+        assert!(matches!(output, CommandOutput::Json(_)));
+    }
+
+    #[test]
+    fn permissions_command_renders_human_output_on_host_adapter() {
+        let output = dispatch_permissions_command(&PermissionsCommand::default(), false);
+        match output {
+            CommandOutput::Human(text) => assert!(text.contains("platform:")),
+            other => panic!("expected human output, got {other:?}"),
+        }
+    }
 
     #[derive(Debug)]
     struct FakeAdapter {

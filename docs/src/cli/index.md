@@ -13,6 +13,7 @@ Tendril keeps its CLI intentionally small and agent-oriented.
 | `tendril alias` | Emit shell wrappers for repeated targeting | Yes | Not yet |
 | `tendril update` | Download, verify, install, and verify a released Tendril binary | Yes | Not yet |
 | `tendril version bump` | Bump SemVer metadata and create the release commit | Yes | Not yet |
+| `tendril permissions` | Report Screen Recording, Accessibility, and Microphone permission status with remediation guidance (read-only; no capture or input) | Yes | Not yet |
 | `tendril mcp stdio` | Serve the typed MCP tool surface over stdio | N/A | N/A |
 
 ## Global flags

@@ -92,6 +92,8 @@ pub enum Command {
     Update(UpdateCommand),
     /// Inspect or bump the workspace release version.
     Version(VersionCommand),
+    /// Report input and screen-capture permission status for this platform.
+    Permissions(PermissionsCommand),
     /// Expose the CLI surface over MCP stdio.
     ///
     /// Note: the global --window, --display, and --json flags are inherited
@@ -115,10 +117,19 @@ impl Command {
             Self::Alias(_) => "alias",
             Self::Update(_) => "update",
             Self::Version(_) => "version",
+            Self::Permissions(_) => "permissions",
             Self::Mcp(_) => "mcp",
         }
     }
 }
+
+/// Report input and screen-capture permission status for the active platform adapter.
+///
+/// This is a read-only probe: it reports whether Screen Recording, Accessibility
+/// (input control), and Microphone access are granted, unknown, denied, or not
+/// required, along with remediation guidance. It performs no capture or input.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Args, Serialize, Deserialize, JsonSchema)]
+pub struct PermissionsCommand {}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Args, Serialize, Deserialize, JsonSchema)]
 pub struct ListCommand {

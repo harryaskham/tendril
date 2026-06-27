@@ -120,8 +120,10 @@ mod tests {
     #[test]
     fn project_config_feedback_strategy_is_preferred() {
         // An explicit project-config strategy wins over the env fallback.
-        let mut configured = feedback_cli::FeedbackConfig::default();
-        configured.strategy = ReportStrategy::Disabled;
+        let configured = feedback_cli::FeedbackConfig {
+            strategy: ReportStrategy::Disabled,
+            ..feedback_cli::FeedbackConfig::default()
+        };
         let resolved = feedback_config(Some(&configured));
         assert!(matches!(resolved.strategy, ReportStrategy::Disabled));
         assert_eq!(resolved.component.as_deref(), Some(FEEDBACK_COMPONENT));
@@ -132,17 +134,22 @@ mod tests {
         // bd-13c534: an env-driven webhook must not block the CLI exit. Build the
         // same shape feedback_config() produces for FEEDBACK_WEBHOOK_URL and
         // assert the non-blocking demotion, without depending on ambient env.
-        let mut env = feedback_cli::FeedbackConfig::default();
-        env.strategy = ReportStrategy::Webhook(feedback_cli::WebhookConfig {
-            url: "https://example.invalid/feedback".to_owned(),
-            ..feedback_cli::WebhookConfig::default()
-        });
+        let mut env = feedback_cli::FeedbackConfig {
+            strategy: ReportStrategy::Webhook(feedback_cli::WebhookConfig {
+                url: "https://example.invalid/feedback".to_owned(),
+                ..feedback_cli::WebhookConfig::default()
+            }),
+            ..feedback_cli::FeedbackConfig::default()
+        };
         if let ReportStrategy::Webhook(ref mut webhook) = env.strategy {
             webhook.blocking = false;
         }
         match env.strategy {
             ReportStrategy::Webhook(webhook) => {
-                assert!(!webhook.blocking, "env webhook feedback must be non-blocking");
+                assert!(
+                    !webhook.blocking,
+                    "env webhook feedback must be non-blocking"
+                );
             }
             other => panic!("expected webhook strategy, got {other:?}"),
         }
