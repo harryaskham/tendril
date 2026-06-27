@@ -17,6 +17,7 @@ The current MCP server publishes these tools:
 - `listen`
 - `clipboard_get`
 - `clipboard_set`
+- `permissions`
 - `self_update_status`
 - `self_update_check`
 - `self_update_run`
@@ -24,6 +25,8 @@ The current MCP server publishes these tools:
 - `feedback_status`
 
 Those tools are backed by the same typed command models used by the CLI, which keeps validation and result envelopes aligned across both surfaces. MCP `run` calls use the same default focus-restoration and host-local execution lock/queue behavior as CLI `tendril run`; pass `restore_focus`, `no_restore_focus`, `no_lock`, `lock_timeout_ms`, `lock_stale_ms`, or `lock_path` in the tool arguments when an advanced workflow needs to tune focus handling or the queue.
+
+The `permissions` tool reports the host platform's Screen Recording, Accessibility, and Microphone permission status (granted / denied / unknown / not-required) with remediation guidance, so an MCP client can proactively check setup before a capture or input call fails. It is read-only and performs no capture or input.
 
 The `self_update_*` tools come from the shared [`updatable-cli`](https://github.com/harryaskham/updatable-cli) integration, matching the ring-mods reference pattern. They let an MCP client inspect the current install path, check GitHub releases, and stage/promote a newer Tendril binary without adding Tendril-specific update protocol code to the client.
 

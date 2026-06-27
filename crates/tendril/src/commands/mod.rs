@@ -611,6 +611,7 @@ fn build_mcp_server() -> McpServer<CommandContext> {
     )
 }
 
+#[allow(clippy::too_many_lines)]
 fn build_tool_router() -> ToolRouter<CommandContext> {
     let mut router = ToolRouter::new();
     router.add_typed_tool(
@@ -695,6 +696,19 @@ fn build_tool_router() -> ToolRouter<CommandContext> {
                 serve_ms: command.serve_ms,
             })?;
             serde_json::to_value(execute_clipboard_set(&input)?)
+                .map_err(|error| TendrilError::serialization(error.to_string()))
+        },
+    );
+    router.add_typed_tool(
+        "permissions",
+        "Report Screen Recording, Accessibility, and Microphone permission status for the host platform.",
+        |context: &CommandContext, _command: PermissionsCommand| {
+            let adapter = context.adapter();
+            let report = PermissionsReport {
+                adapter: adapter.info(),
+                permissions: adapter.permissions(),
+            };
+            serde_json::to_value(report)
                 .map_err(|error| TendrilError::serialization(error.to_string()))
         },
     );
@@ -2317,6 +2331,7 @@ mod tests {
                 "listen",
                 "clipboard_get",
                 "clipboard_set",
+                "permissions",
                 "self_update_status",
                 "self_update_check",
                 "self_update_run",

@@ -100,6 +100,7 @@ fn external_client_smoke_script_verifies_stdio_contract_against_built_binary() {
             "listen",
             "clipboard_get",
             "clipboard_set",
+            "permissions",
             "self_update_status",
             "self_update_check",
             "self_update_run",
