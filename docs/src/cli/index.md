@@ -6,14 +6,14 @@ Tendril keeps its CLI intentionally small and agent-oriented.
 
 | Command | Purpose | JSON support | MCP parity |
 | --- | --- | --- | --- |
-| `tendril list` | Discover windows and displays | Yes | Yes |
+| `tendril list` | Discover windows, displays, and cameras (video capture devices) | Yes | Yes |
 | `tendril capture` | Capture a screenshot for a selected display or window | Yes | Yes |
 | `tendril run` | Execute text or input sequences against a selected target | Yes | Yes |
 | `tendril listen` | Capture WAV audio (PipeWire/PulseAudio on Linux, CoreAudio on macOS) and report capability/permission state | Yes | Yes |
 | `tendril alias` | Emit shell wrappers for repeated targeting | Yes | Not yet |
 | `tendril update` | Download, verify, install, and verify a released Tendril binary | Yes | Not yet |
 | `tendril version bump` | Bump SemVer metadata and create the release commit | Yes | Not yet |
-| `tendril permissions` | Report Screen Recording, Accessibility, and Microphone permission status with remediation guidance (read-only; no capture or input) | Yes | Not yet |
+| `tendril permissions` | Report Screen Recording, Accessibility, Microphone, and Camera permission status with remediation guidance (read-only; no capture or input) | Yes | Not yet |
 | `tendril mcp stdio` | Serve the typed MCP tool surface over stdio | N/A | N/A |
 
 ## Global flags

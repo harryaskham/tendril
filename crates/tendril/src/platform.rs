@@ -178,6 +178,7 @@ pub enum PermissionKind {
     ScreenCapture,
     Accessibility,
     Microphone,
+    Camera,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -726,6 +727,13 @@ pub trait PlatformAdapter:
 {
     fn info(&self) -> AdapterInfo;
 
+    /// Enumerate non-display video capture devices (cameras) for `tendril
+    /// list`. Defaults to none; platform adapters with an enumeration backend
+    /// override this.
+    fn cameras(&self) -> Vec<crate::model::CameraDescriptor> {
+        Vec::new()
+    }
+
     fn list_elements(&self, input: &ElementListInput) -> Result<ElementListOutput, TendrilError> {
         let inventory = self.discover_targets(&TargetDiscoveryRequest)?;
         crate::elements::discover_elements(&self.info(), &inventory, input)
@@ -897,6 +905,14 @@ impl MacOsAdapter {
             "Grant Microphone access in System Settings > Privacy & Security > Microphone, then rerun tendril.",
         )
     }
+
+    fn camera_permission() -> PermissionStatus {
+        PermissionStatus::unknown(
+            PermissionKind::Camera,
+            "macOS camera capture requires Camera consent.",
+            "Grant Camera access in System Settings > Privacy & Security > Camera, then rerun tendril.",
+        )
+    }
 }
 
 impl TargetDiscoveryAdapter for MacOsAdapter {
@@ -1031,6 +1047,7 @@ impl PermissionAdapter for MacOsAdapter {
             Self::screen_capture_permission(),
             Self::accessibility_permission(),
             Self::microphone_permission(),
+            Self::camera_permission(),
         ]
     }
 }
@@ -1068,6 +1085,10 @@ impl AudioCapabilityProbe for MacOsAdapter {
 impl PlatformAdapter for MacOsAdapter {
     fn info(&self) -> AdapterInfo {
         AdapterInfo::from_context(&self.context)
+    }
+
+    fn cameras(&self) -> Vec<crate::model::CameraDescriptor> {
+        crate::camera::enumerate_cameras()
     }
 }
 
@@ -1260,6 +1281,10 @@ impl PermissionAdapter for LinuxAdapter {
                 PermissionKind::Microphone,
                 "Audio device access is usually mediated by the active audio stack and user session.",
             ),
+            PermissionStatus::not_required(
+                PermissionKind::Camera,
+                "Linux camera (V4L2) access is mediated by device-node permissions and the user session, not a centralized privacy prompt.",
+            ),
         ]
     }
 }
@@ -1425,6 +1450,10 @@ impl PermissionAdapter for WindowsAdapter {
                 "Desktop input control uses user-session APIs rather than a dedicated accessibility prompt.",
             ),
             Self::microphone_permission(),
+            PermissionStatus::not_required(
+                PermissionKind::Camera,
+                "Desktop camera capture uses user-session media APIs rather than a dedicated privacy prompt for classic desktop apps.",
+            ),
         ]
     }
 }
@@ -3282,10 +3311,10 @@ mod tests {
         WindowsAdapter, WindowsRuntimeBackend, capture_wayland_target_with_grim,
         crop_wayland_portal_capture_to_target, detect_linux_audio_backend, detect_linux_session,
         execute_windows_input_with_runtime, is_macos_input_permission_error,
-        javascript_string_literal, macos_focus_pid_jxa_script, macos_focus_window_jxa_script,
-        macos_double_click_jxa_script, macos_scroll_jxa_script,
-        macos_text_jxa_script, wayland_capture_program_on_path, wayland_portal_attempt_timeout,
-        wayland_workspace_origin, windows_key_is_supported,
+        javascript_string_literal, macos_double_click_jxa_script, macos_focus_pid_jxa_script,
+        macos_focus_window_jxa_script, macos_scroll_jxa_script, macos_text_jxa_script,
+        wayland_capture_program_on_path, wayland_portal_attempt_timeout, wayland_workspace_origin,
+        windows_key_is_supported,
     };
     use crate::{TendrilError, model::InputAction};
     use mcp_cli::ErrorCategory;
@@ -3516,7 +3545,13 @@ mod tests {
 
         assert_eq!(adapter.info().platform, PlatformKind::Windows11);
         assert!(adapter.info().stateless);
-        assert_eq!(permissions.len(), 3);
+        assert_eq!(permissions.len(), 4);
+        assert!(
+            permissions
+                .iter()
+                .any(|permission| permission.permission == PermissionKind::Camera),
+            "every adapter should report a Camera permission row"
+        );
     }
 
     #[derive(Default)]

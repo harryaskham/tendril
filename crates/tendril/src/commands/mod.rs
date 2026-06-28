@@ -751,10 +751,17 @@ fn execute_list_with_adapter(
         .map(model_target_from_platform)
         .collect();
 
+    let cameras = if input.include_cameras {
+        adapter.cameras()
+    } else {
+        Vec::new()
+    };
+
     Ok(ListOutput {
         adapter: adapter.info(),
         permissions: adapter.permissions(),
         targets,
+        cameras,
     })
 }
 
@@ -807,6 +814,7 @@ fn permission_kind_label(kind: PermissionKind) -> &'static str {
         PermissionKind::ScreenCapture => "Screen Recording",
         PermissionKind::Accessibility => "Accessibility (input control)",
         PermissionKind::Microphone => "Microphone",
+        PermissionKind::Camera => "Camera",
     }
 }
 
@@ -1094,6 +1102,27 @@ fn render_list_human(output: &ListOutput) -> String {
             app_suffix,
             diagnostic_suffix,
         );
+    }
+
+    if !output.cameras.is_empty() {
+        let _ = writeln!(rendered, "cameras:");
+        for camera in &output.cameras {
+            let model_suffix = camera
+                .model_id
+                .as_deref()
+                .map(|model| format!(" model={model}"))
+                .unwrap_or_default();
+            let unique_suffix = camera
+                .unique_id
+                .as_deref()
+                .map(|unique| format!(" unique_id={unique}"))
+                .unwrap_or_default();
+            let _ = writeln!(
+                rendered,
+                "- {} name={}{}{}",
+                camera.id, camera.name, model_suffix, unique_suffix
+            );
+        }
     }
 
     rendered

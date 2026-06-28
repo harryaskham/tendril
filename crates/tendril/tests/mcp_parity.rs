@@ -112,6 +112,7 @@ fn cli_and_mcp_stdio_return_equivalent_structured_payloads() {
             "listen",
             "clipboard_get",
             "clipboard_set",
+            "permissions",
             "self_update_status",
             "self_update_check",
             "self_update_run",

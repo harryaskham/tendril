@@ -127,10 +127,13 @@ pub struct TargetDescriptor {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct ListInput {
     pub include_windows: bool,
     pub include_displays: bool,
     pub include_audio_sources: bool,
+    #[serde(default = "crate::model::default_true")]
+    pub include_cameras: bool,
 }
 
 impl Default for ListInput {
@@ -139,13 +142,18 @@ impl Default for ListInput {
             include_windows: true,
             include_displays: true,
             include_audio_sources: false,
+            include_cameras: true,
         }
     }
 }
 
 impl ListInput {
     pub fn validate(&self) -> Result<(), TendrilError> {
-        if self.include_windows || self.include_displays || self.include_audio_sources {
+        if self.include_windows
+            || self.include_displays
+            || self.include_audio_sources
+            || self.include_cameras
+        {
             Ok(())
         } else {
             Err(
@@ -157,11 +165,36 @@ impl ListInput {
     }
 }
 
+/// Serde helper: default boolean fields to `true`.
+#[must_use]
+pub fn default_true() -> bool {
+    true
+}
+
+/// A non-display video capture device (webcam, Continuity Camera, virtual
+/// camera) discovered by `tendril list`. Cameras are a distinct device class
+/// from windows/displays: they can be captured from but never receive input or
+/// expose UI elements, so they live alongside `targets` rather than inside it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CameraDescriptor {
+    /// Stable identifier accepted by `tendril capture --camera <id>`. On macOS
+    /// this is the device's localized name (the handle the capture backend
+    /// matches on).
+    pub id: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unique_id: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ListOutput {
     pub adapter: AdapterInfo,
     pub permissions: Vec<PermissionStatus>,
     pub targets: Vec<TargetDescriptor>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cameras: Vec<CameraDescriptor>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -717,10 +750,10 @@ fn validate_identifier(id: &str, kind: TargetKind) -> Result<(), TendrilError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        AliasInput, AudioFormat, AudioSourceKind, AudioSourceSelector, CaptureInput,
-        ElementListInput, ImageFormat, InputAction, ListInput, ListenInput, MAX_SCROLL_TICKS,
-        ModifierKey, MouseButton, RunInput, RunInputPayload, ScaleFactor, ShellKind,
-        TargetSelector,
+        AdapterInfo, AliasInput, AudioFormat, AudioSourceKind, AudioSourceSelector,
+        CameraDescriptor, CaptureInput, ElementListInput, ImageFormat, InputAction, ListInput,
+        ListOutput, ListenInput, MAX_SCROLL_TICKS, ModifierKey, MouseButton, RunInput,
+        RunInputPayload, ScaleFactor, ShellKind, TargetSelector,
     };
 
     #[test]
@@ -863,6 +896,7 @@ mod tests {
             include_windows: false,
             include_displays: false,
             include_audio_sources: false,
+            include_cameras: false,
         };
 
         let error = input
@@ -870,6 +904,55 @@ mod tests {
             .expect_err("list input should require at least one target class");
 
         assert_eq!(error.code(), "invalid_list_input");
+    }
+
+    #[test]
+    fn list_input_default_includes_cameras() {
+        assert!(ListInput::default().include_cameras);
+    }
+
+    #[test]
+    fn list_output_omits_empty_cameras_and_defaults_absent_to_empty() {
+        // Backward-compat: an empty camera list is not serialized, and an older
+        // ListOutput JSON without the field round-trips to an empty Vec.
+        let output = ListOutput {
+            adapter: AdapterInfo::from_context(&crate::platform::AdapterContext::windows11()),
+            permissions: Vec::new(),
+            targets: Vec::new(),
+            cameras: Vec::new(),
+        };
+        let serialized = serde_json::to_value(&output).expect("ListOutput should serialize");
+        assert!(
+            serialized.get("cameras").is_none(),
+            "empty cameras must be omitted for backward compatibility"
+        );
+        let back: ListOutput =
+            serde_json::from_value(serialized).expect("ListOutput without cameras should parse");
+        assert!(back.cameras.is_empty());
+    }
+
+    #[test]
+    fn camera_descriptor_round_trips_optional_fields() {
+        let camera = CameraDescriptor {
+            id: "MacBook Pro Camera".to_owned(),
+            name: "MacBook Pro Camera".to_owned(),
+            model_id: Some("MacBook Pro Camera".to_owned()),
+            unique_id: Some("6C707041-05AC-0010-0006-000000000001".to_owned()),
+        };
+        let value = serde_json::to_value(&camera).expect("serialize");
+        let back: CameraDescriptor = serde_json::from_value(value).expect("deserialize");
+        assert_eq!(camera, back);
+
+        // Absent optional metadata is omitted, not serialized as null.
+        let bare = CameraDescriptor {
+            id: "cam0".to_owned(),
+            name: "cam0".to_owned(),
+            model_id: None,
+            unique_id: None,
+        };
+        let bare_value = serde_json::to_value(&bare).expect("serialize bare");
+        assert!(bare_value.get("model_id").is_none());
+        assert!(bare_value.get("unique_id").is_none());
     }
 
     #[test]
@@ -1041,7 +1124,9 @@ mod tests {
         // Every rejection arm reports invalid_run_input tagged to the actions field.
         let cases = [
             InputAction::KeyTap { key: "   ".into() },
-            InputAction::Send { text: String::new() },
+            InputAction::Send {
+                text: String::new(),
+            },
             InputAction::Wait { duration_ms: 0 },
             InputAction::Scroll { x: 0, y: 0, dy: 0 },
             InputAction::Scroll {

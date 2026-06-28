@@ -185,6 +185,7 @@ impl AndroidDevice {
             adapter: android_adapter_info(),
             permissions: Vec::new(),
             targets,
+            cameras: Vec::new(),
         }
     }
 
