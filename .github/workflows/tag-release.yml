@@ -255,7 +255,7 @@ jobs:
         run: ./scripts/release-notes.sh "${{ needs.verify.outputs.release_tag }}" > dist/release-notes.md
 
       - name: Write combined release manifest
-        run: ./scripts/write-release-manifest.py "${{ needs.verify.outputs.release_tag }}" dist > dist/release-manifest.json
+        run: nix develop --command ./scripts/write-release-manifest.py "${{ needs.verify.outputs.release_tag }}" dist > dist/release-manifest.json
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2

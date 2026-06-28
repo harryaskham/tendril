@@ -341,6 +341,7 @@
             gnutar
             mdbook
             nixpkgs-fmt
+            python3
             rust-analyzer
             rustc
             rustfmt
