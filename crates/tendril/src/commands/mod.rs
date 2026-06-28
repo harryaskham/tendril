@@ -506,7 +506,7 @@ fn dispatch_capture_command(
     let target = target_scope_from_cli(cli);
     if let Some(device) = target.camera.clone() {
         ensure_camera_target_exclusive(&target)?;
-        return dispatch_camera_capture(&device, command, cli.json);
+        return dispatch_camera_capture(&device, command, config, cli.json);
     }
     let input = build_capture_input(&target, command, config)?;
     info!(
@@ -542,37 +542,52 @@ fn ensure_camera_target_exclusive(target: &TargetScope) -> Result<(), TendrilErr
     Ok(())
 }
 
-/// Grab one frame from `device` and build the structured camera capture output
-/// (returning the raw PNG bytes too, for an optional `--output` file write).
+/// Grab one frame from `device`, apply the shared capture post-processing
+/// (resize/format/compression), and build the structured camera capture output
+/// (returning the processed image bytes too, for an optional `--output` file
+/// write).
 fn build_camera_capture_output(
     device: &str,
     adapter_info: AdapterInfo,
+    command: &CaptureCommand,
+    config: &TendrilConfig,
 ) -> Result<(CameraCaptureOutput, Vec<u8>), TendrilError> {
     use base64::Engine as _;
     use base64::engine::general_purpose::STANDARD as BASE64;
 
-    let bytes = crate::camera::capture_camera_frame(device)?;
-    let (width, height) = crate::camera::png_dimensions(&bytes).unwrap_or((0, 0));
+    let raw = crate::camera::capture_camera_frame(device)?;
+    let max_width = command.max_width.or(config.capture.max_width);
+    let max_height = command.max_height.or(config.capture.max_height);
+    let format = command
+        .format
+        .as_deref()
+        .map(parse_image_format)
+        .transpose()?
+        .unwrap_or(config.capture.format);
+    let compression = command.compression.unwrap_or(config.capture.compression);
+    let processed =
+        crate::capture::process_raw_image(&raw, max_width, max_height, format, compression)?;
     let output = CameraCaptureOutput {
         adapter: adapter_info,
         device: device.to_owned(),
-        format: crate::config::ImageFormat::Png,
-        media_type: "image/png".to_owned(),
-        width,
-        height,
-        image_base64: BASE64.encode(&bytes),
+        format,
+        media_type: processed.media_type,
+        width: processed.width,
+        height: processed.height,
+        image_base64: BASE64.encode(&processed.bytes),
         captured_at: crate::capture::current_timestamp(),
     };
-    Ok((output, bytes))
+    Ok((output, processed.bytes))
 }
 
 fn dispatch_camera_capture(
     device: &str,
     command: &CaptureCommand,
+    config: &TendrilConfig,
     json_mode: bool,
 ) -> Result<CommandOutput, TendrilError> {
     let adapter = adapter_for_context(AdapterContext::detect());
-    let (output, bytes) = build_camera_capture_output(device, adapter.info())?;
+    let (output, bytes) = build_camera_capture_output(device, adapter.info(), command, config)?;
     info!(
         command = "capture",
         target_kind = "camera",
@@ -733,7 +748,12 @@ fn build_tool_router() -> ToolRouter<CommandContext> {
             if let Some(device) = command.target.camera.as_deref() {
                 ensure_camera_target_exclusive(&command.target)?;
                 let adapter = context.adapter();
-                let (output, _bytes) = build_camera_capture_output(device, adapter.info())?;
+                let (output, _bytes) = build_camera_capture_output(
+                    device,
+                    adapter.info(),
+                    &command.options,
+                    &context.config,
+                )?;
                 return serde_json::to_value(output)
                     .map_err(|error| TendrilError::serialization(error.to_string()));
             }

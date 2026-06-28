@@ -184,6 +184,49 @@ fn encode_image(
     }
 }
 
+pub(crate) struct ProcessedFrame {
+    pub bytes: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+    pub media_type: String,
+}
+
+/// Decode raw image bytes (e.g. an ffmpeg camera PNG), optionally downscale to
+/// fit `max_width`/`max_height`, and re-encode in `format`. Shared by the camera
+/// capture path so `--max-width`/`--max-height`/`--format`/`--compression`
+/// behave identically to window/display capture, reusing the same resize and
+/// encode helpers.
+pub(crate) fn process_raw_image(
+    raw_bytes: &[u8],
+    max_width: Option<u32>,
+    max_height: Option<u32>,
+    format: ImageFormat,
+    compression: u8,
+) -> Result<ProcessedFrame, TendrilError> {
+    let decoded = image::load_from_memory(raw_bytes).map_err(|error| {
+        TendrilError::execution_failure(
+            "camera_decode_failed",
+            format!("camera frame could not be decoded: {error}"),
+            None,
+        )
+    })?;
+    let (original_width, original_height) = decoded.dimensions();
+    let (output_width, output_height) =
+        resized_dimensions(original_width, original_height, max_width, max_height);
+    let rendered = if output_width == original_width && output_height == original_height {
+        decoded
+    } else {
+        decoded.resize_exact(output_width, output_height, FilterType::Lanczos3)
+    };
+    let bytes = encode_image(&rendered, format, compression)?;
+    Ok(ProcessedFrame {
+        bytes,
+        width: output_width,
+        height: output_height,
+        media_type: media_type_for_format(format).to_owned(),
+    })
+}
+
 pub(crate) fn resized_dimensions(
     original_width: u32,
     original_height: u32,
@@ -361,7 +404,10 @@ mod tests {
         // With no max_width/max_height, the dimensions are returned unchanged.
         assert_eq!(resized_dimensions(1280, 720, None, None), (1280, 720));
         // A constraint that is not smaller than the source is also a no-op.
-        assert_eq!(resized_dimensions(800, 600, Some(800), Some(600)), (800, 600));
+        assert_eq!(
+            resized_dimensions(800, 600, Some(800), Some(600)),
+            (800, 600)
+        );
     }
 
     #[test]
@@ -516,13 +562,32 @@ mod tests {
     }
 
     #[test]
+    fn process_raw_image_resizes_and_converts_format() {
+        let png = sample_png(800, 600);
+        let processed =
+            super::process_raw_image(&png, Some(400), None, crate::config::ImageFormat::Jpeg, 80)
+                .expect("process_raw_image should succeed");
+        assert_eq!((processed.width, processed.height), (400, 300));
+        assert_eq!(processed.media_type, "image/jpeg");
+        // Output must decode as a JPEG of the resized dimensions.
+        let decoded = image::load_from_memory(&processed.bytes).expect("jpeg should decode");
+        assert_eq!((decoded.width(), decoded.height()), (400, 300));
+    }
+
+    #[test]
+    fn process_raw_image_keeps_native_size_without_constraints() {
+        let png = sample_png(320, 240);
+        let processed =
+            super::process_raw_image(&png, None, None, crate::config::ImageFormat::Png, 0)
+                .expect("process_raw_image should succeed");
+        assert_eq!((processed.width, processed.height), (320, 240));
+        assert_eq!(processed.media_type, "image/png");
+    }
+
+    #[test]
     fn matches_target_kind_pairs_window_and_display() {
-        let window = TargetSelector::Window {
-            id: "w".to_owned(),
-        };
-        let display = TargetSelector::Display {
-            id: "d".to_owned(),
-        };
+        let window = TargetSelector::Window { id: "w".to_owned() };
+        let display = TargetSelector::Display { id: "d".to_owned() };
         assert!(matches_target_kind(&window, CaptureTargetKind::Window));
         assert!(matches_target_kind(&display, CaptureTargetKind::Display));
         assert!(!matches_target_kind(&window, CaptureTargetKind::Display));
