@@ -21,7 +21,7 @@ concurrency:
 jobs:
   verify:
     name: Verify tagged or version-bump release
-    runs-on: [self-hosted, linux]
+    runs-on: [self-hosted, azure-ephemeral]
     timeout-minutes: 60
     outputs:
       should_release: ${{ steps.release-context.outputs.should_release }}
@@ -84,7 +84,7 @@ jobs:
 
   build-linux:
     name: Build linux release artifacts
-    runs-on: [self-hosted, linux]
+    runs-on: [self-hosted, azure-ephemeral]
     timeout-minutes: 30
     needs: verify
     if: needs.verify.outputs.should_release == 'true'
@@ -211,7 +211,7 @@ jobs:
 
   publish:
     name: Publish GitHub release
-    runs-on: [self-hosted, linux]
+    runs-on: [self-hosted, azure-ephemeral]
     timeout-minutes: 30
     needs:
       - verify
