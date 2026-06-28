@@ -209,14 +209,173 @@ struct RecorderPlan {
     build_args: fn(&RecorderPlan, &ListenInput, &Path, &str) -> Vec<String>,
 }
 
+/// A virtual / aggregate audio input device usable as a system-audio loopback
+/// (e.g. `BlackHole`). macOS has no built-in system loopback, so `--source
+/// system` captures from such a device once the user routes system output to it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AvfAudioDevice {
+    pub index: u32,
+    pub name: String,
+}
+
+const LOOPBACK_NAME_HINTS: &[&str] = &[
+    "blackhole",
+    "loopback",
+    "soundflower",
+    "aggregate",
+    "multi-output",
+    "multi output",
+];
+
+/// Parse the `AVFoundation` audio device list ffmpeg prints to stderr for
+/// `ffmpeg -f avfoundation -list_devices true -i ""`. Device lines look like
+/// `[AVFoundation indev @ 0x..] [1] BlackHole 2ch`, under an
+/// `AVFoundation audio devices:` header (the video section is ignored).
+pub(crate) fn parse_avfoundation_audio_devices(stderr: &str) -> Vec<AvfAudioDevice> {
+    let mut devices = Vec::new();
+    let mut in_audio = false;
+    for line in stderr.lines() {
+        if line.contains("AVFoundation audio devices:") {
+            in_audio = true;
+            continue;
+        }
+        if line.contains("AVFoundation video devices:") {
+            in_audio = false;
+            continue;
+        }
+        if !in_audio {
+            continue;
+        }
+        // Skip the `[AVFoundation indev @ 0x..] ` tag, then read `[N] Name`.
+        let Some(tag_end) = line.rfind("] [") else {
+            continue;
+        };
+        let rest = &line[tag_end + 2..];
+        let Some(close) = rest.find(']') else {
+            continue;
+        };
+        let Ok(index) = rest[1..close].trim().parse::<u32>() else {
+            continue;
+        };
+        let name = rest[close + 1..].trim().to_owned();
+        if name.is_empty() {
+            continue;
+        }
+        devices.push(AvfAudioDevice { index, name });
+    }
+    devices
+}
+
+/// Pick the first device whose name looks like a virtual loopback device.
+pub(crate) fn find_loopback_device(devices: &[AvfAudioDevice]) -> Option<AvfAudioDevice> {
+    devices
+        .iter()
+        .find(|device| {
+            let lower = device.name.to_lowercase();
+            LOOPBACK_NAME_HINTS.iter().any(|hint| lower.contains(hint))
+        })
+        .cloned()
+}
+
+/// Detect an available virtual loopback audio device on macOS via ffmpeg.
+/// Returns `None` off macOS, when ffmpeg is unavailable, or when no loopback
+/// device is present.
+#[cfg(target_os = "macos")]
+pub(crate) fn detect_macos_loopback_device() -> Option<AvfAudioDevice> {
+    let output = Command::new("ffmpeg")
+        .args([
+            "-hide_banner",
+            "-f",
+            "avfoundation",
+            "-list_devices",
+            "true",
+            "-i",
+            "",
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()
+        .ok()?;
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    find_loopback_device(&parse_avfoundation_audio_devices(&stderr))
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn detect_macos_loopback_device() -> Option<AvfAudioDevice> {
+    None
+}
+
+/// Build the `ffmpeg` argument vector for a duration-bounded `AVFoundation` audio
+/// capture to a WAV file. `audio_spec` is the `AVFoundation` audio device selector
+/// (a device index like `"1"`, or `"default"`); it is captured audio-only via
+/// the `:<spec>` input form.
+pub(crate) fn ffmpeg_avfoundation_audio_args(
+    audio_spec: &str,
+    output: &Path,
+    duration_secs: &str,
+    sample_rate_hz: u32,
+    channels: u8,
+) -> Vec<String> {
+    vec![
+        "-hide_banner".to_owned(),
+        "-nostdin".to_owned(),
+        "-loglevel".to_owned(),
+        "error".to_owned(),
+        "-f".to_owned(),
+        "avfoundation".to_owned(),
+        "-i".to_owned(),
+        format!(":{audio_spec}"),
+        "-t".to_owned(),
+        duration_secs.to_owned(),
+        "-ar".to_owned(),
+        sample_rate_hz.to_string(),
+        "-ac".to_owned(),
+        channels.to_string(),
+        "-y".to_owned(),
+        output.to_string_lossy().into_owned(),
+    ]
+}
+
+fn build_ffmpeg_avfoundation_args(
+    plan: &RecorderPlan,
+    input: &ListenInput,
+    output: &Path,
+    duration_secs: &str,
+) -> Vec<String> {
+    let audio_spec = match input.source.kind {
+        AudioSourceKind::System => detect_macos_loopback_device()
+            .map_or_else(|| "default".to_owned(), |device| device.index.to_string()),
+        AudioSourceKind::Microphone | AudioSourceKind::Device => "default".to_owned(),
+    };
+    ffmpeg_avfoundation_audio_args(
+        &audio_spec,
+        output,
+        duration_secs,
+        plan.sample_rate_hz,
+        plan.channels,
+    )
+}
+
 fn recorders_for(platform: PlatformKind, backend: Option<AudioBackend>) -> Vec<RecorderPlan> {
     match platform {
-        PlatformKind::MacOs => vec![RecorderPlan {
-            program: "afrecord",
-            sample_rate_hz: 44_100,
-            channels: 1,
-            build_args: build_afrecord_args,
-        }],
+        PlatformKind::MacOs => vec![
+            // ffmpeg's AVFoundation backend is the primary recorder: it can
+            // target a specific input device (system loopback via BlackHole) and
+            // is present where the legacy `afrecord` is not.
+            RecorderPlan {
+                program: "ffmpeg",
+                sample_rate_hz: 44_100,
+                channels: 2,
+                build_args: build_ffmpeg_avfoundation_args,
+            },
+            RecorderPlan {
+                program: "afrecord",
+                sample_rate_hz: 44_100,
+                channels: 1,
+                build_args: build_afrecord_args,
+            },
+        ],
         PlatformKind::Linux => match backend {
             Some(AudioBackend::PulseAudio) => vec![RecorderPlan {
                 program: "parecord",
@@ -588,6 +747,76 @@ mod tests {
     use super::*;
     use crate::model::AudioSourceSelector;
 
+    #[test]
+    fn parse_avfoundation_audio_devices_extracts_indexed_audio_devices() {
+        let stderr = "[AVFoundation indev @ 0x1] AVFoundation video devices:\n\
+[AVFoundation indev @ 0x1] [0] FaceTime HD Camera\n\
+[AVFoundation indev @ 0x1] AVFoundation audio devices:\n\
+[AVFoundation indev @ 0x1] [0] Steam Streaming Speakers\n\
+[AVFoundation indev @ 0x1] [1] BlackHole 2ch\n\
+[AVFoundation indev @ 0x1] [2] MacBook Pro Microphone";
+        let devices = parse_avfoundation_audio_devices(stderr);
+        assert_eq!(devices.len(), 3);
+        assert_eq!(devices[1].index, 1);
+        assert_eq!(devices[1].name, "BlackHole 2ch");
+        // The video-section device must not leak into the audio list.
+        assert!(
+            devices
+                .iter()
+                .all(|device| device.name != "FaceTime HD Camera")
+        );
+    }
+
+    #[test]
+    fn find_loopback_device_matches_blackhole() {
+        let devices = vec![
+            AvfAudioDevice {
+                index: 0,
+                name: "MacBook Pro Microphone".to_owned(),
+            },
+            AvfAudioDevice {
+                index: 1,
+                name: "BlackHole 2ch".to_owned(),
+            },
+        ];
+        assert_eq!(
+            find_loopback_device(&devices)
+                .expect("loopback present")
+                .index,
+            1
+        );
+    }
+
+    #[test]
+    fn find_loopback_device_returns_none_without_virtual_device() {
+        let devices = vec![AvfAudioDevice {
+            index: 0,
+            name: "MacBook Pro Microphone".to_owned(),
+        }];
+        assert!(find_loopback_device(&devices).is_none());
+    }
+
+    #[test]
+    fn ffmpeg_avfoundation_audio_args_capture_audio_only_to_wav() {
+        let path = std::path::Path::new("/tmp/out.wav");
+        let args = ffmpeg_avfoundation_audio_args("1", path, "2", 44_100, 2);
+        let i = args.iter().position(|arg| arg == "-i").expect("-i present");
+        assert_eq!(args[i + 1], ":1");
+        assert_eq!(
+            args.windows(2)
+                .find(|w| w[0] == "-f")
+                .map(|w| w[1].as_str()),
+            Some("avfoundation")
+        );
+        assert_eq!(
+            args.windows(2)
+                .find(|w| w[0] == "-t")
+                .map(|w| w[1].as_str()),
+            Some("2")
+        );
+        assert_eq!(args.last().map(String::as_str), Some("/tmp/out.wav"));
+    }
+
     fn input(source: AudioSourceKind, format: AudioFormat, duration_ms: u64) -> ListenInput {
         ListenInput {
             source: AudioSourceSelector {
@@ -747,12 +976,11 @@ mod tests {
     }
 
     #[test]
-    fn recorders_for_selects_afrecord_on_macos() {
+    fn recorders_for_prefers_ffmpeg_on_macos() {
         let plans = recorders_for(PlatformKind::MacOs, None);
-        assert_eq!(plans.len(), 1);
-        assert_eq!(plans[0].program, "afrecord");
-        assert_eq!(plans[0].sample_rate_hz, 44_100);
-        assert_eq!(plans[0].channels, 1);
+        assert_eq!(plans.len(), 2);
+        assert_eq!(plans[0].program, "ffmpeg");
+        assert_eq!(plans[1].program, "afrecord");
     }
 
     #[test]

@@ -22,8 +22,13 @@ to probe-only diagnostics elsewhere:
   its own and the WAV header is always finalized.
 - **Linux + PulseAudio**: uses `parecord` against `@DEFAULT_MONITOR@` /
   `@DEFAULT_SOURCE@`.
-- **macOS**: uses `afrecord` (Apple's CoreAudio-backed recorder shipped with
-  the OS) with `-d <seconds>` so it stops at the requested duration.
+- **macOS**: uses `ffmpeg`'s AVFoundation backend (falling back to `afrecord`
+  where present). System-audio capture (`--source system`) requires a virtual
+  loopback device such as [BlackHole](https://github.com/ExistentialAudio/BlackHole):
+  `tendril listen --source system` captures from the detected loopback device,
+  so route system output to it (e.g. via an Aggregate / Multi-Output Device).
+  Without a virtual loopback device, `--source system` returns a structured
+  unsupported-capability error naming the install/routing steps.
 - **Windows / unknown backends**: capture is not yet wired; the JSON envelope
   reports `status = "probe_only"` with a structured note explaining the gap.
 
@@ -44,7 +49,8 @@ can detect silent sessions (suspended monitor, muted mic, no audio playing).
 
 ## Supported source selectors
 
-- `system` / `loopback` — default monitor of the active sink.
+- `system` / `loopback` — the default sink monitor on Linux; on macOS, a
+  detected virtual loopback device (e.g. BlackHole) that system output is routed to.
 - `microphone` / `mic` — default input source.
 - `device:<id>` — modeled in the surface but currently returns a structured
   `audio_device_selection_not_implemented` result. Real per-device binding

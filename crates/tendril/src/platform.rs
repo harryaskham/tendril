@@ -913,6 +913,41 @@ impl MacOsAdapter {
             "Grant Camera access in System Settings > Privacy & Security > Camera, then rerun tendril.",
         )
     }
+
+    /// Decide the system-loopback capability from a detected virtual loopback
+    /// device. macOS has no built-in system audio loopback, so capture is only
+    /// supported when a virtual loopback device (e.g. `BlackHole`) is present.
+    fn system_loopback_capability(
+        loopback: Option<crate::listen::AvfAudioDevice>,
+        platform: PlatformKind,
+    ) -> Result<AudioCapabilityReport, PlatformAdapterError> {
+        match loopback {
+            Some(device) => Ok(AudioCapabilityReport {
+                source: AudioSourceKind::SystemLoopback,
+                backend: AudioBackend::CoreAudio,
+                supported_sample_rates_hz: vec![44_100, 48_000],
+                supported_channel_counts: vec![1, 2],
+                permissions: vec![Self::microphone_permission()],
+                notes: vec![
+                    format!(
+                        "System audio capture uses the virtual loopback device '{}'; route system output to it (e.g. via a Multi-Output Device) so the capture is not silent.",
+                        device.name
+                    ),
+                    "Audio capture remains command-scoped and does not create a background daemon."
+                        .to_owned(),
+                ],
+            }),
+            None => Err(PlatformAdapterError::unsupported(
+                Capability::AudioLoopbackCapture,
+                platform,
+                CapabilityErrorReason::UnsupportedFeature,
+                "macOS has no built-in system audio loopback; capture requires a virtual loopback device (e.g. BlackHole) and none was detected.",
+                Some(
+                    "Install a virtual loopback device such as BlackHole (`brew install blackhole-2ch`), route system output to it via a Multi-Output Device, then rerun `tendril listen --source system`.",
+                ),
+            )),
+        }
+    }
 }
 
 impl TargetDiscoveryAdapter for MacOsAdapter {
@@ -1058,15 +1093,10 @@ impl AudioCapabilityProbe for MacOsAdapter {
         request: &AudioProbeRequest,
     ) -> Result<AudioCapabilityReport, PlatformAdapterError> {
         match request.source {
-            AudioSourceKind::SystemLoopback => Err(PlatformAdapterError::unsupported(
-                Capability::AudioLoopbackCapture,
+            AudioSourceKind::SystemLoopback => Self::system_loopback_capability(
+                crate::listen::detect_macos_loopback_device(),
                 self.platform(),
-                CapabilityErrorReason::UnsupportedFeature,
-                "The macOS adapter spine does not expose system loopback capture in v0.0.1.",
-                Some(
-                    "Use microphone capture or provide an explicit virtual loopback device in a future adapter implementation.",
-                ),
-            )),
+            ),
             AudioSourceKind::Microphone => Ok(AudioCapabilityReport {
                 source: AudioSourceKind::Microphone,
                 backend: AudioBackend::CoreAudio,
@@ -3413,15 +3443,10 @@ mod tests {
     }
 
     #[test]
-    fn macos_loopback_probe_returns_structured_capability_error() {
-        let adapter = MacOsAdapter::new(AdapterContext::macos());
-        let error = adapter
-            .probe_audio_capture(&super::AudioProbeRequest {
-                source: AudioSourceKind::SystemLoopback,
-                duration_hint_ms: Some(500),
-            })
-            .expect_err("loopback should be unsupported on the macOS spine");
-
+    fn macos_system_loopback_capability_depends_on_virtual_device() {
+        // No virtual loopback device: capture is unsupported with actionable guidance.
+        let error = MacOsAdapter::system_loopback_capability(None, PlatformKind::MacOs)
+            .expect_err("loopback should be unsupported without a virtual device");
         match error {
             PlatformAdapterError::UnsupportedCapability(capability) => {
                 assert_eq!(
@@ -3437,6 +3462,25 @@ mod tests {
             }
             other => panic!("unexpected error: {other:?}"),
         }
+
+        // With a detected virtual loopback device, capture is supported and the
+        // device name is surfaced in the notes for the operator.
+        let report = MacOsAdapter::system_loopback_capability(
+            Some(crate::listen::AvfAudioDevice {
+                index: 1,
+                name: "BlackHole 2ch".to_owned(),
+            }),
+            PlatformKind::MacOs,
+        )
+        .expect("loopback should be supported with a virtual device");
+        assert_eq!(report.source, AudioSourceKind::SystemLoopback);
+        assert_eq!(report.backend, AudioBackend::CoreAudio);
+        assert!(
+            report
+                .notes
+                .iter()
+                .any(|note| note.contains("BlackHole 2ch"))
+        );
     }
 
     #[test]
