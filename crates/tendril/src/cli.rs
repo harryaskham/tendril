@@ -31,6 +31,14 @@ pub struct TendrilCli {
     #[arg(long, global = true)]
     pub display: Option<String>,
 
+    /// Scope `capture` to a camera / video capture device.
+    ///
+    /// Pass an id from `tendril list` (the camera's name). Mutually exclusive
+    /// with `--window`/`--display`. macOS captures one frame via ffmpeg's
+    /// `AVFoundation` backend; other platforms are not yet supported.
+    #[arg(long, global = true)]
+    pub camera: Option<String>,
+
     /// Execute this Tendril invocation on a remote host over SSH.
     ///
     /// The remote host must have `tendril` on PATH (or set

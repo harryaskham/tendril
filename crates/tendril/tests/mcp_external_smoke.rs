@@ -117,13 +117,14 @@ fn external_client_smoke_script_verifies_stdio_contract_against_built_binary() {
     let list_elements_properties = property_names(&list_elements_tool["inputSchema"]);
     assert_eq!(
         list_elements_properties,
-        vec!["display", "include_offscreen", "window"]
+        vec!["camera", "display", "include_offscreen", "window"]
     );
 
     let capture_properties = property_names(&capture_tool["inputSchema"]);
     assert_eq!(
         capture_properties,
         vec![
+            "camera",
             "compression",
             "display",
             "format",
@@ -138,6 +139,7 @@ fn external_client_smoke_script_verifies_stdio_contract_against_built_binary() {
     assert_eq!(
         run_properties,
         vec![
+            "camera",
             "display",
             "input_definition",
             "lock_path",

@@ -7,7 +7,7 @@ Tendril keeps its CLI intentionally small and agent-oriented.
 | Command | Purpose | JSON support | MCP parity |
 | --- | --- | --- | --- |
 | `tendril list` | Discover windows, displays, and cameras (video capture devices) | Yes | Yes |
-| `tendril capture` | Capture a screenshot for a selected display or window | Yes | Yes |
+| `tendril capture` | Capture a screenshot for a selected display/window, or a single frame from a `--camera` device | Yes | Yes |
 | `tendril run` | Execute text or input sequences against a selected target | Yes | Yes |
 | `tendril listen` | Capture WAV audio (PipeWire/PulseAudio on Linux, CoreAudio on macOS) and report capability/permission state | Yes | Yes |
 | `tendril alias` | Emit shell wrappers for repeated targeting | Yes | Not yet |
@@ -23,10 +23,11 @@ The root CLI currently shares these global flags across command execution:
 - `--json` for stable machine-readable envelopes,
 - `--window <id>` to scope target-aware commands to a window, and
 - `--display <id>` to scope target-aware commands to a display,
+- `--camera <id>` to scope `tendril capture` to a video capture device (macOS; see `tendril list`),
 - `--remote user@host` to proxy the invocation over SSH, and
 - `--wsl-tunnel` to proxy from WSL/Linux to a Windows-host `tendril.exe`.
 
-Commands that act on a target require exactly one of `--window` or `--display`.
+Commands that act on a target require exactly one of `--window` or `--display`; `tendril capture` also accepts `--camera` (mutually exclusive with `--window`/`--display`).
 
 ## `run` execution-lock flags
 

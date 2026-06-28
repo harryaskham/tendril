@@ -188,6 +188,21 @@ pub struct CameraDescriptor {
     pub unique_id: Option<String>,
 }
 
+/// Result of a single-frame `tendril capture --camera` grab. Distinct from
+/// `CaptureOutput` (which carries window/display coordinate-transform metadata
+/// that is meaningless for a camera frame).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CameraCaptureOutput {
+    pub adapter: AdapterInfo,
+    pub device: String,
+    pub format: ImageFormat,
+    pub media_type: String,
+    pub width: u32,
+    pub height: u32,
+    pub image_base64: String,
+    pub captured_at: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ListOutput {
     pub adapter: AdapterInfo,

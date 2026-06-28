@@ -32,9 +32,10 @@ use crate::listen::{
     ListenArtifact, ListenCaptureResult, ListenSkipReason, execute_listen_capture,
 };
 use crate::model::{
-    AliasInput, AliasOutput, AudioFormat, AudioSourceKind, AudioSourceSelector, CapabilitySet,
-    CaptureInput, ElementListInput, ElementListOutput, ListInput, ListOutput, ListenInput,
-    RunInput, RunInputPayload, ShellKind, TargetDescriptor, TargetKind, TargetSelector,
+    AliasInput, AliasOutput, AudioFormat, AudioSourceKind, AudioSourceSelector,
+    CameraCaptureOutput, CapabilitySet, CaptureInput, ElementListInput, ElementListOutput,
+    ListInput, ListOutput, ListenInput, RunInput, RunInputPayload, ShellKind, TargetDescriptor,
+    TargetKind, TargetSelector,
 };
 use crate::platform::{
     AdapterContext, AdapterInfo, AudioCapabilityReport, AudioProbeRequest,
@@ -64,6 +65,8 @@ impl CommandContext {
 pub struct TargetScope {
     pub window: Option<String>,
     pub display: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub camera: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -500,7 +503,12 @@ fn dispatch_capture_command(
     command: &CaptureCommand,
     config: &TendrilConfig,
 ) -> Result<CommandOutput, TendrilError> {
-    let input = build_capture_input(&target_scope_from_cli(cli), command, config)?;
+    let target = target_scope_from_cli(cli);
+    if let Some(device) = target.camera.clone() {
+        ensure_camera_target_exclusive(&target)?;
+        return dispatch_camera_capture(&device, command, cli.json);
+    }
+    let input = build_capture_input(&target, command, config)?;
     info!(
         command = "capture",
         target_kind = ?input.target.kind(),
@@ -519,6 +527,91 @@ fn dispatch_capture_command(
         output,
         render_capture_human,
     ))
+}
+
+/// `--camera` selects a single capture device and is mutually exclusive with
+/// the window/display selectors.
+fn ensure_camera_target_exclusive(target: &TargetScope) -> Result<(), TendrilError> {
+    if target.window.is_some() || target.display.is_some() {
+        return Err(TendrilError::validation(
+            "choose either `--camera` or a window/display target, but not both",
+        )
+        .with_code("invalid_target_selector")
+        .with_field("target"));
+    }
+    Ok(())
+}
+
+/// Grab one frame from `device` and build the structured camera capture output
+/// (returning the raw PNG bytes too, for an optional `--output` file write).
+fn build_camera_capture_output(
+    device: &str,
+    adapter_info: AdapterInfo,
+) -> Result<(CameraCaptureOutput, Vec<u8>), TendrilError> {
+    use base64::Engine as _;
+    use base64::engine::general_purpose::STANDARD as BASE64;
+
+    let bytes = crate::camera::capture_camera_frame(device)?;
+    let (width, height) = crate::camera::png_dimensions(&bytes).unwrap_or((0, 0));
+    let output = CameraCaptureOutput {
+        adapter: adapter_info,
+        device: device.to_owned(),
+        format: crate::config::ImageFormat::Png,
+        media_type: "image/png".to_owned(),
+        width,
+        height,
+        image_base64: BASE64.encode(&bytes),
+        captured_at: crate::capture::current_timestamp(),
+    };
+    Ok((output, bytes))
+}
+
+fn dispatch_camera_capture(
+    device: &str,
+    command: &CaptureCommand,
+    json_mode: bool,
+) -> Result<CommandOutput, TendrilError> {
+    let adapter = adapter_for_context(AdapterContext::detect());
+    let (output, bytes) = build_camera_capture_output(device, adapter.info())?;
+    info!(
+        command = "capture",
+        target_kind = "camera",
+        target_id = %device,
+        "captured camera frame"
+    );
+    if let Some(path) = &command.output {
+        std::fs::write(path, &bytes).map_err(|error| {
+            TendrilError::execution_failure(
+                "camera_capture_write_failed",
+                format!(
+                    "failed to write camera frame to {}: {error}",
+                    path.display()
+                ),
+                None,
+            )
+        })?;
+    }
+    Ok(render_command_output(
+        "capture",
+        json_mode,
+        output,
+        render_camera_capture_human,
+    ))
+}
+
+fn render_camera_capture_human(output: &CameraCaptureOutput) -> String {
+    format!(
+        "camera capture: {}\nplatform: {:?} / {:?}\nsize: {}x{}\nformat: {:?}\nmedia_type: {}\nimage_base64_bytes: {}\ncaptured_at: {}\n",
+        output.device,
+        output.adapter.platform,
+        output.adapter.session,
+        output.width,
+        output.height,
+        output.format,
+        output.media_type,
+        output.image_base64.len(),
+        output.captured_at,
+    )
 }
 
 fn dispatch_run_command(
@@ -637,6 +730,13 @@ fn build_tool_router() -> ToolRouter<CommandContext> {
         "capture",
         "Capture a screenshot from a display or window target.",
         |context: &CommandContext, command: CaptureRequest| {
+            if let Some(device) = command.target.camera.as_deref() {
+                ensure_camera_target_exclusive(&command.target)?;
+                let adapter = context.adapter();
+                let (output, _bytes) = build_camera_capture_output(device, adapter.info())?;
+                return serde_json::to_value(output)
+                    .map_err(|error| TendrilError::serialization(error.to_string()));
+            }
             let input = build_capture_input(&command.target, &command.options, &context.config)?;
             let adapter = context.adapter();
             capture_response_value(&input, adapter.as_ref())
@@ -1637,6 +1737,7 @@ fn target_scope_from_cli(cli: &TendrilCli) -> TargetScope {
     TargetScope {
         window: cli.window.clone(),
         display: cli.display.clone(),
+        camera: cli.camera.clone(),
     }
 }
 
@@ -2113,6 +2214,7 @@ mod tests {
             json,
             window: window.map(str::to_owned),
             display: display.map(str::to_owned),
+            camera: None,
             remote: None,
             wsl_tunnel: false,
             android: None,
@@ -2173,6 +2275,7 @@ mod tests {
             json: true,
             window: None,
             display: None,
+            camera: None,
             remote: None,
             wsl_tunnel: false,
             android: None,
@@ -2261,6 +2364,7 @@ mod tests {
         let target = TargetScope {
             window: Some("window-1".into()),
             display: None,
+            camera: None,
         };
         let input = build_capture_input(
             &target,
@@ -2298,6 +2402,7 @@ mod tests {
             target: TargetScope {
                 window: Some("window-1".to_string()),
                 display: None,
+                camera: None,
             },
             options: RunCommand {
                 input_definition: Some("send(\"hello\")".to_string()),
@@ -2330,6 +2435,7 @@ mod tests {
             &TargetScope {
                 window: Some("window-1".to_owned()),
                 display: None,
+                camera: None,
             },
             &RunCommand {
                 input_definition: Some("send(\"hello\")".to_owned()),
@@ -2540,6 +2646,7 @@ mod tests {
             target: TargetScope {
                 window: None,
                 display: Some("1".to_string()),
+                camera: None,
             },
             options: CaptureCommand {
                 max_width: Some(800),
@@ -2574,6 +2681,7 @@ mod tests {
             &TargetScope {
                 window: Some("window-1".to_string()),
                 display: None,
+                camera: None,
             },
             &AliasCommand {
                 shell: Some("bash".to_string()),
@@ -2779,6 +2887,7 @@ mod tests {
                 json: true,
                 window: Some("window-1".to_owned()),
                 display: Some("1".to_owned()),
+                camera: None,
                 remote: None,
                 wsl_tunnel: false,
                 android: None,
@@ -2813,6 +2922,7 @@ mod tests {
                 json: true,
                 window: Some("window-1".to_owned()),
                 display: None,
+                camera: None,
                 remote: None,
                 wsl_tunnel: false,
                 android: None,
@@ -3036,6 +3146,7 @@ mod tests {
             &TargetScope {
                 window: Some("window-1".to_owned()),
                 display: Some("1".to_owned()),
+                camera: None,
             },
             &CaptureCommand::default(),
             &TendrilConfig::default(),
@@ -3055,6 +3166,7 @@ mod tests {
             json: false,
             window: Some("window-1".into()),
             display: None,
+            camera: None,
             remote: None,
             wsl_tunnel: false,
             android: None,
