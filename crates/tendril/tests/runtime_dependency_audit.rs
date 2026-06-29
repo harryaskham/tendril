@@ -35,6 +35,7 @@ fn runtime_dependency_audit_mentions_every_spawned_program() {
 
     let expected_programs = [
         "afrecord",
+        "ffmpeg",
         "grim",
         "hyprctl",
         "kill",
