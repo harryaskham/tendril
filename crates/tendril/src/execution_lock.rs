@@ -695,7 +695,10 @@ mod tests {
 
     #[test]
     fn sanitize_path_component_replaces_unsafe_characters() {
-        assert_eq!(sanitize_path_component("window-1.demo_2"), "window-1.demo_2");
+        assert_eq!(
+            sanitize_path_component("window-1.demo_2"),
+            "window-1.demo_2"
+        );
         assert_eq!(sanitize_path_component("a b/c:d"), "a_b_c_d");
         assert_eq!(sanitize_path_component("../etc"), ".._etc");
         assert_eq!(sanitize_path_component(""), "default");

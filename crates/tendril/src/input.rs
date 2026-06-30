@@ -1461,14 +1461,14 @@ fn scaled_coordinate(value: i32, numerator: u32, denominator: u32) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        contains_top_level_comma, element_click_to_pointer_action, ensure_input_supported,
-        is_absolute_unix_path, is_absolute_windows_drive_path, is_absolute_windows_unc_path,
-        is_known_bare_key_token, looks_like_navigation_text, parse_dsl_sequence, parse_duration_ms,
+        bare_key_token_hint, contains_top_level_comma, element_click_to_pointer_action,
+        ensure_input_supported, is_absolute_unix_path, is_absolute_windows_drive_path,
+        is_absolute_windows_unc_path, is_known_bare_key_token, looks_like_bare_key_sequence,
+        looks_like_navigation_text, matches_target_kind, parse_dsl_sequence, parse_duration_ms,
         parse_element_id, parse_i32, parse_input_definition, parse_key_token, parse_modifier,
         parse_quoted_string, parse_scroll_delta, reject_unsafe_browser_navigation_chord,
         relative_point_to_absolute, remap_output_point_to_source, scaled_coordinate,
         summarize_navigation_text, top_level_semicolon_offset, validate_relative_point,
-        bare_key_token_hint, looks_like_bare_key_sequence, matches_target_kind,
     };
     use crate::model::{
         Bounds, CoordinateTransform, ElementDescriptor, InputAction, ModifierKey, MouseButton,
@@ -2096,8 +2096,7 @@ mod tests {
         );
 
         // An empty bare id is a validate-stage DSL error with 1-based action_number.
-        let empty = parse_element_id("   ", 1, "element()")
-            .expect_err("an empty id is rejected");
+        let empty = parse_element_id("   ", 1, "element()").expect_err("an empty id is rejected");
         assert_eq!(empty.code(), "invalid_run_input");
         let details = empty.details().expect("details");
         assert_eq!(details["stage"], "validate");
@@ -2106,8 +2105,8 @@ mod tests {
         assert_eq!(details["action"], "element()");
 
         // An empty quoted id is rejected the same way.
-        let empty_quoted = parse_element_id("\"\"", 0, "press(\"\")")
-            .expect_err("an empty quoted id is rejected");
+        let empty_quoted =
+            parse_element_id("\"\"", 0, "press(\"\")").expect_err("an empty quoted id is rejected");
         assert_eq!(empty_quoted.code(), "invalid_run_input");
         assert_eq!(
             empty_quoted.details().expect("details")["stage"],
@@ -2278,8 +2277,8 @@ mod tests {
         assert_eq!(empty.code(), "invalid_run_input");
         assert_eq!(empty.details().expect("details")["stage"], "parse");
         // A non-numeric millisecond value fails at the parse stage.
-        let bad_ms = parse_duration_ms("abcms", 0, "wait(abcms)")
-            .expect_err("non-numeric ms is rejected");
+        let bad_ms =
+            parse_duration_ms("abcms", 0, "wait(abcms)").expect_err("non-numeric ms is rejected");
         assert_eq!(bad_ms.details().expect("details")["stage"], "parse");
         // A zero millisecond duration is rejected at the validate stage.
         let zero = parse_duration_ms("0", 0, "wait(0)").expect_err("zero is rejected");
@@ -2362,7 +2361,10 @@ mod tests {
             );
         }
         for alias in ["alt", "option"] {
-            assert_eq!(parse_modifier(alias, 0, "hold(alt)").unwrap(), ModifierKey::Alt);
+            assert_eq!(
+                parse_modifier(alias, 0, "hold(alt)").unwrap(),
+                ModifierKey::Alt
+            );
         }
         assert_eq!(
             parse_modifier("shift", 0, "hold(shift)").unwrap(),

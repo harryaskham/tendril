@@ -1231,9 +1231,7 @@ mod tests {
         let window = TargetSelector::Window {
             id: "0x1".to_owned(),
         };
-        let display = TargetSelector::Display {
-            id: "1".to_owned(),
-        };
+        let display = TargetSelector::Display { id: "1".to_owned() };
         assert!(selector_matches_kind(&window, CaptureTargetKind::Window));
         assert!(selector_matches_kind(&display, CaptureTargetKind::Display));
         assert!(!selector_matches_kind(&window, CaptureTargetKind::Display));
@@ -1255,9 +1253,7 @@ mod tests {
         display.kind = CaptureTargetKind::Display;
         assert_eq!(
             target_selector_from_platform(&display),
-            TargetSelector::Display {
-                id: "2".to_owned(),
-            }
+            TargetSelector::Display { id: "2".to_owned() }
         );
     }
 

@@ -1136,9 +1136,9 @@ mod tests {
         discover_windows_targets_with_backend, headless_wayland_capture_diagnostic,
         is_filtered_system_window, is_headless_wayland_monitor, is_macos_permission_error,
         json_array_i32_pair, json_array_u32_pair, json_bool, json_f64, json_i32, json_str,
-        json_u32, macos_discovery_script, parse_simple_geometry,
-        parse_wlr_randr_mode, scale_factor_from_float, sort_inventory, target_kind_rank,
-        wayland_discovery_backend_error, wayland_discovery_backend_tools_on_path,
+        json_u32, macos_discovery_script, parse_simple_geometry, parse_wlr_randr_mode,
+        scale_factor_from_float, sort_inventory, target_kind_rank, wayland_discovery_backend_error,
+        wayland_discovery_backend_tools_on_path,
     };
     use crate::model::ScaleFactor;
     use crate::platform::{
@@ -1326,7 +1326,13 @@ mod tests {
 
     #[test]
     fn sort_inventory_orders_displays_first_then_renumbers_them() {
-        fn descriptor(id: &str, kind: CaptureTargetKind, name: &str, x: i32, y: i32) -> TargetDescriptor {
+        fn descriptor(
+            id: &str,
+            kind: CaptureTargetKind,
+            name: &str,
+            x: i32,
+            y: i32,
+        ) -> TargetDescriptor {
             TargetDescriptor {
                 id: id.to_owned(),
                 title: None,
@@ -1352,7 +1358,13 @@ mod tests {
         let inventory = TargetInventory {
             targets: vec![
                 descriptor("win-b", CaptureTargetKind::Window, "Beta", 200, 0),
-                descriptor("mon-bottom", CaptureTargetKind::Display, "DISPLAY2", 0, 1080),
+                descriptor(
+                    "mon-bottom",
+                    CaptureTargetKind::Display,
+                    "DISPLAY2",
+                    0,
+                    1080,
+                ),
                 descriptor("win-a", CaptureTargetKind::Window, "Alpha", 0, 0),
                 descriptor("mon-top", CaptureTargetKind::Display, "DISPLAY1", 0, 0),
             ],
@@ -1384,7 +1396,10 @@ mod tests {
 
     #[test]
     fn target_kind_rank_orders_displays_before_windows() {
-        assert!(target_kind_rank(CaptureTargetKind::Display) < target_kind_rank(CaptureTargetKind::Window));
+        assert!(
+            target_kind_rank(CaptureTargetKind::Display)
+                < target_kind_rank(CaptureTargetKind::Window)
+        );
     }
 
     #[test]
@@ -1552,12 +1567,18 @@ mod tests {
         let two_x = scale_factor_from_float(2.0);
         assert_eq!((two_x.numerator, two_x.denominator), (2, 1));
         let one_point_five = scale_factor_from_float(1.5);
-        assert_eq!((one_point_five.numerator, one_point_five.denominator), (3, 2));
+        assert_eq!(
+            (one_point_five.numerator, one_point_five.denominator),
+            (3, 2)
+        );
         // Non-finite or non-positive scales fall back to identity (1/1).
         assert_eq!(scale_factor_from_float(0.0), ScaleFactor::identity());
         assert_eq!(scale_factor_from_float(-2.0), ScaleFactor::identity());
         assert_eq!(scale_factor_from_float(f64::NAN), ScaleFactor::identity());
-        assert_eq!(scale_factor_from_float(f64::INFINITY), ScaleFactor::identity());
+        assert_eq!(
+            scale_factor_from_float(f64::INFINITY),
+            ScaleFactor::identity()
+        );
     }
 
     #[test]
@@ -1567,7 +1588,10 @@ mod tests {
             "",
             "error: is hyprland running?"
         ));
-        assert!(command_output_means_backend_unavailable("", "unknown socket"));
+        assert!(command_output_means_backend_unavailable(
+            "",
+            "unknown socket"
+        ));
         // Markers in stdout are detected.
         assert!(command_output_means_backend_unavailable(
             "no running instance",

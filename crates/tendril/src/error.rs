@@ -542,18 +542,14 @@ mod tests {
 
     #[test]
     fn execution_failure_includes_action_index_only_when_present() {
-        let with_index =
-            TendrilError::execution_failure("tap_failed", "tap did not land", Some(2))
-                .to_json_error();
+        let with_index = TendrilError::execution_failure("tap_failed", "tap did not land", Some(2))
+            .to_json_error();
         assert_eq!(
             with_index.category,
             mcp_cli::ErrorCategory::ExecutionFailure
         );
         assert_eq!(with_index.code, "tap_failed");
-        assert_eq!(
-            with_index.details.expect("details")["action_index"],
-            2
-        );
+        assert_eq!(with_index.details.expect("details")["action_index"], 2);
 
         let without_index =
             TendrilError::execution_failure("tap_failed", "tap did not land", None).to_json_error();

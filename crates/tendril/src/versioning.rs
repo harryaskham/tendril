@@ -411,9 +411,9 @@ fn parse_semver_component(value: &str, name: &str) -> Result<u64, TendrilError> 
 #[cfg(test)]
 mod tests {
     use super::{
-        bump_version, extract_version_in_section, read_workspace_version, render_version_bump_human,
-        update_cargo_lock_versions, update_package_manifest_version,
-        update_workspace_manifest_version, version_line_value, VersionBumpOutput,
+        VersionBumpOutput, bump_version, extract_version_in_section, read_workspace_version,
+        render_version_bump_human, update_cargo_lock_versions, update_package_manifest_version,
+        update_workspace_manifest_version, version_line_value,
     };
     use crate::cli::VersionBumpLevel;
 
@@ -530,11 +530,7 @@ version = "1.2.3"
     fn version_line_update_reports_not_found_for_mismatched_previous_version() {
         let tempdir = tempfile::tempdir().expect("tempdir");
         let manifest = tempdir.path().join("Cargo.toml");
-        std::fs::write(
-            &manifest,
-            "[workspace.package]\nversion = \"2.0.0\"\n",
-        )
-        .expect("manifest");
+        std::fs::write(&manifest, "[workspace.package]\nversion = \"2.0.0\"\n").expect("manifest");
         let mut updated = Vec::new();
         // The expected previous version does not match the file contents.
         let error = update_workspace_manifest_version(&manifest, "1.9.0", "2.1.0", &mut updated)

@@ -511,8 +511,8 @@ fn make_executable(_path: &Path) -> Result<(), TendrilError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_update_plan, extract_json_string_field, normalize_version, release_binary_name,
-        release_target_for, render_update_human, verify_checksum, UpdateOutput,
+        UpdateOutput, build_update_plan, extract_json_string_field, normalize_version,
+        release_binary_name, release_target_for, render_update_human, verify_checksum,
     };
 
     #[test]
@@ -687,8 +687,11 @@ mod tests {
         let checksum = dir.path().join("tendril.tar.gz.sha256");
         std::fs::write(&archive, KNOWN_ARCHIVE_PAYLOAD).expect("archive");
         // Standard `<hash>  <filename>` checksum line; only the first token is used.
-        std::fs::write(&checksum, format!("{KNOWN_ARCHIVE_SHA256}  tendril.tar.gz\n"))
-            .expect("checksum");
+        std::fs::write(
+            &checksum,
+            format!("{KNOWN_ARCHIVE_SHA256}  tendril.tar.gz\n"),
+        )
+        .expect("checksum");
         verify_checksum(&archive, &checksum).expect("matching checksum should verify");
     }
 
@@ -715,8 +718,7 @@ mod tests {
         let checksum = dir.path().join("tendril.tar.gz.sha256");
         std::fs::write(&archive, KNOWN_ARCHIVE_PAYLOAD).expect("archive");
         std::fs::write(&checksum, "   \n").expect("checksum");
-        let error =
-            verify_checksum(&archive, &checksum).expect_err("empty checksum is rejected");
+        let error = verify_checksum(&archive, &checksum).expect_err("empty checksum is rejected");
         assert_eq!(error.code(), "update_empty_checksum");
     }
 }
