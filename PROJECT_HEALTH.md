@@ -25,7 +25,7 @@ Green surfaces:
 | Local lint / pre-merge gate | Ready | `scripts/pre-merge.sh` |
 | Changelog / semver | Ready | `CHANGELOG.md`, workspace version `0.0.1` |
 | License declaration | Ready | `LICENSE`, workspace `license = "MIT"` |
-| Audio capture | Partial by design | `tendril listen` is probe-first and explicitly documents artifact emission as not yet implemented |
+| Audio capture | Ready on Linux + macOS; probe-only on unwired lanes | `crates/tendril/src/listen.rs` drives real WAV capture (Linux PipeWire `pw-record`→`parecord`, PulseAudio `parecord`; macOS `afrecord` plus ffmpeg/avfoundation system loopback). Windows/Android and non-WAV formats fall back to a structured `probe_only` response |
 | Documentation publishing | Ready | `docs/book.toml`, `scripts/build-docs.sh`, `.github/workflows/pages.yaml` |
 | Coverage enforcement | Follow-up | SPEC targets are documented, but no coverage gate is enforced in `flake.nix` or `scripts/pre-merge.sh` yet |
 
@@ -47,9 +47,10 @@ nix develop --command cargo clippy --workspace --all-targets --all-features -- -
 
 ## Known follow-ups
 
-1. **Finish audio artifact capture beyond capability probing**
-   - Why: `tendril listen` currently returns structured capability/permission diagnostics but not an emitted audio artifact.
-   - Action: implement adapter-backed recording for the supported platform lanes and keep the current structured capability errors for unsupported paths.
+1. **Extend audio artifact capture to the remaining platform lanes**
+   - Status: Linux (PipeWire/PulseAudio) and macOS (CoreAudio `afrecord`, plus ffmpeg/avfoundation system loopback) now emit real WAV artifacts via `crates/tendril/src/listen.rs`; unwired lanes and non-WAV formats return a structured `probe_only` response by design.
+   - Why: Windows/Android capture lanes and non-WAV output formats are still unimplemented.
+   - Action: wire recorders for the remaining platforms and add non-WAV format support, keeping the structured `probe_only` fallback for unsupported paths.
 
 2. **Enforce coverage targets in automation**
    - Why: the spec defines line/branch coverage goals, but the current pre-merge and tag-release surfaces do not measure them.
@@ -57,4 +58,4 @@ nix develop --command cargo clippy --workspace --all-targets --all-features -- -
 
 ## Operator-facing status
 
-The repository is ready for handoff for the implemented `v0.0.1` scope. Build, test, lint, config, packaging, docs publication, and release surfaces are connected and documented. The remaining work is explicit and bounded: full audio capture and automated coverage enforcement.
+The repository is ready for handoff for the implemented `v0.0.1` scope. Build, test, lint, config, packaging, docs publication, and release surfaces are connected and documented. Audio capture now emits real WAV artifacts on Linux and macOS; the remaining work is explicit and bounded: Windows/Android capture lanes plus non-WAV formats, and automated coverage enforcement.
