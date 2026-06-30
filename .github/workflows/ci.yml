@@ -41,4 +41,6 @@ jobs:
         run: nix --version
 
       - name: Run Nix flake checks
-        run: nix flake check --print-build-logs
+        # sandbox=true keeps builds pure and sidesteps the non-sandboxed
+        # /homeless-shelter HOME purity guard on the ephemeral runners.
+        run: nix flake check --print-build-logs --option sandbox true
