@@ -1,0 +1,44 @@
+name: ci
+
+# Keep main green via GitHub Actions CI (bd-08c2bb): run the same Nix checks
+# the local reint gate (scripts/pre-merge.sh) runs, so PR-backed reintegration
+# can rely on a green CI status check instead of the local gate. Runs on the
+# azure-ephemeral self-hosted pool (Nix + flakes preinstalled); no bare
+# toolchains are required because everything is driven through `nix flake check`.
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Nix flake checks (fmt, clippy, tests, docs)
+    runs-on: [self-hosted, azure-ephemeral]
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Remove stale local build artifacts
+        run: rm -rf target
+
+      - name: Verify Nix is available on the runner
+        run: nix --version
+
+      - name: Run Nix flake checks
+        run: nix flake check --print-build-logs
