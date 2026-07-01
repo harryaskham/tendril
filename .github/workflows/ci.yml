@@ -2,9 +2,18 @@ name: ci
 
 # Keep main green via GitHub Actions CI (bd-08c2bb): run the same Nix checks
 # the local reint gate (scripts/pre-merge.sh) runs, so PR-backed reintegration
-# can rely on a green CI status check instead of the local gate. Runs on the
-# azure-ephemeral self-hosted pool (Nix + flakes preinstalled); no bare
-# toolchains are required because everything is driven through `nix flake check`.
+# can rely on a green CI status check instead of the local gate.
+#
+# Runs on tendril's own dedicated NixOS self-hosted runners (label set
+# [self-hosted, nix, x86_64-linux] = tendril-aurora/beelink/sonance/ms-dev/
+# ms-dev-2), NOT the shared org-wide azure-ephemeral pool. Those NixOS boxes
+# run Nix with sandbox=true by default and have no stale /homeless-shelter, so
+# `nix flake check` builds purely. The azure-ephemeral pool runs Nix
+# non-sandboxed with a pre-existing /homeless-shelter, which fails the purity
+# guard for the build/test/clippy/docs derivations (bd-acf75f); mono's infra
+# guidance is to route heavy nix builds to self-hostable labels, which is
+# exactly what this does. No bare toolchains are required because everything is
+# driven through `nix flake check`.
 
 on:
   pull_request:
@@ -24,7 +33,7 @@ concurrency:
 jobs:
   checks:
     name: Nix flake checks (fmt, clippy, tests, docs)
-    runs-on: [self-hosted, azure-ephemeral]
+    runs-on: [self-hosted, nix, x86_64-linux]
     timeout-minutes: 60
 
     steps:
@@ -41,6 +50,8 @@ jobs:
         run: nix --version
 
       - name: Run Nix flake checks
-        # sandbox=true keeps builds pure and sidesteps the non-sandboxed
-        # /homeless-shelter HOME purity guard on the ephemeral runners.
+        # sandbox=true is already the NixOS-runner default; passed explicitly as
+        # belt-and-suspenders so purity holds even if a runner's nix.conf drifts
+        # (bd-acf75f). On these dedicated NixOS runners the daemon honors it and
+        # there is no stale /homeless-shelter, unlike the azure-ephemeral pool.
         run: nix flake check --print-build-logs --option sandbox true
