@@ -218,6 +218,7 @@ pub(crate) struct AvfAudioDevice {
     pub name: String,
 }
 
+#[cfg(any(target_os = "macos", test))]
 const LOOPBACK_NAME_HINTS: &[&str] = &[
     "blackhole",
     "loopback",
@@ -231,6 +232,7 @@ const LOOPBACK_NAME_HINTS: &[&str] = &[
 /// `ffmpeg -f avfoundation -list_devices true -i ""`. Device lines look like
 /// `[AVFoundation indev @ 0x..] [1] BlackHole 2ch`, under an
 /// `AVFoundation audio devices:` header (the video section is ignored).
+#[cfg(any(target_os = "macos", test))]
 pub(crate) fn parse_avfoundation_audio_devices(stderr: &str) -> Vec<AvfAudioDevice> {
     let mut devices = Vec::new();
     let mut in_audio = false;
@@ -267,6 +269,7 @@ pub(crate) fn parse_avfoundation_audio_devices(stderr: &str) -> Vec<AvfAudioDevi
 }
 
 /// Pick the first device whose name looks like a virtual loopback device.
+#[cfg(any(target_os = "macos", test))]
 pub(crate) fn find_loopback_device(devices: &[AvfAudioDevice]) -> Option<AvfAudioDevice> {
     devices
         .iter()
