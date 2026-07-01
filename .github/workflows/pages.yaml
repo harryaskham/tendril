@@ -17,7 +17,7 @@ concurrency:
 jobs:
   build:
     name: Build docs site
-    runs-on: [self-hosted, azure-ephemeral]
+    runs-on: [self-hosted, nix, x86_64-linux]
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -43,7 +43,7 @@ jobs:
   deploy:
     name: Deploy docs site
     needs: build
-    runs-on: [self-hosted, azure-ephemeral]
+    runs-on: [self-hosted, nix, x86_64-linux]
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
