@@ -62,6 +62,12 @@ pub struct AdapterContext {
     pub platform: PlatformKind,
     pub session: DesktopSession,
     pub audio_backend: Option<AudioBackend>,
+    /// Explicit X11 display name (for example `:99`) to connect to, overriding
+    /// the process `$DISPLAY`. Lets a long-lived MCP server target a display
+    /// that came up after it spawned (bd-6abe70). `None` uses ambient
+    /// `$DISPLAY` (unchanged behaviour for the fresh-process CLI).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub x11_display: Option<String>,
 }
 
 impl AdapterContext {
@@ -104,6 +110,7 @@ impl AdapterContext {
             platform: PlatformKind::MacOs,
             session: DesktopSession::MacOsWindowServer,
             audio_backend: Some(AudioBackend::CoreAudio),
+            x11_display: None,
         }
     }
 
@@ -113,7 +120,19 @@ impl AdapterContext {
             platform: PlatformKind::Linux,
             session,
             audio_backend,
+            x11_display: None,
         }
+    }
+
+    /// Return a copy of this context with an explicit X11 display override.
+    ///
+    /// `Some(":99")` connects to that display explicitly; `None` (or an empty
+    /// string) falls back to the ambient `$DISPLAY`. Used to thread a per-call
+    /// display from an MCP tool payload down to the X11 connection (bd-6abe70).
+    #[must_use]
+    pub fn with_x11_display(mut self, display: Option<String>) -> Self {
+        self.x11_display = display.filter(|value| !value.is_empty());
+        self
     }
 
     #[must_use]
@@ -122,6 +141,7 @@ impl AdapterContext {
             platform: PlatformKind::Windows11,
             session: DesktopSession::WindowsDesktop,
             audio_backend: Some(AudioBackend::Wasapi),
+            x11_display: None,
         }
     }
 }
@@ -1292,7 +1312,12 @@ impl InputControlAdapter for LinuxAdapter {
             return Ok(outcome);
         }
 
-        execute_linux_input(self.platform(), self.context.session, request)
+        execute_linux_input(
+            self.platform(),
+            self.context.session,
+            self.context.x11_display.as_deref(),
+            request,
+        )
     }
 }
 
@@ -2054,10 +2079,11 @@ fn wayland_capture_program_on_path(program: &str) -> bool {
 fn execute_linux_input(
     platform: PlatformKind,
     session: DesktopSession,
+    x11_display: Option<&str>,
     request: &InputRequest,
 ) -> Result<InputOutcome, TendrilError> {
     match session {
-        DesktopSession::X11 => x11::execute_input(platform, request),
+        DesktopSession::X11 => x11::execute_input(platform, x11_display, request),
         DesktopSession::Wayland => wayland_input::execute_input(platform, request),
         _ => Err(TendrilError::from(PlatformAdapterError::unsupported(
             Capability::InputControl,
