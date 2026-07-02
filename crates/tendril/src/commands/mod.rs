@@ -59,6 +59,26 @@ impl CommandContext {
             .clone()
             .unwrap_or_else(|| Arc::from(adapter_for_context(self.adapter_context.clone())))
     }
+
+    /// Build an adapter for this call, optionally overriding the X11 display.
+    ///
+    /// When `x11_display` is a non-empty value, a fresh adapter is built from a
+    /// clone of the base context with that display set, so a single long-lived
+    /// MCP server can target a display that came up after it spawned
+    /// (bd-6abe70). When it is `None`/empty, the base adapter is returned
+    /// unchanged (including any test-injected adapter).
+    fn adapter_with_x11_display(&self, x11_display: Option<&str>) -> Arc<dyn PlatformAdapter> {
+        match x11_display.filter(|value| !value.is_empty()) {
+            Some(display) => {
+                let context = self
+                    .adapter_context
+                    .clone()
+                    .with_x11_display(Some(display.to_owned()));
+                Arc::from(adapter_for_context(context))
+            }
+            None => self.adapter(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -67,6 +87,26 @@ pub struct TargetScope {
     pub display: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub camera: Option<String>,
+    /// Explicit X11 display name (for example `:99`) to connect to for this
+    /// call, overriding the Tendril MCP server's ambient `$DISPLAY`. Lets an
+    /// MCP client on a headless node target a virtual display (Xvfb) brought up
+    /// after the server started (bd-6abe70). Linux/X11 only; ignored on other
+    /// backends.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub x11_display: Option<String>,
+}
+
+/// MCP request wrapper for the `list` tool: the `list` options plus an optional
+/// per-call X11 display override (bd-6abe70). `list` takes no target scope, so
+/// it carries `x11_display` directly rather than through `TargetScope`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ListRequest {
+    #[serde(flatten)]
+    pub options: ListCommand,
+    /// Explicit X11 display name (for example `:99`) to connect to for this
+    /// call, overriding the server's ambient `$DISPLAY`. Linux/X11 only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub x11_display: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -725,9 +765,9 @@ fn build_tool_router() -> ToolRouter<CommandContext> {
     router.add_typed_tool(
         "list",
         "Discover available desktop targets.",
-        |context: &CommandContext, command: ListCommand| {
-            let input = validate_list_command(&command)?;
-            let adapter = context.adapter();
+        |context: &CommandContext, command: ListRequest| {
+            let input = validate_list_command(&command.options)?;
+            let adapter = context.adapter_with_x11_display(command.x11_display.as_deref());
             execute_list_with_adapter(&input, adapter.as_ref())
         },
     );
@@ -736,7 +776,7 @@ fn build_tool_router() -> ToolRouter<CommandContext> {
         "Discover lower-level UI elements for a display/window target or globally.",
         |context: &CommandContext, command: ElementListRequest| {
             let input = build_element_list_input(&command.target, &command.options)?;
-            let adapter = context.adapter();
+            let adapter = context.adapter_with_x11_display(command.target.x11_display.as_deref());
             serde_json::to_value(execute_list_elements(&input, adapter.as_ref())?)
                 .map_err(|error| TendrilError::serialization(error.to_string()))
         },
@@ -758,7 +798,7 @@ fn build_tool_router() -> ToolRouter<CommandContext> {
                     .map_err(|error| TendrilError::serialization(error.to_string()));
             }
             let input = build_capture_input(&command.target, &command.options, &context.config)?;
-            let adapter = context.adapter();
+            let adapter = context.adapter_with_x11_display(command.target.x11_display.as_deref());
             capture_response_value(&input, adapter.as_ref())
         },
     );
@@ -771,7 +811,7 @@ fn build_tool_router() -> ToolRouter<CommandContext> {
                 build_execution_lock_request(&command.options, &input, &context.config)?;
             let lock_permit = acquire_execution_lock(&lock_request)?;
             let lock_report = lock_permit.report().clone();
-            let adapter = context.adapter();
+            let adapter = context.adapter_with_x11_display(command.target.x11_display.as_deref());
             let mut output = execute_run(&input, adapter.as_ref())
                 .map_err(|error| error.with_detail_entry("execution_lock", json!(lock_report)))?;
             output.execution_lock = Some(lock_permit.report().clone());
@@ -1758,6 +1798,7 @@ fn target_scope_from_cli(cli: &TendrilCli) -> TargetScope {
         window: cli.window.clone(),
         display: cli.display.clone(),
         camera: cli.camera.clone(),
+        x11_display: None,
     }
 }
 
@@ -1959,9 +2000,9 @@ mod tests {
 
     use super::{
         AliasRequest, CaptureRequest, ClipboardGetRequest, ClipboardSetRequest, ElementListRequest,
-        ListenRequest, RunRequest, TargetScope, build_alias_input, build_capture_input,
-        build_clipboard_get_input, build_clipboard_set_input, build_listen_input,
-        build_listen_response, build_mcp_server, build_run_input, dispatch,
+        ListRequest, ListenRequest, RunRequest, TargetScope, build_alias_input,
+        build_capture_input, build_clipboard_get_input, build_clipboard_set_input,
+        build_listen_input, build_listen_response, build_mcp_server, build_run_input, dispatch,
         dispatch_listen_command, execute_alias, execute_list_elements, execute_list_with_adapter,
         render_command_output, render_list_elements_human, render_list_human,
     };
@@ -1969,6 +2010,40 @@ mod tests {
         CommandOutput, PermissionsReport, dispatch_permissions_command, render_permissions_human,
     };
     use crate::capture::{execute_capture, render_capture_human};
+
+    #[test]
+    fn x11_display_override_deserializes_and_threads_into_context() {
+        // bd-6abe70: TargetScope-based tool payloads (capture/run/list_elements/
+        // alias) carry a per-call x11_display override.
+        let capture: CaptureRequest =
+            serde_json::from_value(json!({"window": "0x1", "x11_display": ":99"})).unwrap();
+        assert_eq!(capture.target.x11_display.as_deref(), Some(":99"));
+        let run: RunRequest = serde_json::from_value(
+            json!({"input_definition": "lclick(1,2)", "x11_display": ":42"}),
+        )
+        .unwrap();
+        assert_eq!(run.target.x11_display.as_deref(), Some(":42"));
+
+        // The list tool has no target scope, so it carries x11_display directly.
+        let list: ListRequest =
+            serde_json::from_value(json!({"x11_display": ":7", "all_apps": true})).unwrap();
+        assert_eq!(list.x11_display.as_deref(), Some(":7"));
+        assert!(list.options.all_apps);
+
+        // Absent override stays None -> unchanged ambient-$DISPLAY behaviour.
+        let bare: CaptureRequest = serde_json::from_value(json!({"window": "0x1"})).unwrap();
+        assert_eq!(bare.target.x11_display, None);
+
+        // The AdapterContext builder threads the override and drops empty values.
+        let ctx =
+            crate::platform::AdapterContext::linux(crate::platform::DesktopSession::X11, None)
+                .with_x11_display(Some(":99".to_owned()));
+        assert_eq!(ctx.x11_display.as_deref(), Some(":99"));
+        let empty =
+            crate::platform::AdapterContext::linux(crate::platform::DesktopSession::X11, None)
+                .with_x11_display(Some(String::new()));
+        assert_eq!(empty.x11_display, None);
+    }
     use crate::cli::{
         AliasCommand, CaptureCommand, ClipboardGetCommand, ClipboardSetCommand, Command,
         ListCommand, ListenCommand, McpCommand, McpSubcommand, PermissionsCommand, RunCommand,
@@ -2385,6 +2460,7 @@ mod tests {
             window: Some("window-1".into()),
             display: None,
             camera: None,
+            x11_display: None,
         };
         let input = build_capture_input(
             &target,
@@ -2423,6 +2499,7 @@ mod tests {
                 window: Some("window-1".to_string()),
                 display: None,
                 camera: None,
+                x11_display: None,
             },
             options: RunCommand {
                 input_definition: Some("send(\"hello\")".to_string()),
@@ -2456,6 +2533,7 @@ mod tests {
                 window: Some("window-1".to_owned()),
                 display: None,
                 camera: None,
+                x11_display: None,
             },
             &RunCommand {
                 input_definition: Some("send(\"hello\")".to_owned()),
@@ -2667,6 +2745,7 @@ mod tests {
                 window: None,
                 display: Some("1".to_string()),
                 camera: None,
+                x11_display: None,
             },
             options: CaptureCommand {
                 max_width: Some(800),
@@ -2702,6 +2781,7 @@ mod tests {
                 window: Some("window-1".to_string()),
                 display: None,
                 camera: None,
+                x11_display: None,
             },
             &AliasCommand {
                 shell: Some("bash".to_string()),
@@ -3167,6 +3247,7 @@ mod tests {
                 window: Some("window-1".to_owned()),
                 display: Some("1".to_owned()),
                 camera: None,
+                x11_display: None,
             },
             &CaptureCommand::default(),
             &TendrilConfig::default(),

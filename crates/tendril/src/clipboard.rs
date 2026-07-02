@@ -937,6 +937,7 @@ mod tests {
             platform: PlatformKind::Linux,
             session: DesktopSession::X11,
             audio_backend: None,
+            x11_display: None,
         })
     }
 

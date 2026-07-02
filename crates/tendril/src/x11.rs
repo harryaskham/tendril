@@ -96,9 +96,11 @@ pub(crate) fn capture_target(
 
 pub(crate) fn execute_input(
     platform: PlatformKind,
+    x11_display: Option<&str>,
     request: &InputRequest,
 ) -> Result<InputOutcome, TendrilError> {
-    let context = AdapterContext::linux(crate::platform::DesktopSession::X11, None);
+    let context = AdapterContext::linux(crate::platform::DesktopSession::X11, None)
+        .with_x11_display(x11_display.map(str::to_owned));
     let connection = X11Connection::connect(&context, AdapterOperation::InputControl)
         .map_err(TendrilError::from)?;
 
@@ -2555,13 +2557,14 @@ impl X11Connection {
         context: &AdapterContext,
         operation: AdapterOperation,
     ) -> Result<Self, PlatformAdapterError> {
-        let (conn, screen_num) = x11rb::connect(None).map_err(|error| {
-            PlatformAdapterError::adapter_failure(
-                operation,
-                context.platform,
-                format!("failed to connect to the active X11 display: {error}"),
-            )
-        })?;
+        let (conn, screen_num) =
+            x11rb::connect(context.x11_display.as_deref()).map_err(|error| {
+                PlatformAdapterError::adapter_failure(
+                    operation,
+                    context.platform,
+                    format!("failed to connect to the active X11 display: {error}"),
+                )
+            })?;
         let screen = conn.setup().roots.get(screen_num).cloned().ok_or_else(|| {
             PlatformAdapterError::adapter_failure(
                 operation,

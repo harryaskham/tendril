@@ -117,7 +117,13 @@ fn external_client_smoke_script_verifies_stdio_contract_against_built_binary() {
     let list_elements_properties = property_names(&list_elements_tool["inputSchema"]);
     assert_eq!(
         list_elements_properties,
-        vec!["camera", "display", "include_offscreen", "window"]
+        vec![
+            "camera",
+            "display",
+            "include_offscreen",
+            "window",
+            "x11_display"
+        ]
     );
 
     let capture_properties = property_names(&capture_tool["inputSchema"]);
@@ -132,6 +138,7 @@ fn external_client_smoke_script_verifies_stdio_contract_against_built_binary() {
             "max_width",
             "timeout_ms",
             "window",
+            "x11_display",
         ]
     );
 
@@ -149,6 +156,7 @@ fn external_client_smoke_script_verifies_stdio_contract_against_built_binary() {
             "no_restore_focus",
             "restore_focus",
             "window",
+            "x11_display",
         ]
     );
 
