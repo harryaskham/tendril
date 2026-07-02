@@ -2620,7 +2620,7 @@ mod tests {
 
         assert_eq!(
             list.input_schema,
-            serde_json::to_value(schemars::schema_for!(ListCommand))
+            serde_json::to_value(schemars::schema_for!(ListRequest))
                 .expect("list schema should serialize")
         );
         assert_eq!(
