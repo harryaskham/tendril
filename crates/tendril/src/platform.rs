@@ -268,6 +268,23 @@ impl PermissionStatus {
     }
 }
 
+/// Outcome of an opt-in `tendril permissions --request` attempt for a single
+/// permission on the active platform (bd-28c0f6). Records the side effects that
+/// were performed (OS prompt surfaced, System Settings pane opened, TCC probe
+/// run), the freshly re-probed state afterwards, and an attribution/persistence
+/// note. This is deliberately descriptive rather than authoritative: macOS may
+/// still require the operator to toggle the entry on manually.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PermissionRequestOutcome {
+    pub permission: PermissionKind,
+    /// Human-readable side effects that were attempted, in order.
+    pub actions: Vec<String>,
+    /// Permission state re-probed immediately after the request side effects.
+    pub state_after: PermissionState,
+    /// Attribution/persistence caveat (or unsupported-platform explanation).
+    pub note: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSupport {
     pub capability: Capability,
@@ -879,6 +896,244 @@ fn probe_macos_screen_recording_permission() -> Option<bool> {
     Some(bytes.len() > 64)
 }
 
+/// Best-effort read-only probe for macOS Accessibility (input control) consent.
+///
+/// Runs `AXIsProcessTrusted()` through the JXA `ObjC` bridge (`osascript -l
+/// JavaScript`), the same subprocess mechanism tendril already uses for macOS
+/// element discovery, so the workspace stays `unsafe_code = "forbid"` clean (no
+/// Rust FFI). Returns `Some(true)`/`Some(false)` for a definitive answer, or
+/// `None` when the probe could not run (the caller falls back to `Unknown`).
+///
+/// NOTE: because tendril performs its macOS input control by shelling out to
+/// `osascript`, the consent that actually gates input attaches to the
+/// *responsible* process for that subprocess (osascript / the parent terminal /
+/// the ssh or caco-daemon launcher), not the tendril binary itself (bd-5110d9).
+fn probe_macos_accessibility_permission() -> Option<bool> {
+    if std::env::var_os("TENDRIL_SKIP_PERMISSION_PROBE").is_some() {
+        return None;
+    }
+    let output = std::process::Command::new("osascript")
+        .args([
+            "-l",
+            "JavaScript",
+            "-e",
+            "ObjC.import('ApplicationServices'); ($.AXIsProcessTrusted() ? 'granted' : 'denied')",
+        ])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    match String::from_utf8_lossy(&output.stdout).trim() {
+        "granted" => Some(true),
+        "denied" => Some(false),
+        _ => None,
+    }
+}
+
+/// Rich, actionable Accessibility remediation message. Mirrors the Screen
+/// Recording remediation style and points at the opt-in `tendril permissions
+/// --request` flow plus the subprocess/parent attribution caveat (bd-28c0f6).
+fn macos_accessibility_remediation() -> String {
+    let parent = macos_parent_process_summary();
+    format!(
+        "Grant Accessibility (input control) access, then rerun the command.\n\
+         Steps:\n\
+           1. In a foreground session run `tendril permissions --request` to surface the macOS Accessibility prompt automatically, OR\n\
+           2. Open System Settings > Privacy & Security > Accessibility (or run `open \"x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility\"`).\n\
+           3. Enable the entry for the process that launches tendril's input backend. tendril shells out to `osascript`, so the grant attaches to osascript / the parent launcher (typical candidate: {parent}).\n\
+           4. Rerun: tendril permissions (the Accessibility row should report state=granted)."
+    )
+}
+
+/// macOS System Settings Privacy pane deep link for `open`, so the operator
+/// lands directly on the pane for a given permission (bd-28c0f6).
+fn macos_settings_pane_url(kind: PermissionKind) -> &'static str {
+    match kind {
+        PermissionKind::ScreenCapture => {
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+        }
+        PermissionKind::Accessibility => {
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+        }
+        PermissionKind::Microphone => {
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
+        }
+        PermissionKind::Camera => {
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera"
+        }
+    }
+}
+
+/// JXA that surfaces the real macOS Accessibility TCC prompt by calling
+/// `AXIsProcessTrustedWithOptions` with `kAXTrustedCheckOptionPrompt = true`.
+/// Isolated to an `osascript` subprocess so the workspace keeps `unsafe_code =
+/// "forbid"` (no Rust FFI), reusing the `ObjC`-bridge mechanism tendril already
+/// relies on for element discovery (bd-28c0f6).
+fn macos_accessibility_prompt_jxa() -> &'static str {
+    "ObjC.import('ApplicationServices');\n\
+     ObjC.import('Foundation');\n\
+     (function () {\n\
+     var options = $.NSDictionary.dictionaryWithObjectForKey($.kCFBooleanTrue, $.kAXTrustedCheckOptionPrompt);\n\
+     return $.AXIsProcessTrustedWithOptions(options) ? 'granted' : 'prompted';\n\
+     })();"
+}
+
+/// Attribution/persistence caveat surfaced with every macOS request outcome
+/// (bd-28c0f6, bd-5110d9).
+fn macos_permission_persistence_note() -> String {
+    "macOS binds each TCC grant to the responsible process. tendril performs \
+     capture/input by shelling out to system binaries (`screencapture`, \
+     `osascript`), so grants attach to those helpers and/or the parent launcher \
+     (terminal, sshd, caco daemon) rather than the tendril binary. Grants to the \
+     stable system helpers persist across tendril nix-store updates. For a grant \
+     bound to tendril's own signed identity (durable across every invocation \
+     path), ship the signed .app bundle tracked in bd-5110d9."
+        .to_owned()
+}
+
+/// Deterministic, side-effect-free plan describing which request actions apply
+/// to each macOS permission. Separated from execution so it is unit-testable
+/// without firing any OS prompts (bd-28c0f6).
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MacPermissionRequestPlan {
+    permission: PermissionKind,
+    settings_url: &'static str,
+    prompt_jxa: bool,
+    screencapture_probe: bool,
+}
+
+fn macos_permission_request_plans() -> Vec<MacPermissionRequestPlan> {
+    vec![
+        MacPermissionRequestPlan {
+            permission: PermissionKind::ScreenCapture,
+            settings_url: macos_settings_pane_url(PermissionKind::ScreenCapture),
+            prompt_jxa: false,
+            screencapture_probe: true,
+        },
+        MacPermissionRequestPlan {
+            permission: PermissionKind::Accessibility,
+            settings_url: macos_settings_pane_url(PermissionKind::Accessibility),
+            prompt_jxa: true,
+            screencapture_probe: false,
+        },
+        MacPermissionRequestPlan {
+            permission: PermissionKind::Microphone,
+            settings_url: macos_settings_pane_url(PermissionKind::Microphone),
+            prompt_jxa: false,
+            screencapture_probe: false,
+        },
+    ]
+}
+
+fn probe_to_state(probe: Option<bool>) -> PermissionState {
+    match probe {
+        Some(true) => PermissionState::Granted,
+        Some(false) => PermissionState::Denied,
+        None => PermissionState::Unknown,
+    }
+}
+
+fn run_macos_accessibility_prompt() -> Result<(), String> {
+    let output = std::process::Command::new("osascript")
+        .args(["-l", "JavaScript", "-e", macos_accessibility_prompt_jxa()])
+        .output()
+        .map_err(|error| format!("failed to spawn osascript: {error}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_owned())
+    }
+}
+
+fn open_macos_settings_pane(url: &str) -> Result<(), String> {
+    let output = std::process::Command::new("open")
+        .arg(url)
+        .output()
+        .map_err(|error| format!("failed to spawn open: {error}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_owned())
+    }
+}
+
+/// Opt-in, operator-driven flow that surfaces the real macOS permission prompts
+/// and opens the matching System Settings panes (bd-28c0f6).
+///
+/// This is NEVER invoked by the default read-only `tendril permissions` probe
+/// and is NEVER auto-fired for headless/daemon callers, which are the majority
+/// of tendril usage in the fleet: auto-prompting would block unattended runs on
+/// an unanswerable GUI dialog (bd-5110d9). When `TENDRIL_SKIP_PERMISSION_PROBE`
+/// is set the side effects are suppressed (the plan is still reported) so tests
+/// and fixture-driven runs never spawn prompts.
+#[must_use]
+pub fn request_macos_permissions() -> Vec<PermissionRequestOutcome> {
+    let skip_side_effects = std::env::var_os("TENDRIL_SKIP_PERMISSION_PROBE").is_some();
+    let note = macos_permission_persistence_note();
+    macos_permission_request_plans()
+        .into_iter()
+        .map(|plan| {
+            let mut actions = Vec::new();
+            if skip_side_effects {
+                actions.push(format!(
+                    "skipped side effects (TENDRIL_SKIP_PERMISSION_PROBE set); would open {}",
+                    plan.settings_url
+                ));
+                return PermissionRequestOutcome {
+                    permission: plan.permission,
+                    actions,
+                    state_after: PermissionState::Unknown,
+                    note: Some(note.clone()),
+                };
+            }
+            if plan.screencapture_probe {
+                match probe_macos_screen_recording_permission() {
+                    Some(true) => actions.push(
+                        "ran screencapture probe (registers tendril with TCC); already granted"
+                            .to_owned(),
+                    ),
+                    Some(false) => actions.push(
+                        "ran screencapture probe to register tendril with TCC and surface the first-run prompt"
+                            .to_owned(),
+                    ),
+                    None => actions.push("screencapture probe unavailable".to_owned()),
+                }
+            }
+            if plan.prompt_jxa {
+                match run_macos_accessibility_prompt() {
+                    Ok(()) => actions.push(
+                        "surfaced the Accessibility prompt via AXIsProcessTrustedWithOptions"
+                            .to_owned(),
+                    ),
+                    Err(error) => actions.push(format!("accessibility prompt failed: {error}")),
+                }
+            }
+            match open_macos_settings_pane(plan.settings_url) {
+                Ok(()) => {
+                    actions.push(format!("opened System Settings pane: {}", plan.settings_url));
+                }
+                Err(error) => actions.push(format!("failed to open settings pane: {error}")),
+            }
+            let state_after = match plan.permission {
+                PermissionKind::ScreenCapture => {
+                    probe_to_state(probe_macos_screen_recording_permission())
+                }
+                PermissionKind::Accessibility => {
+                    probe_to_state(probe_macos_accessibility_permission())
+                }
+                _ => PermissionState::Unknown,
+            };
+            PermissionRequestOutcome {
+                permission: plan.permission,
+                actions,
+                state_after,
+                note: Some(note.clone()),
+            }
+        })
+        .collect()
+}
+
 impl MacOsAdapter {
     #[must_use]
     pub fn new(context: AdapterContext) -> Self {
@@ -911,11 +1166,25 @@ impl MacOsAdapter {
     }
 
     fn accessibility_permission() -> PermissionStatus {
-        PermissionStatus::unknown(
-            PermissionKind::Accessibility,
-            "macOS input control requires Accessibility consent.",
-            "Grant Accessibility access in System Settings > Privacy & Security > Accessibility, then rerun tendril.",
-        )
+        // Probe the real Accessibility state via the JXA ObjC bridge so
+        // `tendril permissions` reports Granted/Denied instead of always
+        // Unknown (bd-28c0f6).
+        match probe_macos_accessibility_permission() {
+            Some(true) => PermissionStatus::granted(
+                PermissionKind::Accessibility,
+                "macOS Accessibility (input control) consent appears to be granted for the invoking process.",
+            ),
+            Some(false) => PermissionStatus::denied(
+                PermissionKind::Accessibility,
+                "macOS Accessibility (input control) consent is NOT granted; run/input control will fail.",
+                macos_accessibility_remediation(),
+            ),
+            None => PermissionStatus::unknown(
+                PermissionKind::Accessibility,
+                "macOS input control requires Accessibility consent.",
+                macos_accessibility_remediation(),
+            ),
+        }
     }
 
     fn microphone_permission() -> PermissionStatus {
@@ -3367,13 +3636,89 @@ mod tests {
         WindowsAdapter, WindowsRuntimeBackend, capture_wayland_target_with_grim,
         crop_wayland_portal_capture_to_target, detect_linux_audio_backend, detect_linux_session,
         execute_windows_input_with_runtime, is_macos_input_permission_error,
-        javascript_string_literal, macos_double_click_jxa_script, macos_focus_pid_jxa_script,
-        macos_focus_window_jxa_script, macos_scroll_jxa_script, macos_text_jxa_script,
+        javascript_string_literal, macos_accessibility_prompt_jxa, macos_double_click_jxa_script,
+        macos_focus_pid_jxa_script, macos_focus_window_jxa_script,
+        macos_permission_persistence_note, macos_permission_request_plans, macos_scroll_jxa_script,
+        macos_settings_pane_url, macos_text_jxa_script, probe_to_state,
         wayland_capture_program_on_path, wayland_portal_attempt_timeout, wayland_workspace_origin,
         windows_key_is_supported,
     };
     use crate::{TendrilError, model::InputAction};
     use mcp_cli::ErrorCategory;
+
+    #[test]
+    fn macos_settings_pane_url_maps_each_permission_to_a_distinct_privacy_pane() {
+        assert_eq!(
+            macos_settings_pane_url(PermissionKind::ScreenCapture),
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+        );
+        assert_eq!(
+            macos_settings_pane_url(PermissionKind::Accessibility),
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+        );
+        assert_eq!(
+            macos_settings_pane_url(PermissionKind::Microphone),
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
+        );
+        assert_eq!(
+            macos_settings_pane_url(PermissionKind::Camera),
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera"
+        );
+    }
+
+    #[test]
+    fn macos_accessibility_prompt_jxa_calls_trusted_with_prompt_option() {
+        let script = macos_accessibility_prompt_jxa();
+        assert!(script.contains("ObjC.import('ApplicationServices')"));
+        assert!(script.contains("AXIsProcessTrustedWithOptions"));
+        assert!(script.contains("kAXTrustedCheckOptionPrompt"));
+        assert!(script.contains("kCFBooleanTrue"));
+    }
+
+    #[test]
+    fn macos_permission_request_plans_cover_screen_accessibility_and_microphone() {
+        let plans = macos_permission_request_plans();
+        let kinds: Vec<PermissionKind> = plans.iter().map(|plan| plan.permission).collect();
+        assert_eq!(
+            kinds,
+            vec![
+                PermissionKind::ScreenCapture,
+                PermissionKind::Accessibility,
+                PermissionKind::Microphone,
+            ]
+        );
+        for plan in &plans {
+            assert!(
+                plan.settings_url.starts_with("x-apple.systempreferences:"),
+                "every plan should carry a settings deep link, got {plan:?}"
+            );
+        }
+        // Screen Recording is registered via the screencapture probe; only
+        // Accessibility uses the JXA AX prompt; Microphone falls back to the
+        // settings pane (AVFoundation is not reliably JXA-bridged).
+        let screen = &plans[0];
+        assert!(screen.screencapture_probe && !screen.prompt_jxa);
+        let accessibility = &plans[1];
+        assert!(accessibility.prompt_jxa && !accessibility.screencapture_probe);
+        let microphone = &plans[2];
+        assert!(!microphone.prompt_jxa && !microphone.screencapture_probe);
+    }
+
+    #[test]
+    fn probe_to_state_maps_probe_results() {
+        assert_eq!(probe_to_state(Some(true)), PermissionState::Granted);
+        assert_eq!(probe_to_state(Some(false)), PermissionState::Denied);
+        assert_eq!(probe_to_state(None), PermissionState::Unknown);
+    }
+
+    #[test]
+    fn macos_permission_persistence_note_points_at_signed_bundle_follow_up() {
+        let note = macos_permission_persistence_note();
+        assert!(note.contains("responsible process"));
+        assert!(note.contains("screencapture"));
+        assert!(note.contains("osascript"));
+        assert!(note.contains("bd-5110d9"));
+    }
 
     #[test]
     fn linux_session_detection_prefers_declared_session_type() {

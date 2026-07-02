@@ -40,8 +40,8 @@ use crate::model::{
 use crate::platform::{
     AdapterContext, AdapterInfo, AudioCapabilityReport, AudioProbeRequest,
     AudioSourceKind as PlatformAudioSourceKind, Capability, CaptureTargetKind, PermissionKind,
-    PermissionState, PermissionStatus, PlatformAdapter, TargetDiscoveryRequest,
-    adapter_for_context,
+    PermissionRequestOutcome, PermissionState, PermissionStatus, PlatformAdapter, PlatformKind,
+    TargetDiscoveryRequest, adapter_for_context, request_macos_permissions,
 };
 use crate::update::{execute_update, render_update_human, updater_config};
 use crate::versioning::{execute_version_bump, render_version_bump_human};
@@ -960,13 +960,56 @@ struct PermissionsReport {
     permissions: Vec<PermissionStatus>,
 }
 
-fn dispatch_permissions_command(_command: &PermissionsCommand, json_mode: bool) -> CommandOutput {
+#[derive(Debug, Clone, Serialize)]
+struct PermissionRequestReport {
+    adapter: AdapterInfo,
+    requested: Vec<PermissionRequestOutcome>,
+    permissions: Vec<PermissionStatus>,
+}
+
+fn dispatch_permissions_command(command: &PermissionsCommand, json_mode: bool) -> CommandOutput {
     let adapter = adapter_for_context(AdapterContext::detect());
+    let info = adapter.info();
+    if command.request {
+        let requested = if info.platform == PlatformKind::MacOs {
+            request_macos_permissions()
+        } else {
+            unsupported_permission_request(info.platform)
+        };
+        let report = PermissionRequestReport {
+            adapter: info,
+            requested,
+            permissions: adapter.permissions(),
+        };
+        return render_command_output(
+            "permissions",
+            json_mode,
+            report,
+            render_permission_request_human,
+        );
+    }
     let report = PermissionsReport {
-        adapter: adapter.info(),
+        adapter: info,
         permissions: adapter.permissions(),
     };
     render_command_output("permissions", json_mode, report, render_permissions_human)
+}
+
+/// Fallback outcome for `--request` on platforms where a programmatic request
+/// flow is not implemented. Reports that no prompt was fired rather than
+/// silently doing nothing (bd-28c0f6).
+fn unsupported_permission_request(platform: PlatformKind) -> Vec<PermissionRequestOutcome> {
+    vec![PermissionRequestOutcome {
+        permission: PermissionKind::ScreenCapture,
+        actions: vec![format!(
+            "--request is only implemented on macOS; no prompt was fired on {platform:?}"
+        )],
+        state_after: PermissionState::Unknown,
+        note: Some(
+            "On this platform, grant capture/input permissions through the OS settings surface reported by `tendril permissions`."
+                .to_owned(),
+        ),
+    }]
 }
 
 fn permission_kind_label(kind: PermissionKind) -> &'static str {
@@ -1011,6 +1054,42 @@ fn render_permissions_human(report: &PermissionsReport) -> String {
         if let Some(action) = &status.suggested_action {
             let _ = writeln!(rendered, "    -> {action}");
         }
+    }
+    rendered
+}
+
+fn render_permission_request_human(report: &PermissionRequestReport) -> String {
+    let mut rendered = String::new();
+    let _ = writeln!(
+        rendered,
+        "platform: {:?} ({:?} session) - permission request flow",
+        report.adapter.platform, report.adapter.session
+    );
+    for outcome in &report.requested {
+        let _ = writeln!(
+            rendered,
+            "- {}: {} (after request)",
+            permission_kind_label(outcome.permission),
+            permission_state_label(outcome.state_after)
+        );
+        for action in &outcome.actions {
+            let _ = writeln!(rendered, "    * {action}");
+        }
+        if let Some(note) = &outcome.note {
+            let _ = writeln!(rendered, "    note: {note}");
+        }
+    }
+    let _ = writeln!(rendered, "\ncurrent status:");
+    if report.permissions.is_empty() {
+        let _ = writeln!(rendered, "  no platform permissions are required");
+    }
+    for status in &report.permissions {
+        let _ = writeln!(
+            rendered,
+            "  - {}: {}",
+            permission_kind_label(status.permission),
+            permission_state_label(status.state)
+        );
     }
     rendered
 }
@@ -2007,7 +2086,8 @@ mod tests {
         render_command_output, render_list_elements_human, render_list_human,
     };
     use super::{
-        CommandOutput, PermissionsReport, dispatch_permissions_command, render_permissions_human,
+        CommandOutput, PermissionRequestReport, PermissionsReport, dispatch_permissions_command,
+        render_permission_request_human, render_permissions_human, unsupported_permission_request,
     };
     use crate::capture::{execute_capture, render_capture_human};
 
@@ -2064,9 +2144,9 @@ mod tests {
         AudioProbeRequest, CaptureAdapter, CaptureArtifact,
         CaptureRequest as PlatformCaptureRequest, CaptureTargetKind, DesktopSession,
         FeatureSupport, InputControlAdapter, InputOutcome, PermissionAdapter, PermissionKind,
-        PermissionStatus, PlatformAdapter, PlatformAdapterError, PlatformKind,
-        TargetDescriptor as PlatformTargetDescriptor, TargetDiscoveryAdapter,
-        TargetDiscoveryRequest, TargetInventory,
+        PermissionRequestOutcome, PermissionState, PermissionStatus, PlatformAdapter,
+        PlatformAdapterError, PlatformKind, TargetDescriptor as PlatformTargetDescriptor,
+        TargetDiscoveryAdapter, TargetDiscoveryRequest, TargetInventory,
     };
     use mcp_cli::ErrorCategory;
 
@@ -2115,6 +2195,47 @@ mod tests {
             CommandOutput::Human(text) => assert!(text.contains("platform:")),
             other => panic!("expected human output, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn permission_request_human_render_lists_outcomes_and_current_status() {
+        let report = PermissionRequestReport {
+            adapter: AdapterInfo::from_context(&AdapterContext::macos()),
+            requested: vec![PermissionRequestOutcome {
+                permission: PermissionKind::Accessibility,
+                actions: vec![
+                    "surfaced the Accessibility prompt via AXIsProcessTrustedWithOptions"
+                        .to_owned(),
+                    "opened System Settings pane: x-apple.systempreferences:...".to_owned(),
+                ],
+                state_after: PermissionState::Denied,
+                note: Some("attribution caveat, see bd-5110d9".to_owned()),
+            }],
+            permissions: vec![PermissionStatus::denied(
+                PermissionKind::Accessibility,
+                "accessibility missing",
+                "open settings",
+            )],
+        };
+        let rendered = render_permission_request_human(&report);
+        assert!(rendered.contains("permission request flow"));
+        assert!(rendered.contains("Accessibility (input control): denied (after request)"));
+        assert!(rendered.contains("surfaced the Accessibility prompt"));
+        assert!(rendered.contains("note: attribution caveat, see bd-5110d9"));
+        assert!(rendered.contains("current status:"));
+    }
+
+    #[test]
+    fn unsupported_permission_request_reports_no_prompt_fired() {
+        let outcomes = unsupported_permission_request(PlatformKind::Linux);
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(outcomes[0].state_after, PermissionState::Unknown);
+        assert!(
+            outcomes[0]
+                .actions
+                .iter()
+                .any(|action| action.contains("only implemented on macOS"))
+        );
     }
 
     #[derive(Debug)]

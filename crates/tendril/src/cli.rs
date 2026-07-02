@@ -133,11 +133,27 @@ impl Command {
 
 /// Report input and screen-capture permission status for the active platform adapter.
 ///
-/// This is a read-only probe: it reports whether Screen Recording, Accessibility
-/// (input control), and Microphone access are granted, unknown, denied, or not
-/// required, along with remediation guidance. It performs no capture or input.
+/// This is a read-only probe by default: it reports whether Screen Recording,
+/// Accessibility (input control), and Microphone access are granted, unknown,
+/// denied, or not required, along with remediation guidance. It performs no
+/// capture or input.
+///
+/// Pass `--request` (macOS, foreground/operator sessions only) to opt into
+/// programmatically surfacing the real OS permission prompts and opening the
+/// matching System Settings panes. `--request` is never auto-fired and is a
+/// no-op prompt-wise for headless/daemon callers by design (bd-28c0f6).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Args, Serialize, Deserialize, JsonSchema)]
-pub struct PermissionsCommand {}
+pub struct PermissionsCommand {
+    /// Opt-in: programmatically surface the OS permission prompts and open the
+    /// matching System Settings panes instead of only reporting status.
+    ///
+    /// macOS only. Intended for interactive/operator sessions; the default
+    /// (omit the flag) stays a read-only probe so headless/daemon callers are
+    /// never blocked on a GUI dialog.
+    #[arg(long)]
+    #[serde(default)]
+    pub request: bool,
+}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Args, Serialize, Deserialize, JsonSchema)]
 pub struct ListCommand {
@@ -399,6 +415,24 @@ mod tests {
         assert!(help.contains("alias --name desk"));
         assert!(help.contains("update"));
         assert!(help.contains("version"));
+    }
+
+    #[test]
+    fn parses_permissions_request_flag() {
+        let with = TendrilCli::parse_from(["tendril", "permissions", "--request"]);
+        let Some(Command::Permissions(command)) = with.command else {
+            panic!("permissions command should parse");
+        };
+        assert!(command.request);
+
+        let without = TendrilCli::parse_from(["tendril", "permissions"]);
+        let Some(Command::Permissions(command)) = without.command else {
+            panic!("permissions command should parse");
+        };
+        assert!(
+            !command.request,
+            "request should default to false (read-only probe)"
+        );
     }
 
     #[test]

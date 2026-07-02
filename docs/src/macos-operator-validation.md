@@ -162,6 +162,44 @@ Expected success:
 
 ## What macOS permission prompts/settings should appear
 
+### Requesting permissions programmatically (`tendril permissions --request`)
+
+By default `tendril permissions` is a read-only probe. In a foreground/operator
+session you can opt into surfacing the real OS prompts instead of navigating
+System Settings by hand:
+
+```
+tendril permissions --request --json
+```
+
+On macOS this:
+
+- runs the `screencapture` registration probe (so Tendril appears under Screen
+  Recording and the first-run prompt can be answered),
+- surfaces the **Accessibility** prompt via `AXIsProcessTrustedWithOptions`
+  (through the same `osascript` JXA ObjC bridge Tendril already uses for element
+  discovery — no Rust FFI, so the workspace stays `unsafe_code = "forbid"`), and
+- opens the matching **System Settings > Privacy & Security** panes for Screen
+  Recording, Accessibility, and Microphone.
+
+The JSON envelope's `data.requested[]` array reports, per permission, the
+actions attempted, the re-probed `state_after`, and an attribution `note`.
+
+**Attribution / persistence caveat.** macOS binds every TCC grant to the
+*responsible* process. Because Tendril performs capture/input by shelling out to
+stable system binaries (`screencapture`, `osascript`), the grants attach to
+those helpers and/or the parent launcher (your terminal, `sshd`, or the caco
+daemon) rather than to the Tendril binary's nix-store path. This is what makes
+grants **persist across Tendril nix-store updates** — you grant the stable
+system helper once, not the versioned binary every release. For a grant bound to
+Tendril's own signed identity (durable across every invocation path, including a
+future in-process FFI backend), see the signed `.app` bundle work in bd-5110d9.
+
+`--request` is never auto-fired and never prompts for headless/daemon callers
+(the majority of fleet usage): auto-prompting would block unattended runs on an
+unanswerable GUI dialog. Set `TENDRIL_SKIP_PERMISSION_PROBE=1` to report the
+plan without performing any side effects.
+
 ### Screen Recording
 
 You should expect **Screen Recording** involvement for `list` and `capture`.
