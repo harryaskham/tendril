@@ -45,6 +45,7 @@ without spawning anything.
 | `listen` | Linux/PulseAudio | `parecord` | WAV capture against `@DEFAULT_MONITOR@` / `@DEFAULT_SOURCE@`; also used as a fallback when `pw-record` is missing on PipeWire hosts | Documented backend prerequisite | Embed a PulseAudio/PipeWire client to remove the subprocess boundary | `bd-d7c2f0` |
 | `listen` | * (recorder cleanup) | `kill` | Sent as `kill -TERM` to long-running recorders so they finalize the WAV header before exit (used only by the `parecord` path; `pw-record` exits on its own) | Documented platform prerequisite | Switch to in-process signal delivery once the workspace permits scoped `unsafe_code` for libc::kill | `bd-d7c2f0` |
 | `listen` | Windows / unknown | _none_ | No real capture is wired; the JSON envelope reports `status = "probe_only"` with diagnostics | Not applicable | Wire WASAPI loopback/capture once a self-contained Rust path is selected | `bd-d7c2f0` |
+| `permissions --request` | macOS | `open` | Opens the System Settings Privacy pane deep links (Screen Recording / Accessibility / Microphone) during the opt-in TCC request flow; the same flow also reuses `osascript` (Accessibility prompt via `AXIsProcessTrustedWithOptions`) and `screencapture` (Screen Recording registration probe) | Documented platform prerequisite; opt-in and never fired for headless/daemon callers | Replace with native TCC request bindings once the workspace permits a scoped, feature-gated FFI module (`bd-5110d9`) | `bd-28c0f6` |
 
 ## Classification summary
 
@@ -56,6 +57,7 @@ binary on a supported host:
 
 - macOS `screencapture`
 - macOS `osascript`
+- macOS `open` (opt-in `permissions --request` only): opens System Settings Privacy pane deep links; ships with the OS and is never spawned by default or for headless/daemon callers (`bd-28c0f6`)
 - Linux display server discovery probes `XDG_RUNTIME_DIR/wayland-*` and `/tmp/.X11-unix/X*` when `WAYLAND_DISPLAY`/`DISPLAY` are not already exported, so SSH and non-login shells can still identify the active local display server before compositor-specific discovery starts.
 - Wayland compositor utilities (`hyprctl`, `swaymsg`, `wlr-randr`) when Tendril
   is explicitly operating against those compositor families

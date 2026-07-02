@@ -39,6 +39,7 @@ fn runtime_dependency_audit_mentions_every_spawned_program() {
         "grim",
         "hyprctl",
         "kill",
+        "open",
         "osascript",
         "parecord",
         "ps",
