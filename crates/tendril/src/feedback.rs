@@ -11,14 +11,36 @@
 //! the default Tendril CLI never adds stderr noise or files beads. Set
 //! `FEEDBACK_WEBHOOK_URL` (and optionally `FEEDBACK_WEBHOOK_TOKEN_ENV` and
 //! `FEEDBACK_PROJECT`) to enable webhook delivery to a caco feedback endpoint
-//! that turns breakages into beads.
+//! that turns breakages into beads. Alternatively, set a shared
+//! `FEEDBACK_WEBHOOK_BASE_URL` (the operator's canonical `…/hooks/global`
+//! namespace) and Tendril appends its own `/tendril` path so feedback lands on
+//! `<base>/tendril` (bd-42a4d9); an explicit `FEEDBACK_WEBHOOK_URL` still wins.
 
-use feedback_cli::{FeedbackConfig, FeedbackEvent, ReportStrategy, Reporter};
+use feedback_cli::{FeedbackConfig, FeedbackEvent, ReportStrategy, Reporter, WebhookConfig};
 
 use crate::error::TendrilError;
 
 /// Component label stamped on every Tendril feedback event.
 pub const FEEDBACK_COMPONENT: &str = "tendril";
+
+/// Build the tendril-scoped feedback webhook from a shared base URL (bd-42a4d9).
+///
+/// Appends this component's path so feedback lands on `<base>/tendril` under the
+/// operator's canonical global hook namespace, instead of the shared root or
+/// another project's namespace. Trailing slashes on the base are trimmed;
+/// returns `None` for an empty/whitespace base so an unset var stays disabled.
+#[must_use]
+fn webhook_from_base_url(base: &str, token_env: Option<String>) -> Option<WebhookConfig> {
+    let base = base.trim().trim_end_matches('/');
+    if base.is_empty() {
+        return None;
+    }
+    Some(WebhookConfig {
+        url: format!("{base}/{FEEDBACK_COMPONENT}"),
+        token_env,
+        ..WebhookConfig::default()
+    })
+}
 
 /// Resolve the feedback configuration.
 ///
@@ -38,6 +60,28 @@ pub fn feedback_config(configured: Option<&FeedbackConfig>) -> FeedbackConfig {
             let mut env = FeedbackConfig::from_env();
             if matches!(env.strategy, ReportStrategy::Stderr) {
                 env.strategy = ReportStrategy::Disabled;
+            }
+            // bd-42a4d9: honor the canonical shared feedback hook. The shared
+            // feedback-cli `from_env()` only reads the FULL `FEEDBACK_WEBHOOK_URL`.
+            // When that is unset but a global `FEEDBACK_WEBHOOK_BASE_URL` is set
+            // (the operator's canonical `…/hooks/global` namespace), build the
+            // tendril-scoped webhook by appending this component's path so Tendril
+            // feedback lands on `<base>/tendril` rather than the shared root or
+            // another project's namespace (avoids cross-project feedback spam). An
+            // explicit `FEEDBACK_WEBHOOK_URL` (handled above) still wins.
+            if matches!(env.strategy, ReportStrategy::Disabled) {
+                if let Some(webhook) =
+                    std::env::var("FEEDBACK_WEBHOOK_BASE_URL")
+                        .ok()
+                        .and_then(|base| {
+                            webhook_from_base_url(
+                                &base,
+                                std::env::var("FEEDBACK_WEBHOOK_TOKEN_ENV").ok(),
+                            )
+                        })
+                {
+                    env.strategy = ReportStrategy::Webhook(webhook);
+                }
             }
             // bd-13c534: env-driven webhook delivery defaults to non-blocking so
             // breakage reporting never adds a synchronous HTTP round-trip (or a
@@ -153,5 +197,28 @@ mod tests {
             }
             other => panic!("expected webhook strategy, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn webhook_from_base_url_appends_component_path() {
+        // bd-42a4d9: a shared base URL routes to `<base>/tendril`, trailing
+        // slashes trimmed, so tendril feedback stays in its own hook namespace.
+        let webhook = super::webhook_from_base_url(
+            "http://helsinki.miku-owl.ts.net:11300/hooks/global/",
+            Some("CACOPHONY_FEEDBACK_TOKEN".to_owned()),
+        )
+        .expect("non-empty base should build a webhook");
+        assert_eq!(
+            webhook.url,
+            format!("http://helsinki.miku-owl.ts.net:11300/hooks/global/{FEEDBACK_COMPONENT}")
+        );
+        assert_eq!(
+            webhook.token_env.as_deref(),
+            Some("CACOPHONY_FEEDBACK_TOKEN")
+        );
+
+        // Empty / whitespace base stays unrouted (Disabled), not a bare `/tendril`.
+        assert!(super::webhook_from_base_url("   ", None).is_none());
+        assert!(super::webhook_from_base_url("", None).is_none());
     }
 }
