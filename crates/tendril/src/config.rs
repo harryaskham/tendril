@@ -16,9 +16,11 @@ pub struct TendrilConfig {
     pub logging: LoggingDefaults,
     pub execution_lock: ExecutionLockDefaults,
     /// Optional breakage/feedback reporting strategy (feedback-cli). When unset,
-    /// Tendril falls back to env (`FEEDBACK_WEBHOOK_URL`) and is otherwise silent.
-    /// Set this to route Tendril breakages to a caco feedback endpoint / beads,
-    /// the local `caco` CLI, or a file.
+    /// Tendril resolves a webhook from `TENDRIL_FEEDBACK_WEBHOOK_URL`, else
+    /// `FEEDBACK_WEBHOOK_BASE_URL` + the tendril hook name (default
+    /// `tendril-feedback`), else the generic `FEEDBACK_WEBHOOK_URL`, and is
+    /// otherwise silent. Set this to route Tendril breakages to a caco feedback
+    /// endpoint / beads, the local `caco` CLI, or a file.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub feedback: Option<feedback_cli::FeedbackConfig>,
 }

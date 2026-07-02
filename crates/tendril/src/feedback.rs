@@ -12,8 +12,18 @@
 //! `FEEDBACK_WEBHOOK_URL` (and optionally `FEEDBACK_WEBHOOK_TOKEN_ENV` and
 //! `FEEDBACK_PROJECT`) to enable webhook delivery to a caco feedback endpoint
 //! that turns breakages into beads.
+//!
+//! Because the generic `FEEDBACK_WEBHOOK_URL` is shared by every `feedback-cli`
+//! tool on a host, Tendril resolves its own webhook URL first: an explicit
+//! `TENDRIL_FEEDBACK_WEBHOOK_URL`, else the canonical shared namespace
+//! `FEEDBACK_WEBHOOK_BASE_URL` joined with Tendril's hook name (default
+//! `tendril-feedback`, overridable via `TENDRIL_FEEDBACK_HOOK`). The token
+//! env-var name comes from `TENDRIL_FEEDBACK_WEBHOOK_TOKEN_ENV`, falling back to
+//! the generic `FEEDBACK_WEBHOOK_TOKEN_ENV` (the single shared feedback token).
+//! This lets each tool target its *own* feedback hook under one base URL/token
+//! so Tendril breakages never spam another project's hook (bd-67a336).
 
-use feedback_cli::{FeedbackConfig, FeedbackEvent, ReportStrategy, Reporter};
+use feedback_cli::{FeedbackConfig, FeedbackEvent, ReportStrategy, Reporter, WebhookConfig};
 
 use crate::error::TendrilError;
 
@@ -32,6 +42,13 @@ pub const FEEDBACK_COMPONENT: &str = "tendril";
 pub fn feedback_config(configured: Option<&FeedbackConfig>) -> FeedbackConfig {
     let mut config = configured.map_or_else(
         || {
+            // bd-67a336: prefer a tendril-specific webhook override so tendril
+            // breakages target the tendril feedback hook instead of inheriting
+            // the generic FEEDBACK_WEBHOOK_URL that other feedback-cli tools
+            // (e.g. omni-cli) may share on the same host.
+            if let Some(over) = tendril_env_override() {
+                return over;
+            }
             // `from_env()` falls back to the stderr strategy when no webhook URL
             // is set; demote that to Disabled so an unconfigured Tendril CLI
             // never writes an extra feedback line to stderr or files beads.
@@ -58,6 +75,101 @@ pub fn feedback_config(configured: Option<&FeedbackConfig>) -> FeedbackConfig {
         .component
         .get_or_insert_with(|| FEEDBACK_COMPONENT.to_owned());
     config
+}
+
+/// Read the tendril-specific feedback webhook override from the environment.
+///
+/// bd-67a336: `feedback-cli`'s `FeedbackConfig::from_env()` only honours the
+/// generic `FEEDBACK_WEBHOOK_URL`, which is shared by every `feedback-cli` tool
+/// on a host. When a node also routes another CLI's feedback (e.g. omni-cli) via
+/// that generic URL, tendril breakages would POST to the *other* project's hook
+/// (bead-type webhooks file into their own configured `bead.project`, ignoring
+/// the sender's project). Tendril therefore resolves its own webhook URL from,
+/// in precedence order:
+///
+/// 1. `TENDRIL_FEEDBACK_WEBHOOK_URL` — an explicit full URL escape hatch.
+/// 2. `FEEDBACK_WEBHOOK_BASE_URL` + tendril's hook name — the canonical shared
+///    namespace convention, where the operator sets one base URL
+///    (`.../hooks/global`) and one shared token, and each tool appends its own
+///    hook. The hook segment defaults to [`DEFAULT_FEEDBACK_HOOK`] and can be
+///    overridden with `TENDRIL_FEEDBACK_HOOK`.
+///
+/// The token env-var name comes from `TENDRIL_FEEDBACK_WEBHOOK_TOKEN_ENV`,
+/// falling back to the generic `FEEDBACK_WEBHOOK_TOKEN_ENV` (the canonical
+/// single shared feedback token).
+fn tendril_env_override() -> Option<FeedbackConfig> {
+    tendril_webhook_override(
+        std::env::var("TENDRIL_FEEDBACK_WEBHOOK_URL").ok(),
+        std::env::var("FEEDBACK_WEBHOOK_BASE_URL").ok(),
+        std::env::var("TENDRIL_FEEDBACK_HOOK").ok(),
+        std::env::var("TENDRIL_FEEDBACK_WEBHOOK_TOKEN_ENV").ok(),
+        std::env::var("FEEDBACK_WEBHOOK_TOKEN_ENV").ok(),
+        std::env::var("FEEDBACK_PROJECT").ok(),
+    )
+}
+
+/// Default tendril feedback hook name appended to `FEEDBACK_WEBHOOK_BASE_URL`.
+/// Matches the caco webhook entry id (`/hooks/global/tendril-feedback`).
+const DEFAULT_FEEDBACK_HOOK: &str = "tendril-feedback";
+
+/// Pure builder for the tendril-specific webhook override (bd-67a336), split out
+/// from [`tendril_env_override`] so the precedence/fallback logic is
+/// unit-testable without touching process environment.
+fn tendril_webhook_override(
+    full_url: Option<String>,
+    base_url: Option<String>,
+    hook: Option<String>,
+    token_env: Option<String>,
+    generic_token_env: Option<String>,
+    project: Option<String>,
+) -> Option<FeedbackConfig> {
+    let url = tendril_feedback_url(full_url, base_url, hook)?;
+    let token_env = token_env
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| generic_token_env.filter(|value| !value.trim().is_empty()));
+    let project = project.filter(|value| !value.trim().is_empty());
+    Some(FeedbackConfig {
+        enabled: true,
+        project,
+        // Non-blocking so breakage reporting never adds a synchronous HTTP
+        // round-trip to the CLI's error-exit path (matches the env default).
+        strategy: ReportStrategy::Webhook(WebhookConfig {
+            url,
+            token_env,
+            blocking: false,
+            ..WebhookConfig::default()
+        }),
+        ..FeedbackConfig::default()
+    })
+}
+
+/// Resolve the tendril feedback webhook URL from either an explicit full URL or
+/// a shared base URL joined with tendril's hook name (bd-67a336). Slashes at the
+/// base/hook boundary are normalised so both `.../global` and `.../global/`
+/// bases work. Returns `None` when neither a full URL nor a base URL is set.
+fn tendril_feedback_url(
+    full_url: Option<String>,
+    base_url: Option<String>,
+    hook: Option<String>,
+) -> Option<String> {
+    if let Some(full) = full_url
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+    {
+        return Some(full);
+    }
+    let base = base_url
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())?;
+    let hook = hook
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| DEFAULT_FEEDBACK_HOOK.to_owned());
+    Some(format!(
+        "{}/{}",
+        base.trim_end_matches('/'),
+        hook.trim_start_matches('/')
+    ))
 }
 
 /// Best-effort: report a Tendril breakage so the owning project can turn it
@@ -153,5 +265,123 @@ mod tests {
             }
             other => panic!("expected webhook strategy, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn tendril_feedback_url_prefers_explicit_full_url() {
+        let url = super::tendril_feedback_url(
+            Some("http://host:11300/hooks/global/custom".to_owned()),
+            Some("http://host:11300/hooks/global".to_owned()),
+            Some("ignored".to_owned()),
+        );
+        assert_eq!(
+            url.as_deref(),
+            Some("http://host:11300/hooks/global/custom")
+        );
+    }
+
+    #[test]
+    fn tendril_feedback_url_joins_base_with_default_hook() {
+        let url = super::tendril_feedback_url(
+            None,
+            Some("http://helsinki:11300/hooks/global".to_owned()),
+            None,
+        );
+        assert_eq!(
+            url.as_deref(),
+            Some("http://helsinki:11300/hooks/global/tendril-feedback")
+        );
+    }
+
+    #[test]
+    fn tendril_feedback_url_normalises_slashes_and_custom_hook() {
+        let url = super::tendril_feedback_url(
+            None,
+            Some("http://helsinki:11300/hooks/global/".to_owned()),
+            Some("/tendril".to_owned()),
+        );
+        assert_eq!(
+            url.as_deref(),
+            Some("http://helsinki:11300/hooks/global/tendril")
+        );
+    }
+
+    #[test]
+    fn tendril_feedback_url_is_none_without_full_or_base() {
+        assert!(super::tendril_feedback_url(None, None, Some("tendril".to_owned())).is_none());
+        assert!(
+            super::tendril_feedback_url(Some("  ".to_owned()), Some("  ".to_owned()), None)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn tendril_webhook_override_builds_non_blocking_webhook_from_base() {
+        let config = super::tendril_webhook_override(
+            None,
+            Some("http://helsinki:11300/hooks/global".to_owned()),
+            None,
+            Some("CACOPHONY_FEEDBACK_TOKEN".to_owned()),
+            Some("IGNORED_GENERIC".to_owned()),
+            Some("tendril".to_owned()),
+        )
+        .expect("a base url should produce a tendril webhook override");
+        assert_eq!(config.project.as_deref(), Some("tendril"));
+        match config.strategy {
+            ReportStrategy::Webhook(webhook) => {
+                assert_eq!(
+                    webhook.url,
+                    "http://helsinki:11300/hooks/global/tendril-feedback"
+                );
+                // The tendril-specific token env wins over the generic one.
+                assert_eq!(
+                    webhook.token_env.as_deref(),
+                    Some("CACOPHONY_FEEDBACK_TOKEN")
+                );
+                assert!(
+                    !webhook.blocking,
+                    "tendril webhook override must be non-blocking"
+                );
+            }
+            other => panic!("expected webhook strategy, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tendril_webhook_override_falls_back_to_generic_token_env() {
+        let config = super::tendril_webhook_override(
+            Some("http://host/hooks/global/tendril-feedback".to_owned()),
+            None,
+            None,
+            None,
+            Some("CACOPHONY_FEEDBACK_TOKEN".to_owned()),
+            None,
+        )
+        .expect("url present");
+        match config.strategy {
+            ReportStrategy::Webhook(webhook) => {
+                assert_eq!(
+                    webhook.token_env.as_deref(),
+                    Some("CACOPHONY_FEEDBACK_TOKEN")
+                );
+            }
+            other => panic!("expected webhook, got {other:?}"),
+        }
+        assert!(config.project.is_none());
+    }
+
+    #[test]
+    fn tendril_webhook_override_is_none_without_url_or_base() {
+        assert!(
+            super::tendril_webhook_override(
+                None,
+                None,
+                Some("tendril".to_owned()),
+                None,
+                None,
+                None
+            )
+            .is_none()
+        );
     }
 }
