@@ -25,3 +25,30 @@ Tendril is designed around a platform adapter boundary so the CLI and MCP surfac
 - The dedicated [Linux Wayland operator validation](../linux-wayland-operator-validation.md) guide covers those supported matrices explicitly.
 - The docs site intentionally documents both fully implemented features and probe-first surfaces so the published contract matches the repository state.
 - For a source-backed inventory of runtime subprocess/tool dependencies and their current self-containment classification, see [Runtime dependency audit](runtime-dependencies.md).
+
+## Native Windows validation
+
+Windows 11 is a first-class supported platform, but the primary CI workflow
+(`.github/workflows/ci.yml`) only runs `nix flake check` on the self-hosted
+NixOS Linux runners, so it never compiles the Windows-only code
+(`crates/tendril-win32` and the `#[cfg(windows)]` /
+`#[cfg(target_os = "windows")]` blocks in `crates/tendril`). To keep those code
+paths from rotting between releases, a dedicated `windows` workflow
+(`.github/workflows/windows.yml`) builds the whole workspace on a
+GitHub-hosted `windows-latest` runner (default `x86_64-pc-windows-msvc`
+toolchain) on every pull request and `main` push, plus a `--version` smoke of
+the packaged binary.
+
+- The `windows` workflow is intentionally **separate from `ci.yml` and is not a
+  required PR-merge status check**, so a slow or flaky GitHub-hosted Windows
+  runner can never block the tendril merge path. Promote it to a required check
+  once it has a stable green history.
+- The `windows-latest` runner is **headless** (no interactive desktop), so the
+  smoke is limited to `--version`; a real desktop smoke of
+  `list`/`capture`/`run`/`list-elements` remains a follow-up that needs a
+  self-hosted Windows desktop runner.
+- To reproduce the compile check locally from a non-Windows checkout, install
+  the cross target and run a check, for example
+  `rustup target add x86_64-pc-windows-gnu` followed by
+  `cargo check --workspace --target x86_64-pc-windows-gnu` (the GNU target needs
+  a MinGW-w64 toolchain; the CI job uses the native MSVC target instead).
