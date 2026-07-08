@@ -1,0 +1,71 @@
+name: windows
+
+# Per-change native Windows validation for Tendril (bd-c6909f).
+#
+# ci.yml only runs `nix flake check` on the self-hosted NixOS Linux runners, so
+# it never compiles the Windows code paths (`crates/tendril-win32` and the
+# `#[cfg(windows)]` / `#[cfg(target_os = "windows")]` blocks in
+# `crates/tendril`). Those only ever built at release time via
+# tag-release.yml's `build-windows` job, so Windows-only code could rot
+# undetected between releases even though Windows 11 is a first-class supported
+# platform (see docs/src/reference/platform-support.md).
+#
+# This workflow closes that gap by building the whole workspace on a
+# GitHub-hosted `windows-latest` runner (the default x86_64-pc-windows-msvc
+# toolchain) on every PR and main push, plus a no-desktop `--version` smoke of
+# the packaged binary. It is deliberately a SEPARATE workflow from ci.yml and is
+# NOT wired into the required PR-merge status check, so a slow or flaky
+# GitHub-hosted Windows runner can never wedge the tendril merge path. Promote
+# it to a required check once it has a green track record.
+#
+# There is no self-hosted Windows runner in the fleet, so windows-latest is the
+# only zero-infra option; it is headless (no interactive desktop), so the smoke
+# is limited to `--version` rather than a `list`/`capture`/`run` desktop flow. A
+# real desktop smoke of list/capture/run/list-elements remains a follow-up that
+# needs a self-hosted Windows desktop runner.
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Windows build + smoke
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Remove stale local build artifacts
+        shell: pwsh
+        run: Remove-Item -Recurse -Force target -ErrorAction SilentlyContinue
+
+      - name: Show Rust toolchain
+        shell: pwsh
+        run: |
+          rustup show
+          cargo --version
+
+      - name: Build workspace (validates Windows code paths incl. tendril-win32)
+        shell: pwsh
+        run: cargo build --workspace --locked
+
+      - name: Smoke packaged Tendril version flow
+        shell: pwsh
+        run: cargo run --locked -p tendril -- --version
