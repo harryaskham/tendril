@@ -1,0 +1,62 @@
+name: macos
+
+# Per-change native macOS validation for Tendril (bd-608e6d).
+#
+# tendril claims first-class macOS support (macOS-specific code in
+# camera.rs/listen.rs/platform.rs + the elements.rs JXA path, plus macOS release
+# artifacts from tag-release.yml), but ci.yml only runs `nix flake check` on the
+# x86_64-linux NixOS runners and windows.yml (bd-c6909f) only covers Windows.
+# The only macOS build was tag-release.yml's `build-macos`, which runs solely on
+# release tags -- so macOS code could rot between releases undetected, the same
+# gap windows.yml just exposed on Windows.
+#
+# This workflow closes that gap by building tendril on the self-hosted
+# aarch64-darwin runner (tendril-ms-mac, which has nix) on every PR and main
+# push, plus a `--version` smoke of the built binary. It validates that
+# tendril's unix dependencies (zbus/ashpd/x11rb) and macOS code paths compile on
+# darwin.
+#
+# It is deliberately a SEPARATE workflow from ci.yml and is NOT wired into the
+# required PR-merge status check, so a busy or offline macOS runner can never
+# wedge the tendril merge path. Promote it to a required check once it has a
+# green track record.
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: macOS build + smoke
+    runs-on: [self-hosted, macos]
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Remove stale local build artifacts
+        run: rm -rf target result
+
+      - name: Verify Nix is available on the runner
+        run: nix --version
+
+      - name: Build tendril for macOS (validates unix deps zbus/ashpd/x11rb)
+        run: nix build .#tendril --print-build-logs
+
+      - name: Smoke packaged Tendril version flow
+        run: ./result/bin/tendril --version
