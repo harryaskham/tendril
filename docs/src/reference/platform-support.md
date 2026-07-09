@@ -52,3 +52,24 @@ the packaged binary.
   `rustup target add x86_64-pc-windows-gnu` followed by
   `cargo check --workspace --target x86_64-pc-windows-gnu` (the GNU target needs
   a MinGW-w64 toolchain; the CI job uses the native MSVC target instead).
+
+## Native macOS validation
+
+macOS is also a first-class supported platform (AppKit/Quartz discovery, the
+JXA accessibility path, `afrecord` audio capture, macOS release artifacts), but
+like Windows it had no per-change CI — `ci.yml` builds only on x86_64-linux and
+the only macOS build was `tag-release.yml`'s `build-macos`, which runs solely on
+release tags. A dedicated `macos` workflow (`.github/workflows/macos.yml`) now
+builds tendril on the self-hosted `aarch64-darwin` runner (`tendril-ms-mac`, via
+`nix build .#tendril`) on every pull request and `main` push, plus a
+`--version` smoke of the built binary.
+
+- Like the `windows` workflow, `macos` is **separate from `ci.yml` and is not a
+  required PR-merge status check**, so a busy or offline self-hosted macOS
+  runner can never block the tendril merge path. Promote it to a required check
+  once it has a stable green history.
+- It validates that tendril's unix dependencies (`zbus`/`ashpd`/`x11rb`) and the
+  macOS code paths compile on darwin; the `--version` smoke needs no desktop
+  session.
+- Together, `ci.yml` (Linux), `windows.yml`, and `macos.yml` give per-change
+  build coverage across all three supported platforms.
