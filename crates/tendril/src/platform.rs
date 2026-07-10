@@ -3,6 +3,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+#[cfg(target_os = "linux")]
 use ashpd::desktop::screenshot::Screenshot as PortalScreenshot;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -22,6 +23,7 @@ use crate::model::{
     MouseButton, ScaleFactor,
 };
 use crate::wayland_input;
+#[cfg(target_os = "linux")]
 use crate::x11;
 
 const CAPTURE_FIXTURE_ENV: &str = "TENDRIL_CAPTURE_FIXTURE_JSON";
@@ -1498,39 +1500,57 @@ impl CaptureAdapter for LinuxAdapter {
             return Ok(artifact);
         }
 
-        match self.context.session {
-            DesktopSession::X11 => {}
-            DesktopSession::Wayland => {
-                let image_bytes = capture_wayland_target(&self.context, request)?;
-                return Ok(CaptureArtifact {
-                    target_id: request.target_id.clone(),
-                    media_type: "image/png".to_owned(),
-                    image_bytes,
-                    captured_at: current_timestamp(),
-                });
+        #[cfg(target_os = "linux")]
+        {
+            match self.context.session {
+                DesktopSession::X11 => {}
+                DesktopSession::Wayland => {
+                    let image_bytes = capture_wayland_target(&self.context, request)?;
+                    return Ok(CaptureArtifact {
+                        target_id: request.target_id.clone(),
+                        media_type: "image/png".to_owned(),
+                        image_bytes,
+                        captured_at: current_timestamp(),
+                    });
+                }
+                _ => {
+                    return Err(PlatformAdapterError::unsupported(
+                        match request.target {
+                            CaptureTargetKind::Window => Capability::WindowCapture,
+                            CaptureTargetKind::Display => Capability::DisplayCapture,
+                        },
+                        self.platform(),
+                        CapabilityErrorReason::UnsupportedSession,
+                        "Capture requires a detected graphical desktop session.",
+                        Some("Run Tendril from a graphical login session and retry."),
+                    ));
+                }
             }
-            _ => {
-                return Err(PlatformAdapterError::unsupported(
-                    match request.target {
-                        CaptureTargetKind::Window => Capability::WindowCapture,
-                        CaptureTargetKind::Display => Capability::DisplayCapture,
-                    },
-                    self.platform(),
-                    CapabilityErrorReason::UnsupportedSession,
-                    "Capture requires a detected graphical desktop session.",
-                    Some("Run Tendril from a graphical login session and retry."),
-                ));
-            }
+
+            let image_bytes =
+                x11::capture_target(&self.context, request.target, &request.target_id)?;
+
+            Ok(CaptureArtifact {
+                target_id: request.target_id.clone(),
+                media_type: "image/png".to_owned(),
+                image_bytes,
+                captured_at: current_timestamp(),
+            })
         }
-
-        let image_bytes = x11::capture_target(&self.context, request.target, &request.target_id)?;
-
-        Ok(CaptureArtifact {
-            target_id: request.target_id.clone(),
-            media_type: "image/png".to_owned(),
-            image_bytes,
-            captured_at: current_timestamp(),
-        })
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = request;
+            Err(PlatformAdapterError::unsupported(
+                match request.target {
+                    CaptureTargetKind::Window => Capability::WindowCapture,
+                    CaptureTargetKind::Display => Capability::DisplayCapture,
+                },
+                self.platform(),
+                CapabilityErrorReason::UnsupportedSession,
+                "Linux capture is only available on Linux builds.",
+                None,
+            ))
+        }
     }
 }
 
@@ -1863,6 +1883,7 @@ fn wayland_portal_attempt_timeout(total: Duration, fallback_available: bool) -> 
     reserved.max(Duration::from_millis(1)).min(total)
 }
 
+#[cfg(target_os = "linux")]
 fn attempt_wayland_portal_capture(
     context: &AdapterContext,
     target: &TargetDescriptor,
@@ -1896,6 +1917,7 @@ fn attempt_wayland_portal_capture(
     }
 }
 
+#[cfg(target_os = "linux")]
 fn capture_wayland_target(
     context: &AdapterContext,
     request: &CaptureRequest,
@@ -2002,6 +2024,7 @@ fn capture_wayland_target(
     })
 }
 
+#[cfg(target_os = "linux")]
 fn capture_wayland_target_via_portal(
     target: &TargetDescriptor,
     inventory: &TargetInventory,
@@ -2076,6 +2099,7 @@ fn capture_wayland_target_via_portal(
     crop_wayland_portal_capture_to_target(&image_bytes, target, inventory).map_err(Into::into)
 }
 
+#[cfg(target_os = "linux")]
 fn classify_wayland_portal_capture_error(error: &ashpd::Error) -> WaylandCaptureBackendFailure {
     let missing_backend = match error {
         ashpd::Error::NoResponse
@@ -2352,7 +2376,16 @@ fn execute_linux_input(
     request: &InputRequest,
 ) -> Result<InputOutcome, TendrilError> {
     match session {
+        #[cfg(target_os = "linux")]
         DesktopSession::X11 => x11::execute_input(platform, x11_display, request),
+        #[cfg(not(target_os = "linux"))]
+        DesktopSession::X11 => Err(TendrilError::from(PlatformAdapterError::unsupported(
+            Capability::InputControl,
+            platform,
+            CapabilityErrorReason::UnsupportedSession,
+            "X11 input control is only available on Linux builds.",
+            None,
+        ))),
         DesktopSession::Wayland => wayland_input::execute_input(platform, request),
         _ => Err(TendrilError::from(PlatformAdapterError::unsupported(
             Capability::InputControl,

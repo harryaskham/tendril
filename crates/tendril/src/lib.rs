@@ -20,6 +20,7 @@ pub mod update;
 pub mod versioning;
 pub(crate) mod wayland_input;
 pub mod wsl;
+#[cfg(target_os = "linux")]
 pub(crate) mod x11;
 
 use std::ffi::OsString;

@@ -10,6 +10,7 @@ use crate::platform::{
     DesktopSession, PermissionKind, PlatformAdapterError, PlatformKind, TargetCapabilityDiagnostic,
     TargetDescriptor, TargetDiscoveryRequest, TargetInventory,
 };
+#[cfg(target_os = "linux")]
 use crate::x11;
 
 const TARGET_FIXTURE_ENV: &str = "TENDRIL_TARGET_FIXTURE_JSON";
@@ -59,7 +60,16 @@ fn discover_linux_targets(
     context: &AdapterContext,
 ) -> Result<TargetInventory, PlatformAdapterError> {
     match context.session {
+        #[cfg(target_os = "linux")]
         DesktopSession::X11 => x11::discover_targets(context).map(sort_inventory),
+        #[cfg(not(target_os = "linux"))]
+        DesktopSession::X11 => Err(PlatformAdapterError::unsupported(
+            Capability::TargetDiscovery,
+            context.platform,
+            CapabilityErrorReason::UnsupportedSession,
+            "X11 target discovery is only available on Linux.",
+            None,
+        )),
         DesktopSession::Wayland => discover_wayland_targets(context),
         DesktopSession::Unknown
         | DesktopSession::MacOsWindowServer
