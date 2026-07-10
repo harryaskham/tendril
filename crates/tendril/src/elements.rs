@@ -3,6 +3,7 @@ use std::process::Command;
 
 use serde::Deserialize;
 use serde_json::Value;
+#[cfg(target_os = "linux")]
 use zbus::{
     blocking::{Connection, Proxy, connection::Builder as ConnectionBuilder},
     zvariant::OwnedObjectPath,
@@ -19,8 +20,11 @@ use crate::platform::{
 
 const ELEMENT_FIXTURE_ENV: &str = "TENDRIL_ELEMENT_FIXTURE_JSON";
 const MAX_MACOS_ELEMENTS: usize = 512;
+#[cfg(target_os = "linux")]
 const MAX_ATSPI_ELEMENTS: usize = 512;
+#[cfg(target_os = "linux")]
 const MAX_ATSPI_DEPTH: usize = 12;
+#[cfg(target_os = "linux")]
 const ATSPI_COORD_TYPE_SCREEN: u32 = 0;
 
 #[derive(Debug, Deserialize)]
@@ -746,12 +750,14 @@ fn discover_wayland_elements(
     }
 }
 
+#[cfg(target_os = "linux")]
 #[derive(Debug, Clone)]
 struct AtspiObjectRef {
     destination: String,
     path: OwnedObjectPath,
 }
 
+#[cfg(target_os = "linux")]
 impl AtspiObjectRef {
     fn from_tuple((destination, path): (String, OwnedObjectPath)) -> Self {
         Self { destination, path }
@@ -762,10 +768,12 @@ impl AtspiObjectRef {
     }
 }
 
+#[cfg(target_os = "linux")]
 struct AtspiClient {
     connection: Connection,
 }
 
+#[cfg(target_os = "linux")]
 impl AtspiClient {
     fn connect() -> Result<Self, String> {
         let address = std::env::var("AT_SPI_BUS_ADDRESS")
@@ -837,6 +845,7 @@ impl AtspiClient {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn query_atspi_bus_address() -> Result<String, String> {
     let session = Connection::session()
         .map_err(|error| format!("failed to connect to session bus for org.a11y.Bus: {error}"))?;
@@ -846,6 +855,15 @@ fn query_atspi_bus_address() -> Result<String, String> {
         .map_err(|error| format!("org.a11y.Bus.GetAddress failed: {error}"))
 }
 
+#[cfg(not(target_os = "linux"))]
+fn run_atspi_accessibility_listing(
+    _targets: &[PlatformTargetDescriptor],
+    _include_offscreen: bool,
+) -> Result<Vec<ElementDescriptor>, String> {
+    Err("AT-SPI accessibility listing is only available on Linux".to_owned())
+}
+
+#[cfg(target_os = "linux")]
 fn run_atspi_accessibility_listing(
     targets: &[PlatformTargetDescriptor],
     include_offscreen: bool,
@@ -891,6 +909,7 @@ fn run_atspi_accessibility_listing(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(target_os = "linux")]
 fn walk_atspi_tree(
     client: &AtspiClient,
     object: &AtspiObjectRef,
@@ -973,6 +992,7 @@ fn parent_path_for_child(parent_path: &[String], name: &str) -> Vec<String> {
     path
 }
 
+#[cfg(target_os = "linux")]
 fn atspi_application_process_id(client: &AtspiClient, object: &AtspiObjectRef) -> Option<u32> {
     let application = client.application_proxy(object).ok()?;
     let id = application
@@ -982,11 +1002,13 @@ fn atspi_application_process_id(client: &AtspiClient, object: &AtspiObjectRef) -
     u32::try_from(id).ok()
 }
 
+#[cfg(target_os = "linux")]
 fn atspi_accessible_name(client: &AtspiClient, object: &AtspiObjectRef) -> Option<String> {
     let accessible = client.accessible_proxy(object).ok()?;
     atspi_string_property(&accessible, "Name")
 }
 
+#[cfg(target_os = "linux")]
 fn atspi_role_name(accessible: &Proxy<'_>) -> String {
     accessible
         .get_property::<String>("RoleName")
@@ -1013,6 +1035,7 @@ fn normalize_atspi_role(role: &str) -> String {
         .to_owned()
 }
 
+#[cfg(target_os = "linux")]
 fn atspi_string_property(proxy: &Proxy<'_>, property: &str) -> Option<String> {
     proxy
         .get_property::<String>(property)
@@ -1021,6 +1044,7 @@ fn atspi_string_property(proxy: &Proxy<'_>, property: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+#[cfg(target_os = "linux")]
 fn atspi_value_text(client: &AtspiClient, object: &AtspiObjectRef) -> Option<String> {
     let value = Proxy::new(
         &client.connection,
@@ -1036,6 +1060,7 @@ fn atspi_value_text(client: &AtspiClient, object: &AtspiObjectRef) -> Option<Str
         .filter(|text| !text.is_empty())
 }
 
+#[cfg(target_os = "linux")]
 fn atspi_component_extents(client: &AtspiClient, object: &AtspiObjectRef) -> Option<Bounds> {
     let component = client.component_proxy(object).ok()?;
     let (x, y, width, height): (i32, i32, i32, i32) = component
@@ -1052,6 +1077,7 @@ fn atspi_component_extents(client: &AtspiClient, object: &AtspiObjectRef) -> Opt
     })
 }
 
+#[cfg(target_os = "linux")]
 fn atspi_action_names(client: &AtspiClient, object: &AtspiObjectRef) -> Vec<String> {
     let Ok(action) = client.action_proxy(object) else {
         return Vec::new();
@@ -1083,6 +1109,7 @@ fn normalize_atspi_action(action: &str) -> String {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn atspi_children(accessible: &Proxy<'_>) -> Vec<AtspiObjectRef> {
     if let Ok(children) =
         accessible.call::<_, _, Vec<(String, OwnedObjectPath)>>("GetChildren", &())
