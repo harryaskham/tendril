@@ -18,9 +18,6 @@ The current MCP server publishes these tools:
 - `clipboard_get`
 - `clipboard_set`
 - `permissions`
-- `self_update_status`
-- `self_update_check`
-- `self_update_run`
 - `feedback_report`
 - `feedback_status`
 
@@ -32,7 +29,7 @@ The `capture` tool accepts an optional `camera` argument (mutually exclusive wit
 
 The `list`, `list_elements`, `capture`, and `run` tools accept an optional `x11_display` argument (Linux/X11 only) that pins the underlying X11 connection to an explicit display such as `:99`, overriding the server process's ambient `$DISPLAY`. This exists because the MCP server is a single long-lived process whose environment is fixed at spawn: on a headless node that brings up a virtual display (for example Xvfb) *after* the server started, the server's `$DISPLAY` is still unset, so `list` would fail with a `platform_adapter_failure`. Passing `x11_display: ":99"` in the tool arguments lets a client target that display without restarting the server (bd-6abe70). When omitted, the ambient `$DISPLAY` is used, so nothing changes for the fresh-process CLI or for a server launched inside an X session.
 
-The `self_update_*` tools come from the shared [`updatable-cli`](https://github.com/harryaskham/updatable-cli) integration, matching the ring-mods reference pattern. They let an MCP client inspect the current install path, check GitHub releases, and stage/promote a newer Tendril binary without adding Tendril-specific update protocol code to the client.
+On Linux and macOS, the server additionally publishes `self_update_status`, `self_update_check`, and `self_update_run`. These tools come from the shared [`updatable-cli`](https://github.com/harryaskham/updatable-cli) integration, which intentionally targets Unix because staged promotion uses Unix executable bits and `exec` replacement. Windows builds omit only these three generic MCP helpers; the cross-platform `tendril update` CLI remains available and installs the `.exe` release asset.
 
 The `feedback_*` tools come from the shared [`feedback-cli`](https://github.com/harryaskham/feedback-cli) integration (the sibling of `mcp-cli` / `updatable-cli`). They let an MCP client report a structured feedback event (`feedback_report`) and inspect the resolved reporting destination (`feedback_status`). Tendril also reports its own breakages automatically: every CLI/MCP error that reaches the central error sink is forwarded as a structured `FeedbackEvent` so the owning project can turn it into a bead. The reporting *strategy* is selected from configuration — a `webhook` (e.g. a caco feedback endpoint that files a bead), the local `caco` CLI, a file, or stderr. Feedback is **opt-in**: with nothing configured Tendril stays silent (no extra stderr, no beads). Configure it either with a `[feedback]` block in the Tendril config (see [Configuration](reference/configuration.md#feedback); an explicit config block wins) or, as a fallback, by setting `FEEDBACK_WEBHOOK_URL` (and optionally `FEEDBACK_WEBHOOK_TOKEN_ENV` and `FEEDBACK_PROJECT`) to route breakages to a caco feedback endpoint that creates beads. A shared `FEEDBACK_WEBHOOK_BASE_URL` is also honored: when no full `FEEDBACK_WEBHOOK_URL` is set, Tendril appends its `/tendril` path and routes to `<base>/tendril` (bd-42a4d9).
 

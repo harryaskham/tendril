@@ -4,6 +4,7 @@ use std::process::Command as ProcessCommand;
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+#[cfg(not(target_os = "windows"))]
 use updatable_cli::{AssetStrategy, UpdaterConfig};
 
 use crate::cli::UpdateCommand;
@@ -11,6 +12,7 @@ use crate::error::TendrilError;
 
 pub(crate) const DEFAULT_REPOSITORY: &str = "harryaskham/tendril";
 
+#[cfg(not(target_os = "windows"))]
 #[must_use]
 pub fn updater_config() -> UpdaterConfig {
     let mut config = UpdaterConfig::new("tendril", env!("CARGO_PKG_VERSION"), DEFAULT_REPOSITORY);

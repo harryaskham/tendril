@@ -179,14 +179,14 @@ mod imp {
     use std::time::Duration;
 
     use image::{DynamicImage, ImageBuffer, ImageFormat, Rgba};
-    use windows_sys::Win32::Foundation::{
-        BOOL, CloseHandle, HANDLE, HBITMAP, HDC, HGDIOBJ, HMONITOR, HWND, LPARAM, RECT,
-    };
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, HWND, LPARAM, RECT};
     use windows_sys::Win32::Graphics::Gdi::{
         BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BitBlt, CAPTUREBLT, CreateCompatibleBitmap,
-        CreateCompatibleDC, DIB_RGB_COLORS, DeleteDC, DeleteObject, GetDIBits, GetMonitorInfoW,
-        MONITORINFO, MONITORINFOEXW, SRCCOPY, SelectObject,
+        CreateCompatibleDC, DIB_RGB_COLORS, DeleteDC, DeleteObject, EnumDisplayMonitors, GetDC,
+        GetDIBits, GetMonitorInfoW, HBITMAP, HDC, HGDIOBJ, HMONITOR, MONITORINFO, MONITORINFOEXW,
+        RGBQUAD, ReleaseDC, SRCCOPY, SelectObject,
     };
+    use windows_sys::Win32::Storage::Xps::PrintWindow;
     use windows_sys::Win32::System::Threading::{
         OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
     };
@@ -194,16 +194,16 @@ mod imp {
         INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY,
         KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, MAPVK_VK_TO_VSC, MOUSEEVENTF_LEFTDOWN,
         MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP, MOUSEEVENTF_RIGHTDOWN,
-        MOUSEEVENTF_RIGHTUP, MOUSEINPUT, MapVirtualKeyW, SendInput, SetCursorPos, VK_BACK,
-        VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_HOME, VK_LEFT, VK_LWIN, VK_MENU,
-        VK_NEXT, VK_PRIOR, VK_RETURN, VK_RIGHT, VK_SHIFT, VK_SPACE, VK_TAB, VK_UP, VkKeyScanW,
+        MOUSEEVENTF_RIGHTUP, MOUSEINPUT, MapVirtualKeyW, SendInput, VK_BACK, VK_CONTROL, VK_DELETE,
+        VK_DOWN, VK_END, VK_ESCAPE, VK_HOME, VK_LEFT, VK_LWIN, VK_MENU, VK_NEXT, VK_PRIOR,
+        VK_RETURN, VK_RIGHT, VK_SHIFT, VK_SPACE, VK_TAB, VK_UP, VkKeyScanW,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        BringWindowToTop, EnumChildWindows, EnumDisplayMonitors, EnumWindows, GetClassNameW, GetDC,
-        GetDesktopWindow, GetWindowRect, GetWindowTextLengthW, GetWindowTextW,
-        GetWindowThreadProcessId, IsWindowVisible, PrintWindow, ReleaseDC, SW_RESTORE,
-        SetForegroundWindow, ShowWindow,
+        BringWindowToTop, EnumChildWindows, EnumWindows, GetClassNameW, GetDesktopWindow,
+        GetWindowRect, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId,
+        IsWindowVisible, SW_RESTORE, SetCursorPos, SetForegroundWindow, ShowWindow,
     };
+    use windows_sys::core::BOOL;
 
     use super::{Bounds, DisplayInfo, ElementInfo, ModifierKey, MouseButton, WindowInfo};
 
@@ -213,7 +213,7 @@ mod imp {
         let mut displays = Vec::<DisplayInfo>::new();
         let result = unsafe {
             EnumDisplayMonitors(
-                0,
+                null_mut(),
                 null(),
                 Some(enum_display_monitors),
                 (&mut displays as *mut Vec<DisplayInfo>) as isize,
@@ -586,7 +586,7 @@ mod imp {
 
     fn process_name(process_id: u32) -> Option<String> {
         let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, process_id) };
-        if handle == 0 {
+        if handle.is_null() {
             return None;
         }
         let _guard = HandleGuard(handle);
@@ -627,7 +627,7 @@ mod imp {
     fn capture_rect_png(x: i32, y: i32, width: u32, height: u32) -> Result<Vec<u8>, String> {
         let desktop = unsafe { GetDesktopWindow() };
         let screen_dc = unsafe { GetDC(desktop) };
-        if screen_dc == 0 {
+        if screen_dc.is_null() {
             return Err("GetDC failed for the desktop window".to_owned());
         }
         let screen_guard = DeviceContextGuard {
@@ -635,17 +635,17 @@ mod imp {
             hdc: screen_dc,
         };
         let mem_dc = unsafe { CreateCompatibleDC(screen_dc) };
-        if mem_dc == 0 {
+        if mem_dc.is_null() {
             return Err("CreateCompatibleDC failed".to_owned());
         }
         let mem_guard = MemoryDeviceContextGuard(mem_dc);
         let bitmap = unsafe { CreateCompatibleBitmap(screen_dc, width as i32, height as i32) };
-        if bitmap == 0 {
+        if bitmap.is_null() {
             return Err("CreateCompatibleBitmap failed".to_owned());
         }
         let bitmap_guard = BitmapGuard(bitmap);
         let selection = unsafe { SelectObject(mem_dc, bitmap as HGDIOBJ) };
-        if selection == 0 {
+        if selection.is_null() {
             return Err("SelectObject failed".to_owned());
         }
         let selection_guard = SelectionGuard {
@@ -688,7 +688,7 @@ mod imp {
     ) -> Result<Vec<u8>, String> {
         let desktop = unsafe { GetDesktopWindow() };
         let screen_dc = unsafe { GetDC(desktop) };
-        if screen_dc == 0 {
+        if screen_dc.is_null() {
             return Err("GetDC failed for the desktop window".to_owned());
         }
         let screen_guard = DeviceContextGuard {
@@ -696,17 +696,17 @@ mod imp {
             hdc: screen_dc,
         };
         let mem_dc = unsafe { CreateCompatibleDC(screen_dc) };
-        if mem_dc == 0 {
+        if mem_dc.is_null() {
             return Err("CreateCompatibleDC failed".to_owned());
         }
         let mem_guard = MemoryDeviceContextGuard(mem_dc);
         let bitmap = unsafe { CreateCompatibleBitmap(screen_dc, width as i32, height as i32) };
-        if bitmap == 0 {
+        if bitmap.is_null() {
             return Err("CreateCompatibleBitmap failed".to_owned());
         }
         let bitmap_guard = BitmapGuard(bitmap);
         let selection = unsafe { SelectObject(mem_dc, bitmap as HGDIOBJ) };
-        if selection == 0 {
+        if selection.is_null() {
             return Err("SelectObject failed".to_owned());
         }
         let selection_guard = SelectionGuard {
@@ -766,7 +766,12 @@ mod imp {
                 biClrUsed: 0,
                 biClrImportant: 0,
             },
-            bmiColors: [zeroed()],
+            bmiColors: [RGBQUAD {
+                rgbBlue: 0,
+                rgbGreen: 0,
+                rgbRed: 0,
+                rgbReserved: 0,
+            }],
         };
         let mut pixels = vec![0_u8; width as usize * height as usize * 4];
         let rows = unsafe {
