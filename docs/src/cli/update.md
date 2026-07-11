@@ -2,10 +2,13 @@
 
 `tendril update` installs a released Tendril binary for the current platform.
 It is intended for operators and agents that want a packaged binary without
-building the workspace from source. Tendril also wires the shared `updatable-cli`
-MCP extension, so long-running MCP clients can call `self_update_status`,
-`self_update_check`, and `self_update_run` over `tendril mcp stdio` to inspect or
-apply updates dynamically.
+building the workspace from source. On Linux and macOS, Tendril also wires the
+shared Unix-only `updatable-cli` MCP extension, so long-running MCP clients can
+call `self_update_status`, `self_update_check`, and `self_update_run` over
+`tendril mcp stdio` to inspect or apply updates dynamically. Windows omits
+those three generic MCP helpers because staged promotion relies on Unix
+executable bits and `exec` replacement; the `tendril update` CLI itself remains
+available on Windows and installs the matching `.exe` release asset.
 
 ## Examples
 

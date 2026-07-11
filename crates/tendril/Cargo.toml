@@ -36,8 +36,13 @@ thiserror.workspace = true
 time.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
-updatable-cli.workspace = true
 tempfile = "3.15.0"
+
+# The reusable staged-update/MCP helper is intentionally Unix-only. Tendril's
+# own `tendril update` implementation remains available on Windows; only the
+# Unix staged-promotion helper and generic self_update_* MCP tools are omitted.
+[target.'cfg(not(target_os = "windows"))'.dependencies]
+updatable-cli.workspace = true
 
 # AT-SPI (zbus), xdg-desktop-portal (ashpd), and X11 (x11rb) are Linux-only
 # desktop integrations. Gate them to the linux target so they are not compiled

@@ -43,7 +43,9 @@ use crate::platform::{
     PermissionRequestOutcome, PermissionState, PermissionStatus, PlatformAdapter, PlatformKind,
     TargetDiscoveryRequest, adapter_for_context, request_macos_permissions,
 };
-use crate::update::{execute_update, render_update_human, updater_config};
+#[cfg(not(target_os = "windows"))]
+use crate::update::updater_config;
+use crate::update::{execute_update, render_update_human};
 use crate::versioning::{execute_version_bump, render_version_bump_human};
 
 #[derive(Clone)]
@@ -872,6 +874,7 @@ fn build_tool_router() -> ToolRouter<CommandContext> {
                 .map_err(|error| TendrilError::serialization(error.to_string()))
         },
     );
+    #[cfg(not(target_os = "windows"))]
     updatable_cli::register_update_tool(&mut router, |_context: &CommandContext| updater_config());
     feedback_cli::register_feedback_tools(&mut router, |context: &CommandContext| {
         crate::feedback::feedback_config(context.config.feedback.as_ref())
@@ -2675,24 +2678,20 @@ mod tests {
             .into_iter()
             .map(|tool| tool.name)
             .collect();
-        assert_eq!(
-            names,
-            vec![
-                "list",
-                "list_elements",
-                "capture",
-                "run",
-                "listen",
-                "clipboard_get",
-                "clipboard_set",
-                "permissions",
-                "self_update_status",
-                "self_update_check",
-                "self_update_run",
-                "feedback_report",
-                "feedback_status"
-            ]
-        );
+        let mut expected = vec![
+            "list",
+            "list_elements",
+            "capture",
+            "run",
+            "listen",
+            "clipboard_get",
+            "clipboard_set",
+            "permissions",
+        ];
+        #[cfg(not(target_os = "windows"))]
+        expected.extend(["self_update_status", "self_update_check", "self_update_run"]);
+        expected.extend(["feedback_report", "feedback_status"]);
+        assert_eq!(names, expected);
     }
 
     #[test]
@@ -2726,14 +2725,17 @@ mod tests {
             .iter()
             .find(|tool| tool.name == "clipboard_set")
             .expect("clipboard_set tool should be registered");
+        #[cfg(not(target_os = "windows"))]
         let self_update_status = tools
             .iter()
             .find(|tool| tool.name == "self_update_status")
             .expect("self_update_status tool should be registered");
+        #[cfg(not(target_os = "windows"))]
         let self_update_check = tools
             .iter()
             .find(|tool| tool.name == "self_update_check")
             .expect("self_update_check tool should be registered");
+        #[cfg(not(target_os = "windows"))]
         let self_update_run = tools
             .iter()
             .find(|tool| tool.name == "self_update_run")
@@ -2774,11 +2776,15 @@ mod tests {
             serde_json::to_value(schemars::schema_for!(ClipboardSetRequest))
                 .expect("clipboard_set schema should serialize")
         );
-        let empty_schema = serde_json::to_value(schemars::schema_for!(updatable_cli::EmptyArgs))
-            .expect("self-update empty schema should serialize");
-        assert_eq!(self_update_status.input_schema, empty_schema);
-        assert_eq!(self_update_check.input_schema, empty_schema);
-        assert_eq!(self_update_run.input_schema, empty_schema);
+        #[cfg(not(target_os = "windows"))]
+        {
+            let empty_schema =
+                serde_json::to_value(schemars::schema_for!(updatable_cli::EmptyArgs))
+                    .expect("self-update empty schema should serialize");
+            assert_eq!(self_update_status.input_schema, empty_schema);
+            assert_eq!(self_update_check.input_schema, empty_schema);
+            assert_eq!(self_update_run.input_schema, empty_schema);
+        }
     }
 
     #[test]
