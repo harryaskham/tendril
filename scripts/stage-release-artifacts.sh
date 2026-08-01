@@ -46,10 +46,11 @@ chmod +x "${stage_root}/tendril"
 
 tar -C "${dist_dir}/stage" -czf "${dist_dir}/${asset_name}" "tendril-${version}-${target}"
 if command -v sha256sum >/dev/null 2>&1; then
-  hash="$(sha256sum "${dist_dir}/${asset_name}" | awk '{print $1}')"
+  hash_line="$(sha256sum "${dist_dir}/${asset_name}")"
 else
-  hash="$(shasum -a 256 "${dist_dir}/${asset_name}" | awk '{print $1}')"
+  hash_line="$(shasum -a 256 "${dist_dir}/${asset_name}")"
 fi
+hash="${hash_line%% *}"
 printf '%s  %s\n' "${hash}" "${asset_name}" > "${dist_dir}/${checksum_name}"
 rm -rf "${dist_dir}/stage"
 

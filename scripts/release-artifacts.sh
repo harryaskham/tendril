@@ -30,10 +30,11 @@ source_checksum="tendril-${version}-source.sha256"
 
 git archive --format=tar.gz --prefix="tendril-${version}/" -o "dist/${source_archive}" "$archive_ref"
 if command -v sha256sum >/dev/null 2>&1; then
-  source_sum="$(sha256sum "dist/${source_archive}" | awk '{print $1}')"
+  source_hash_line="$(sha256sum "dist/${source_archive}")"
 else
-  source_sum="$(shasum -a 256 "dist/${source_archive}" | awk '{print $1}')"
+  source_hash_line="$(shasum -a 256 "dist/${source_archive}")"
 fi
+source_sum="${source_hash_line%% *}"
 printf '%s  %s\n' "$source_sum" "$source_archive" > "dist/${source_checksum}"
 
 cat > dist/release-manifest.json <<EOF

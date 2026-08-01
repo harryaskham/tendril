@@ -7,6 +7,9 @@ Tendril follows [Semantic Versioning](https://semver.org/). Release notes are cu
 
 ## [Unreleased]
 
+### Fixed
+- Release checksum staging no longer assumes `awk` is available in the minimal self-hosted runner PATH; shell-only digest extraction keeps tag repair dispatches portable across the release fleet (bd-598fb2).
+
 ## [0.0.4] - 2026-08-01
 
 ### Added

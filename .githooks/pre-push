@@ -1,4 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Managed reintegration can opt out after recording an audited --skip-hooks
+# reason and validating out of band. This is deliberately explicit rather than
+# keying off CACO_LIFECYCLE_PUSH: ordinary tag/source pushes from a managed
+# shell should still run the full gate by default.
+if [[ "${TENDRIL_SKIP_PRE_PUSH:-}" == "1" ]]; then
+  echo "tendril pre-push: explicitly skipped (TENDRIL_SKIP_PRE_PUSH=1)" >&2
+  exit 0
+fi
+
 ./scripts/pre-merge.sh
