@@ -12,12 +12,15 @@ pub const DEFAULT_CLIPBOARD_SERVE_MS: u64 = 5_000;
 #[cfg(target_os = "linux")]
 const CLIPBOARD_POLL_INTERVAL: Duration = Duration::from_millis(20);
 
+#[cfg(target_os = "linux")]
 type ClipboardServeResult = Result<(usize, Vec<String>), TendrilError>;
 
+#[cfg(target_os = "linux")]
 pub(crate) struct X11ClipboardServeHandle {
     join: std::thread::JoinHandle<ClipboardServeResult>,
 }
 
+#[cfg(target_os = "linux")]
 impl X11ClipboardServeHandle {
     pub(crate) fn join(self) -> ClipboardServeResult {
         self.join.join().map_err(|_| {
@@ -164,19 +167,6 @@ pub(crate) fn serve_x11_clipboard_in_background(
     serve_for: Duration,
 ) -> Result<X11ClipboardServeHandle, TendrilError> {
     x11_impl::set_selection_in_background(selection, text, serve_for)
-}
-
-#[cfg(not(target_os = "linux"))]
-pub(crate) fn serve_x11_clipboard_in_background(
-    selection: ClipboardSelection,
-    _text: &str,
-    _serve_for: Duration,
-) -> Result<X11ClipboardServeHandle, TendrilError> {
-    Err(TendrilError::unsupported_capability(
-        "clipboard_not_supported",
-        "X11 clipboard support is only compiled on Linux",
-        Some(json!({ "selection": selection.as_str() })),
-    ))
 }
 
 #[must_use]

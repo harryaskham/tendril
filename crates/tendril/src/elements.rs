@@ -984,6 +984,7 @@ fn walk_atspi_tree(
     }
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn parent_path_for_child(parent_path: &[String], name: &str) -> Vec<String> {
     let mut path = parent_path.to_vec();
     if path.last().is_none_or(|last| last != name) {
@@ -1019,6 +1020,7 @@ fn atspi_role_name(accessible: &Proxy<'_>) -> String {
         .unwrap_or_else(|| "element".to_owned())
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn normalize_atspi_role(role: &str) -> String {
     let normalized = role
         .trim()
@@ -1099,6 +1101,7 @@ fn atspi_action_names(client: &AtspiClient, object: &AtspiObjectRef) -> Vec<Stri
         })
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn normalize_atspi_action(action: &str) -> String {
     match action.trim().to_ascii_lowercase().as_str() {
         "click" | "press" | "activate" | "default" => "press".to_owned(),
@@ -1135,6 +1138,7 @@ fn atspi_children(accessible: &Proxy<'_>) -> Vec<AtspiObjectRef> {
         .collect()
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn atspi_element_in_scope(
     bounds: Option<&Bounds>,
     target_bounds: &Bounds,
