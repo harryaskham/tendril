@@ -14,21 +14,44 @@ target="$(release_target)"
 asset_name="$(release_asset_name "${version}" "${target}")"
 checksum_name="$(release_checksum_name "${version}" "${target}")"
 dist_dir="${TENDRIL_RELEASE_DIST:-${repo_root}/dist/release}"
-out_link="${dist_dir}/result"
+stage_root="${dist_dir}/stage/tendril-${version}-${target}"
 
 rm -rf "${dist_dir}"
-mkdir -p "${dist_dir}"
+mkdir -p "${stage_root}"
 
 (
   cd "${repo_root}"
-  nix build .#releaseArtifact --out-link "${out_link}"
-)
+  # Release assets must contain the raw Cargo binary. `nix build .#tendril`
+  # intentionally creates a runtime wrapper and hidden `.tendril-wrapped`
+  # binary, which is valid inside the Nix store but not portable to updater
+  # installs under ~/.local/bin.
+  nix develop --command cargo build --release --locked -p tendril --bin tendril
 
-cp "${out_link}/${asset_name}" "${dist_dir}/${asset_name}"
-cp "${out_link}/${checksum_name}" "${dist_dir}/${checksum_name}"
-cp "${out_link}/release-manifest.json" "${dist_dir}/release-manifest.json"
-rm -f "${out_link}"
+  if [[ "${target}" == *-darwin ]]; then
+    bin="target/release/tendril"
+    while IFS= read -r ref; do
+      [[ -n "${ref}" ]] && install_name_tool -change "${ref}" /usr/lib/libiconv.2.dylib "${bin}"
+    done < <(otool -L "${bin}" | grep -oE '/nix/store/[^ ]*libiconv[^ ]*\.dylib' || true)
+    remaining="$(otool -L "${bin}" | grep /nix/store || true)"
+    if [[ -n "${remaining}" ]]; then
+      echo "Darwin release binary still references the Nix store:" >&2
+      echo "${remaining}" >&2
+      exit 1
+    fi
+  fi
+
+  cp "target/release/tendril" "${stage_root}/tendril"
+)
+chmod +x "${stage_root}/tendril"
+
+tar -C "${dist_dir}/stage" -czf "${dist_dir}/${asset_name}" "tendril-${version}-${target}"
+if command -v sha256sum >/dev/null 2>&1; then
+  hash="$(sha256sum "${dist_dir}/${asset_name}" | awk '{print $1}')"
+else
+  hash="$(shasum -a 256 "${dist_dir}/${asset_name}" | awk '{print $1}')"
+fi
+printf '%s  %s\n' "${hash}" "${asset_name}" > "${dist_dir}/${checksum_name}"
+rm -rf "${dist_dir}/stage"
 
 printf 'staged %s\n' "${dist_dir}/${asset_name}"
 printf 'staged %s\n' "${dist_dir}/${checksum_name}"
-printf 'staged %s\n' "${dist_dir}/release-manifest.json"

@@ -26,49 +26,7 @@
         lib = pkgs.lib;
         workspaceManifest = builtins.fromTOML (builtins.readFile ./Cargo.toml);
         workspaceVersion = workspaceManifest.workspace.package.version;
-        releaseTag = "v${workspaceVersion}";
-        releaseTarget =
-          if system == "x86_64-linux" then
-            "x86_64-linux"
-          else if system == "aarch64-linux" then
-            "aarch64-linux"
-          else if system == "aarch64-darwin" then
-            "aarch64-darwin"
-          else if system == "x86_64-darwin" then
-            "x86_64-darwin"
-          else
-            throw "unsupported Tendril release target for system `${system}`";
-        releaseArtifactName = "tendril-${workspaceVersion}-${releaseTarget}.tar.gz";
-        releaseChecksumName = "tendril-${workspaceVersion}-${releaseTarget}.sha256";
         repositoryUrl = "https://github.com/harryaskham/tendril";
-        releaseManifest = pkgs.writeText "tendril-release-manifest.json" (
-          builtins.toJSON {
-            project = "tendril";
-            version = workspaceVersion;
-            semver = workspaceVersion;
-            tag = releaseTag;
-            trigger = "tag_push";
-            system = system;
-            platform = releaseTarget;
-            nix = {
-              package = "tendril";
-              release_package = "releaseArtifact";
-            };
-            artifacts = [
-              {
-                name = releaseArtifactName;
-                kind = "archive";
-                format = "tar.gz";
-              }
-              {
-                name = releaseChecksumName;
-                kind = "checksum";
-                format = "sha256";
-              }
-            ];
-            repository = repositoryUrl;
-          }
-        );
         craneLib = crane.mkLib pkgs;
         parentSrc = craneLib.cleanCargoSource ./.;
         fullParentSrc = lib.cleanSource ./.;
@@ -242,31 +200,6 @@
           }
         );
 
-        releaseArtifact = pkgs.runCommand "tendril-release-${releaseTarget}"
-          {
-            nativeBuildInputs = [ pkgs.coreutils pkgs.gnutar pkgs.gzip ];
-          } ''
-          mkdir -p "$out" "stage/tendril-${workspaceVersion}-${releaseTarget}"
-          cp ${tendril}/bin/tendril "stage/tendril-${workspaceVersion}-${releaseTarget}/tendril"
-          cp ${tendril}/bin/tendril-headless "stage/tendril-${workspaceVersion}-${releaseTarget}/tendril-headless"
-          chmod +x "stage/tendril-${workspaceVersion}-${releaseTarget}/tendril" "stage/tendril-${workspaceVersion}-${releaseTarget}/tendril-headless"
-          tar \
-            --sort=name \
-            --mtime='UTC 1970-01-01' \
-            --owner=0 \
-            --group=0 \
-            --numeric-owner \
-            --use-compress-program="gzip -n" \
-            -cf "$out/${releaseArtifactName}" \
-            -C stage \
-            "tendril-${workspaceVersion}-${releaseTarget}"
-          (
-            cd "$out"
-            sha256sum "${releaseArtifactName}" > "${releaseChecksumName}"
-          )
-          install -m644 ${releaseManifest} "$out/release-manifest.json"
-        '';
-
         clippyCheck = craneLib.cargoClippy (
           commonArgs
           // {
@@ -321,14 +254,12 @@
           default = tendril;
           tendril = tendril;
           mcp-cli = mcpCli;
-          releaseArtifact = releaseArtifact;
         };
 
         checks = {
           default = tendril;
           tendril = tendril;
           mcp-cli = mcpCli;
-          releaseArtifact = releaseArtifact;
           clippy = clippyCheck;
           inherit tests fmt docs linuxRuntimeDependencyAudit;
         };

@@ -383,8 +383,11 @@ The strategy will combine:
 - Use SemVer.
 - Initial target release is **v0.0.1**.
 - Any change to stable CLI flags, JSON schemas, or MCP tool contracts is semver-relevant.
+- `tendril version` reports the running binary version and must not mutate a source checkout.
+- `tendril update` and MCP self-update tools share the `updatable-cli` implementation and asset contract.
 - GitHub Actions release flow runs on tag pushes only.
-- Releases should produce versioned artifacts for supported platforms where feasible.
+- Self-hosted release jobs build raw Cargo binaries inside the development shell; release archives must not contain Nix wrapper executables or retain `/nix/store` linkage.
+- Releases should produce versioned `x86_64-linux`, `aarch64-linux`, and `aarch64-darwin` artifacts using the `TendrilStyle` archive/checksum layout.
 - Maintain `CHANGELOG.md` using Keep a Changelog format.
 - Version strings must be updated in Rust manifests and any release metadata.
 

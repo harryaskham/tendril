@@ -1,114 +1,65 @@
 # Release management
 
-Tendril ships from a tag-driven release pipeline. This document defines the
-version source of truth, canonical artifact names, and the reproducible staging
-steps required for the initial `v0.0.1` release.
+Tendril ships through a tag-only, self-hosted release pipeline whose artifacts match the shared `updatable-cli` contract.
 
-## SemVer and source of truth
+## Version source of truth
 
-- Tendril uses SemVer.
-- The authoritative version lives in `[workspace.package].version` in `Cargo.toml`.
-- `tendril version bump patch|minor|major` updates the workspace manifest, the in-repo `mcp-cli` manifest, and `Cargo.lock`, then creates the release bump commit.
-- The initial release target is `0.0.1`, published as the git tag `v0.0.1`.
-- Stable CLI flags, JSON schemas, and MCP tool contracts are semver-relevant.
+- The authoritative SemVer is `[workspace.package].version` in `Cargo.toml`.
+- `tendril version` only prints the running binary version; installed Tendril binaries never edit repositories or create release commits.
+- Maintainers bump `Cargo.toml` and `Cargo.lock` in a reviewed source change, then push the matching stable tag, for example `v0.0.4`.
+- The release workflow refuses a tag that does not exactly match the manifest version.
 
-Cargo crate manifests inherit the workspace version and repository metadata so
-`cargo`, clap version output, and package metadata remain aligned.
+## Supported release targets
 
-## Canonical release assets
+The self-hosted matrix builds native binaries for:
 
-The release pipeline publishes one archive plus one checksum per platform.
-Canonical binary archive names follow this formula:
+- `x86_64-linux` on `[self-hosted, nix, x86_64-linux]`
+- `aarch64-linux` on `[self-hosted, linux, aarch64]`
+- `aarch64-darwin` on `[self-hosted, macos, aarch64]`
 
-```text
-tendril-<semver>-<nix-system>.tar.gz
-```
-
-Canonical binary checksum names follow this formula:
-
-```text
-tendril-<semver>-<nix-system>.sha256
-```
-
-Supported Nix system suffixes for `v0.0.1` are:
-
-- `x86_64-linux`
-- `aarch64-linux`
-- `aarch64-darwin`
-- `x86_64-darwin`
-
-Each binary archive contains a single executable named `tendril`.
-The tag-driven GitHub release workflow also publishes a
-`tendril-<semver>-source.tar.gz` source archive.
-
-## Nix packaging outputs
-
-The flake exposes two release-relevant packages:
-
-- `.#tendril` — the platform-native Tendril binary package.
-- `.#releaseArtifact` — a reproducible output directory containing:
-  - the canonical Unix binary `tar.gz` archive,
-  - the matching `.sha256` file, and
-  - `release-manifest.json` describing the version, tag, system, and asset names.
-
-Windows release assets are produced natively by the tag workflow on
-`windows-latest` as `tendril-<semver>-x86_64-windows.tar.gz` with a matching
-checksum. That archive contains `tendril.exe` under the same
-`tendril-<semver>-<system>/` directory layout used by the Unix packages.
-
-`releaseArtifact` derives its version from the same workspace manifest used by
-Cargo, so Rust package metadata and Nix release assets cannot drift silently.
-
-## Release helpers
-
-Four scripts are checked into `scripts/` for release automation and local dry runs:
-
-- `scripts/release-lib.sh`
-  - prints the current SemVer, tag, Nix system suffix, and canonical binary file names.
-- `scripts/stage-release-artifacts.sh`
-  - validates that the supplied tag matches `Cargo.toml`,
-  - runs `nix build .#releaseArtifact`, and
-  - copies the binary archive, checksum, and manifest into `dist/release/`.
-- `scripts/release-artifacts.sh`
-  - assembles the current end-to-end GitHub release payload under `dist/`,
-  - using the same SemVer/tag validation plus the matching source archive.
-- `scripts/linux-x11-packaged-smoke.sh`
-  - extracts the packaged Linux artifact,
-  - runs packaged `list` and `capture` inside a real X11 session, and
-  - verifies the binary no longer fails on missing `xrandr`, `xprop`, `xwininfo`, `import`, or optional `xdotool` helper dependencies.
-
-Examples:
+Each job builds inside the repository development shell with Cargo:
 
 ```bash
-./scripts/release-lib.sh version
-./scripts/release-lib.sh tag
-./scripts/stage-release-artifacts.sh v0.0.1
-./scripts/linux-x11-packaged-smoke.sh v0.0.1
+nix develop --command cargo build --release --locked -p tendril --bin tendril
 ```
 
-## Publication flow
+This is intentionally different from `nix build .#tendril`: the Nix package wraps the executable to provide runtime dependencies and is not portable outside the Nix store.
 
-The GitHub Actions workflow runs Unix release jobs on self-hosted Linux and
-macOS runners with Nix available, and runs the Windows release job on a hosted
-Windows runner with Rust/Cargo. It starts either from a pushed `v*` tag or from a
-`main` commit that changes the workspace version.
+## Canonical assets
 
-1. Update `CHANGELOG.md`, then run `tendril version bump patch`, `tendril version bump minor`, or `tendril version bump major` to create the release bump commit.
-2. Push the matching git tag, for example `v0.0.1`, or land the version bump commit on `main` and let the workflow publish the matching `v<semver>` release.
-3. For a local dry run of the binary release package, stage artifacts:
-   ```bash
-   ./scripts/stage-release-artifacts.sh v0.0.1
-   ```
-4. For the full GitHub release payload used by the current tag workflow, build:
-   ```bash
-   ./scripts/release-artifacts.sh v0.0.1
-   ./scripts/release-notes.sh v0.0.1 > dist/release-notes.md
-   ```
-5. Publish the staged files with GitHub Releases:
-   ```bash
-   gh release create v0.0.1 --verify-tag --title v0.0.1 --notes-file dist/release-notes.md || true
-   gh release upload v0.0.1 dist/*.tar.gz dist/*.sha256 dist/release-manifest.json --clobber
-   ```
+For each target, CI publishes:
 
-In CI, the tag-push workflow should call the same release scripts so the
-published assets match local dry runs exactly.
+```text
+tendril-<semver>-<target>.tar.gz
+tendril-<semver>-<target>.sha256
+```
+
+The archive contains `tendril-<semver>-<target>/tendril`, exactly where `updatable-cli::AssetStrategy::TendrilStyle` expects it. Darwin publication fails if `otool -L` still reports any `/nix/store` dependency.
+
+The release is created as a draft, each target uploads its pair, and a final self-hosted job publishes only after all six expected files are present.
+
+## Local staging and smoke
+
+```bash
+# Build/package the native host target as a raw Cargo binary.
+./scripts/stage-release-artifacts.sh v0.0.4
+
+# Optional source archive + manifest alongside the native binary pair.
+./scripts/release-artifacts.sh v0.0.4
+
+# Platform-specific packaged smoke helpers.
+./scripts/linux-x11-packaged-smoke.sh v0.0.4
+./scripts/macos-packaged-smoke.sh v0.0.4
+```
+
+## Update verification
+
+Every native release job extracts the exact uploaded archive and runs:
+
+```bash
+tendril version
+tendril --version
+tendril update status
+```
+
+That catches wrong archive roots, accidental Nix wrapper shipment, non-portable Darwin linkage, and drift between the CLI updater and MCP `self_update_*` tools before publication.

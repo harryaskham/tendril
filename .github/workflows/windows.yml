@@ -5,10 +5,9 @@ name: windows
 # ci.yml only runs `nix flake check` on the self-hosted NixOS Linux runners, so
 # it never compiles the Windows code paths (`crates/tendril-win32` and the
 # `#[cfg(windows)]` / `#[cfg(target_os = "windows")]` blocks in
-# `crates/tendril`). Those only ever built at release time via
-# tag-release.yml's `build-windows` job, so Windows-only code could rot
-# undetected between releases even though Windows 11 is a first-class supported
-# platform (see docs/src/reference/platform-support.md).
+# `crates/tendril`). The shared updatable-cli release matrix is Unix-only, so
+# this remains the compile/smoke guard for Windows source installs even though
+# no Windows self-update asset is published (see docs/src/reference/platform-support.md).
 #
 # This workflow closes that gap by building the whole workspace on a
 # GitHub-hosted `windows-latest` runner (the default x86_64-pc-windows-msvc

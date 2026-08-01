@@ -21,31 +21,24 @@ if git rev-parse --verify --quiet "$tag" >/dev/null; then
   archive_ref=$tag
 fi
 
+TENDRIL_RELEASE_DIST="${ROOT}/dist" "${ROOT}/scripts/stage-release-artifacts.sh" "$tag"
+
 binary_archive="$(release_asset_name "$version" "$system")"
 binary_checksum="$(release_checksum_name "$version" "$system")"
 source_archive="tendril-${version}-source.tar.gz"
 source_checksum="tendril-${version}-source.sha256"
 
-rm -rf dist
-mkdir -p "dist/stage/tendril-${version}-${system}"
-
-nix build .#tendril --out-link dist/result-tendril --print-build-logs
-
-cp -L dist/result-tendril/bin/tendril "dist/stage/tendril-${version}-${system}/tendril"
-cp README.md CHANGELOG.md LICENSE PROJECT_HEALTH.md "dist/stage/tendril-${version}-${system}/"
-
-tar -C dist/stage -czf "dist/${binary_archive}" "tendril-${version}-${system}"
 git archive --format=tar.gz --prefix="tendril-${version}/" -o "dist/${source_archive}" "$archive_ref"
-
-binary_sum="$(sha256sum "dist/${binary_archive}" | cut -d' ' -f1)"
-printf '%s  %s\n' "$binary_sum" "$binary_archive" > "dist/${binary_checksum}"
-
-source_sum="$(sha256sum "dist/${source_archive}" | cut -d' ' -f1)"
+if command -v sha256sum >/dev/null 2>&1; then
+  source_sum="$(sha256sum "dist/${source_archive}" | awk '{print $1}')"
+else
+  source_sum="$(shasum -a 256 "dist/${source_archive}" | awk '{print $1}')"
+fi
 printf '%s  %s\n' "$source_sum" "$source_archive" > "dist/${source_checksum}"
 
 cat > dist/release-manifest.json <<EOF
-{"project":"tendril","version":"${version}","semver":"${version}","tag":"${tag}","system":"${system}","artifacts":[{"name":"${binary_archive}","kind":"archive","format":"tar.gz","scope":"binary"},{"name":"${binary_checksum}","kind":"checksum","format":"sha256","scope":"binary"},{"name":"${source_archive}","kind":"archive","format":"tar.gz","scope":"source"},{"name":"${source_checksum}","kind":"checksum","format":"sha256","scope":"source"}]}
+{"project":"tendril","version":"${version}","semver":"${version}","tag":"${tag}","system":"${system}","updater":"updatable-cli","asset_strategy":"TendrilStyle","artifacts":[{"name":"${binary_archive}","kind":"archive","format":"tar.gz","scope":"binary"},{"name":"${binary_checksum}","kind":"checksum","format":"sha256","scope":"binary"},{"name":"${source_archive}","kind":"archive","format":"tar.gz","scope":"source"},{"name":"${source_checksum}","kind":"checksum","format":"sha256","scope":"source"}]}
 EOF
 
-printf 'Prepared release artifacts for %s (%s):\n' "$version" "$system"
+printf 'Prepared portable Cargo release artifacts for %s (%s):\n' "$version" "$system"
 find dist -maxdepth 1 -type f | sort

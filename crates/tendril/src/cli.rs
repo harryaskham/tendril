@@ -73,7 +73,7 @@ impl TendrilCli {
     #[must_use]
     pub fn agent_help() -> String {
         format!(
-            "Tendril is a stateless desktop inspection and control CLI for agents.\n\nWorkflow:\n  1. list targets:    tendril list --json\n  2. remote targets:  tendril --remote me@box list --json\n  3. WSL host:        tendril --wsl-tunnel list --json\n  4. Android device:  tendril --android sgu24:5555 list --json\n  5. list elements:   tendril --window <id> list-elements --json\n  6. capture state:   tendril --window <id> capture --json\n  7. capture camera:  tendril --camera <id> capture -o /tmp/camera.png\n  8. save to file:    tendril --window <id> capture -o /tmp/screen.png\n  9. run input:       tendril --window <id> run 'send(\"hello\")'\n  10. click element:  tendril --window <id> run 'click(33)'\n  11. read clipboard: tendril clipboard get --json\n  12. reuse a target: eval \"$(tendril --window <id> alias --name desk)\"\n\nCommands:\n  list           Discover windows, displays, cameras, and Android devices\n  list-elements  Discover UI elements for a window/display or Android device\n  capture        Capture a screenshot or one camera frame\n  run            Type text or execute an input sequence against a target\n  clipboard      Read or serve Linux/X11 text selections for deterministic browser↔OS transfer\n  alias          Emit a shell helper that pre-fills --window/--display\n  listen         Probe supported audio capture paths\n  update         Download and install a Tendril release binary\n  version        Inspect or bump the workspace release version\n  mcp            Serve Tendril over MCP stdio\n\nUse --json for machine-readable success/error envelopes.\nUse --remote user@host to proxy any invocation over ssh; Linux remotes auto-discover X11/Wayland session variables when SSH did not inherit them.\nUse -o/--output on capture to save the image directly to a file.\nUse --help on any subcommand for detailed flags.\n\n{WORKFLOW_HINT}\n"
+            "Tendril is a stateless desktop inspection and control CLI for agents.\n\nWorkflow:\n  1. list targets:    tendril list --json\n  2. remote targets:  tendril --remote me@box list --json\n  3. WSL host:        tendril --wsl-tunnel list --json\n  4. Android device:  tendril --android sgu24:5555 list --json\n  5. list elements:   tendril --window <id> list-elements --json\n  6. capture state:   tendril --window <id> capture --json\n  7. capture camera:  tendril --camera <id> capture -o /tmp/camera.png\n  8. save to file:    tendril --window <id> capture -o /tmp/screen.png\n  9. run input:       tendril --window <id> run 'send(\"hello\")'\n  10. click element:  tendril --window <id> run 'click(33)'\n  11. read clipboard: tendril clipboard get --json\n  12. reuse a target: eval \"$(tendril --window <id> alias --name desk)\"\n\nCommands:\n  list           Discover windows, displays, cameras, and Android devices\n  list-elements  Discover UI elements for a window/display or Android device\n  capture        Capture a screenshot or one camera frame\n  run            Type text or execute an input sequence against a target\n  clipboard      Read or serve Linux/X11 text selections for deterministic browser↔OS transfer\n  alias          Emit a shell helper that pre-fills --window/--display\n  listen         Probe supported audio capture paths\n  update         Update Tendril through the shared updatable-cli release flow\n  version        Print the running Tendril version\n  mcp            Serve Tendril over MCP stdio\n\nUse --json for machine-readable success/error envelopes.\nUse --remote user@host to proxy any invocation over ssh; Linux remotes auto-discover X11/Wayland session variables when SSH did not inherit them.\nUse -o/--output on capture to save the image directly to a file.\nUse --help on any subcommand for detailed flags.\n\n{WORKFLOW_HINT}\n"
         )
     }
 }
@@ -96,10 +96,10 @@ pub enum Command {
     Clipboard(ClipboardCommand),
     /// Emit shell helpers for repeated targeting.
     Alias(AliasCommand),
-    /// Download and install a Tendril release binary.
+    /// Update Tendril through the shared updatable-cli release flow.
     Update(UpdateCommand),
-    /// Inspect or bump the workspace release version.
-    Version(VersionCommand),
+    /// Print the running Tendril version.
+    Version,
     /// Report input and screen-capture permission status for this platform.
     Permissions(PermissionsCommand),
     /// Expose the CLI surface over MCP stdio.
@@ -124,7 +124,7 @@ impl Command {
             Self::Clipboard(_) => "clipboard",
             Self::Alias(_) => "alias",
             Self::Update(_) => "update",
-            Self::Version(_) => "version",
+            Self::Version => "version",
             Self::Permissions(_) => "permissions",
             Self::Mcp(_) => "mcp",
         }
@@ -327,48 +327,32 @@ pub struct AliasCommand {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Args, Serialize, Deserialize, JsonSchema)]
 pub struct UpdateCommand {
-    /// Install a specific release version. Defaults to the latest GitHub release.
-    #[arg(long = "release-version")]
-    pub release_version: Option<String>,
+    /// Update operation: `run` (default), `check`, or `status`.
+    #[arg(value_enum, default_value_t = UpdateAction::Run)]
+    #[serde(default)]
+    pub action: UpdateAction,
 
     /// Override the GitHub repository in owner/name form.
     #[arg(long)]
     pub repository: Option<String>,
 
-    /// Directory where the tendril binary should be installed. Defaults to ~/.local/bin.
+    /// Directory where Tendril is installed. Defaults to ~/.local/bin.
     #[arg(long = "install-dir")]
     pub install_dir: Option<PathBuf>,
-
-    /// Print the download/install plan without writing files.
-    #[arg(long = "dry-run")]
-    #[serde(default)]
-    pub dry_run: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Args)]
-pub struct VersionCommand {
-    #[command(subcommand)]
-    pub command: VersionSubcommand,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Subcommand)]
-pub enum VersionSubcommand {
-    /// Bump the workspace semver version and create a git commit.
-    Bump(VersionBumpCommand),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Args)]
-pub struct VersionBumpCommand {
-    /// Semver component to increment.
-    pub level: VersionBumpLevel,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, ValueEnum)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema, ValueEnum,
+)]
 #[serde(rename_all = "snake_case")]
-pub enum VersionBumpLevel {
-    Patch,
-    Minor,
-    Major,
+pub enum UpdateAction {
+    /// Download, verify, stage, and promote the latest release.
+    #[default]
+    Run,
+    /// Check the latest GitHub release without installing it.
+    Check,
+    /// Report local installed/staged updater paths and state.
+    Status,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -399,7 +383,7 @@ pub enum McpSubcommand {
 mod tests {
     use clap::Parser;
 
-    use super::{Command, TendrilCli, VersionBumpLevel, VersionSubcommand};
+    use super::{Command, TendrilCli, UpdateAction};
 
     #[test]
     fn agent_help_includes_workflow_hint() {
@@ -436,14 +420,28 @@ mod tests {
     }
 
     #[test]
-    fn parses_version_bump_command() {
-        let cli = TendrilCli::parse_from(["tendril", "version", "bump", "minor"]);
+    fn parses_version_command_without_mutating_subcommands() {
+        let cli = TendrilCli::parse_from(["tendril", "version"]);
+        assert!(matches!(cli.command, Some(Command::Version)));
+        assert!(
+            TendrilCli::try_parse_from(["tendril", "version", "bump", "patch"]).is_err(),
+            "the installed CLI must not expose the old repository-mutating bump tool"
+        );
+    }
 
-        let Some(Command::Version(command)) = cli.command else {
-            panic!("version command should parse");
+    #[test]
+    fn update_defaults_to_run_and_accepts_read_only_actions() {
+        let default = TendrilCli::parse_from(["tendril", "update"]);
+        let Some(Command::Update(command)) = default.command else {
+            panic!("update command should parse");
         };
-        let VersionSubcommand::Bump(command) = command.command;
-        assert_eq!(command.level, VersionBumpLevel::Minor);
+        assert_eq!(command.action, UpdateAction::Run);
+
+        let check = TendrilCli::parse_from(["tendril", "update", "check"]);
+        let Some(Command::Update(command)) = check.command else {
+            panic!("update check should parse");
+        };
+        assert_eq!(command.action, UpdateAction::Check);
     }
 
     #[test]
@@ -472,7 +470,7 @@ mod tests {
         assert_eq!(name_of(&["tendril", "clipboard", "get"]), "clipboard");
         assert_eq!(name_of(&["tendril", "alias", "--name", "desk"]), "alias");
         assert_eq!(name_of(&["tendril", "update"]), "update");
-        assert_eq!(name_of(&["tendril", "version", "bump", "minor"]), "version");
+        assert_eq!(name_of(&["tendril", "version"]), "version");
         assert_eq!(name_of(&["tendril", "mcp", "stdio"]), "mcp");
     }
 }

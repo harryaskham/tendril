@@ -72,7 +72,7 @@ See [Configuration](reference/configuration.md) for the current schema.
 Documentation publishing follows the same release policy as the rest of the repository:
 
 - docs are built and deployed by GitHub Actions,
-- the Pages workflow runs on version tag pushes and release-aligned version bumps, and
+- the Pages and binary release workflows run from stable version tag pushes, and
 - the published site should reflect the current CLI/MCP/platform support matrix.
 
 See [Docs publishing and release flow](reference/publishing.md) for the exact workflow.

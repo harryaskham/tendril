@@ -14,8 +14,7 @@ use crate::capture::{execute_capture, render_capture_human};
 use crate::cli::{
     AliasCommand, CaptureCommand, ClipboardCommand, ClipboardGetCommand, ClipboardSetCommand,
     ClipboardSubcommand, Command, ElementListCommand, ListCommand, ListenCommand, McpSubcommand,
-    PermissionsCommand, RunCommand, TendrilCli, UpdateCommand, VersionCommand, VersionSubcommand,
-    WORKFLOW_HINT,
+    PermissionsCommand, RunCommand, TendrilCli, UpdateCommand, WORKFLOW_HINT,
 };
 use crate::clipboard::{
     ClipboardGetInput, ClipboardSelection, ClipboardSetInput, DEFAULT_CLIPBOARD_SERVE_MS,
@@ -46,7 +45,6 @@ use crate::platform::{
 #[cfg(not(target_os = "windows"))]
 use crate::update::updater_config;
 use crate::update::{execute_update, render_update_human};
-use crate::versioning::{execute_version_bump, render_version_bump_human};
 
 #[derive(Clone)]
 struct CommandContext {
@@ -351,7 +349,7 @@ fn dispatch_cli_command(
         Command::Clipboard(command) => dispatch_clipboard_command(command, cli.json),
         Command::Alias(command) => dispatch_alias_command(cli, command),
         Command::Update(command) => dispatch_update_command(command, cli.json),
-        Command::Version(command) => dispatch_version_command(command, cli.json),
+        Command::Version => Ok(dispatch_version_command(cli.json)),
         Command::Permissions(command) => Ok(dispatch_permissions_command(command, cli.json)),
         Command::Mcp(_) => unreachable!("MCP commands are dispatched separately"),
     }
@@ -442,7 +440,7 @@ fn dispatch_android_cli_command(
         | Command::Clipboard(_)
         | Command::Alias(_)
         | Command::Update(_)
-        | Command::Version(_)
+        | Command::Version
         | Command::Permissions(_)
         | Command::Mcp(_) => Err(TendrilError::unsupported_capability(
             "android_command_unsupported",
@@ -737,21 +735,22 @@ fn dispatch_update_command(
     ))
 }
 
-fn dispatch_version_command(
-    command: &VersionCommand,
-    json_mode: bool,
-) -> Result<CommandOutput, TendrilError> {
-    match &command.command {
-        VersionSubcommand::Bump(command) => {
-            let output = execute_version_bump(command.level)?;
-            Ok(render_command_output(
-                "version bump",
-                json_mode,
-                output,
-                render_version_bump_human,
-            ))
-        }
-    }
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct VersionOutput {
+    name: &'static str,
+    version: &'static str,
+}
+
+fn dispatch_version_command(json_mode: bool) -> CommandOutput {
+    render_command_output(
+        "version",
+        json_mode,
+        VersionOutput {
+            name: "tendril",
+            version: env!("CARGO_PKG_VERSION"),
+        },
+        |output| format!("{} {}\n", output.name, output.version),
+    )
 }
 
 fn build_mcp_server() -> McpServer<CommandContext> {
@@ -1192,11 +1191,11 @@ fn build_help_output() -> HelpOutput {
             },
             HelpCommandSummary {
                 name: "update".to_owned(),
-                description: "Download and install a Tendril release binary.".to_owned(),
+                description: "Update Tendril through the shared updatable-cli release flow.".to_owned(),
             },
             HelpCommandSummary {
                 name: "version".to_owned(),
-                description: "Inspect or bump the workspace release version.".to_owned(),
+                description: "Print the running Tendril version.".to_owned(),
             },
             HelpCommandSummary {
                 name: "mcp stdio".to_owned(),

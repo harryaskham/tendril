@@ -1,13 +1,26 @@
+[package]
+name = "tendril"
+description = "Stateless desktop inspection and control CLI for agents."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+readme.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords = ["agent", "automation", "cli", "desktop", "mcp"]
+categories = ["command-line-utilities", "development-tools"]
+
 [workspace]
 members = [
   "crates/mcp-cli",
-  "crates/tendril",
   "crates/tendril-win32",
 ]
 resolver = "2"
 
 [workspace.package]
-version = "0.0.3"
+version = "0.0.4"
 edition = "2024"
 license = "MIT"
 rust-version = "1.85"
@@ -16,6 +29,69 @@ readme = "README.md"
 repository = "https://github.com/harryaskham/tendril"
 homepage = "https://github.com/harryaskham/tendril"
 documentation = "https://github.com/harryaskham/tendril/blob/main/README.md"
+
+[lib]
+path = "crates/tendril/src/lib.rs"
+
+[[bin]]
+name = "tendril"
+path = "crates/tendril/src/main.rs"
+
+[[test]]
+name = "integration_flows"
+path = "crates/tendril/tests/integration_flows.rs"
+
+[[test]]
+name = "mcp_external_smoke"
+path = "crates/tendril/tests/mcp_external_smoke.rs"
+
+[[test]]
+name = "mcp_parity"
+path = "crates/tendril/tests/mcp_parity.rs"
+
+[[test]]
+name = "platform_contract"
+path = "crates/tendril/tests/platform_contract.rs"
+
+[[test]]
+name = "runtime_dependency_audit"
+path = "crates/tendril/tests/runtime_dependency_audit.rs"
+
+[dependencies]
+anyhow.workspace = true
+base64.workspace = true
+clap.workspace = true
+image.workspace = true
+mcp-cli = { git = "https://github.com/harryaskham/mcp-cli", branch = "main" }
+feedback-cli.workspace = true
+pollster.workspace = true
+tendril-win32 = { path = "crates/tendril-win32" }
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+thiserror.workspace = true
+time.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tempfile = "3.15.0"
+
+# The reusable staged-update/MCP helper is intentionally Unix-only. Tendril's
+# update command reports an explicit unsupported-capability error on Windows;
+# Unix release assets follow updatable-cli's TendrilStyle contract.
+[target.'cfg(not(target_os = "windows"))'.dependencies]
+updatable-cli.workspace = true
+
+# AT-SPI (zbus), xdg-desktop-portal (ashpd), and X11 (x11rb) are Linux-only
+# desktop integrations. Gate them to Linux so macOS/Windows builds do not pull
+# in unused Unix desktop stacks.
+[target.'cfg(target_os = "linux")'.dependencies]
+ashpd.workspace = true
+zbus.workspace = true
+x11rb = { version = "0.13.2", features = ["image", "randr", "xtest"] }
+
+[dev-dependencies]
+proptest = "1.6.0"
 
 [workspace.dependencies]
 anyhow = "1.0.98"
@@ -50,3 +126,6 @@ module_name_repetitions = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 similar_names = "allow"
+
+[lints]
+workspace = true

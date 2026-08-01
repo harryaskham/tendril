@@ -4,10 +4,18 @@ use std::path::Path;
 
 #[test]
 fn runtime_dependency_audit_mentions_every_spawned_program() {
-    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("crate manifest should live under the workspace root");
+    // Tendril's package manifest is the workspace-root Cargo.toml so
+    // `cargo install --path .` works. Keep a fallback for older/nested layouts
+    // to make this audit resilient when inspecting historical package trees.
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let repo_root = if manifest_dir.join("crates/tendril/src").is_dir() {
+        manifest_dir
+    } else {
+        manifest_dir
+            .parent()
+            .and_then(Path::parent)
+            .expect("crate manifest should live under the workspace root")
+    };
 
     let mut programs = BTreeSet::new();
     for relative_path in [

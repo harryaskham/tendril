@@ -65,6 +65,13 @@ nix build .#tendril .#mcp-cli          # build workspace packages
 nix develop --command ./scripts/build-docs.sh
 ```
 
+The root manifest is both the Tendril package and workspace manifest, so source installs work from the repository root:
+
+```bash
+cargo install --locked --path .
+tendril version
+```
+
 Android device smoke examples:
 
 ```bash
@@ -79,7 +86,8 @@ See [the Android backend reference](docs/src/reference/android.md) for supported
 
 ## Workspace layout
 
-- `crates/tendril`: the Tendril CLI
+- `Cargo.toml`: the installable Tendril package and workspace root (`cargo install --path .`)
+- `crates/tendril/src`: Tendril CLI/library source
 - `crates/mcp-cli`: reusable JSON-envelope and MCP stdio support, pinned from `https://github.com/harryaskham/mcp-cli`; the workspace package and Tendril dependency stay on the same upstream revision so the shared `updatable-cli` MCP extension can reuse the same `mcp-cli` types
 - `docs/`: mdBook-based documentation site source
 - `flake.nix`: dev shell, packages, checks, and reproducible build outputs
@@ -216,12 +224,10 @@ Target-scoped commands use the global `--window <id>` or `--display <id>` flags.
 local `--remote` flag, bootstraps common non-login-shell `PATH` entries, and
 then execs `tendril` on the remote host. `--wsl-tunnel` proxies the invocation
 from WSL/Linux to a Windows-host `tendril.exe`; it also composes with `--remote`
-because the flag is forwarded to the remote Tendril process. If no Windows
-binary is visible, the WSL tunnel downloads the latest Windows release asset,
-verifies its checksum, and installs `tendril.exe` under
-`%LOCALAPPDATA%\\Tendril\\bin` for reuse. Set `TENDRIL_WSL_WINDOWS_BIN` when the
-Windows executable lives somewhere else, or `TENDRIL_WSL_INSTALL_DIR` to choose
-the auto-install directory. Set `TENDRIL_REMOTE_BIN` remotely when
+because the flag is forwarded to the remote Tendril process. Install Tendril on
+the Windows host and put `tendril.exe` on its PATH, or set
+`TENDRIL_WSL_WINDOWS_BIN` to the Windows-visible executable path. Set
+`TENDRIL_REMOTE_BIN` remotely when
 the binary is not named `tendril` or is outside `PATH`. On Linux remotes, the
 bootstrap prefers existing graphical environment variables; if SSH did not
 provide them, it discovers `/run/user/<uid>/wayland-*`, `/tmp/.X11-unix/X*`,
@@ -426,50 +432,36 @@ Local pre-merge validation remains the primary fast-feedback gate:
 ./scripts/pre-merge.sh
 ```
 
-Tendril uses SemVer. The release version comes from `[workspace.package].version`
-in `Cargo.toml`, and release tags use the `v<semver>` form, for example
-`v0.0.1`. Use the built-in bump helper to update all versioned manifests and
-create the release commit:
+Tendril uses SemVer from `[workspace.package].version` in `Cargo.toml`.
+`tendril version` prints the running version and never edits source. Maintainers
+bump `Cargo.toml`/`Cargo.lock` in a reviewed change and push the matching stable
+tag, such as `v0.0.4`.
+
+The CLI and MCP use the same shared `updatable-cli` implementation:
 
 ```bash
-tendril version bump patch   # or: minor, major
+tendril update status  # local install/staging state
+tendril update check   # read-only latest-release check
+tendril update         # download, verify, stage, and promote latest
 ```
 
-Users can install or update from GitHub release assets with:
+MCP exposes the equivalent `self_update_status`, `self_update_check`, and
+`self_update_run` tools from the same `UpdaterConfig`. The shared updater is
+currently Linux/macOS-only; Windows source installs remain available via Cargo.
 
-```bash
-tendril update                         # installs latest matching platform binary to ~/.local/bin
-tendril update --dry-run               # shows the planned latest-release query and install path
-tendril update --release-version 0.0.1 # installs a specific release version
-```
-
-The MCP stdio server also registers the shared `updatable-cli` tools
-`self_update_status`, `self_update_check`, and `self_update_run`, following the
-same reference pattern used by ring-mods. MCP clients can therefore inspect and
-apply Tendril binary updates without bespoke Tendril update wiring.
-
-Pushing a `v*` tag or landing a commit that changes the workspace version on
-`main` starts the GitHub Actions release workflow. The workflow reruns pre-merge
-validation, builds Linux artifacts on `[self-hosted, linux]`, builds macOS
-artifacts on `[self-hosted, macos]`, stages the combined asset set, and publishes
-a GitHub release for the matching `v<semver>` tag.
-
-The release asset set is intended to include at least:
-
-- `tendril-<semver>-x86_64-linux.tar.gz`
-- `tendril-<semver>-x86_64-linux.sha256`
-- `tendril-<semver>-aarch64-darwin.tar.gz`
-- `tendril-<semver>-aarch64-darwin.sha256`
-- `tendril-<semver>-source.tar.gz`
-- `tendril-<semver>-source.sha256`
-- `release-manifest.json`
+Only a `vX.Y.Z` tag push starts the release workflow. Self-hosted
+`x86_64-linux`, `aarch64-linux`, and `aarch64-darwin` runners build raw Cargo
+binaries inside `nix develop`, package the exact `updatable-cli`
+`TendrilStyle` archive layout, smoke the extracted binary, and publish only
+after every archive/checksum pair exists. The workflow deliberately never
+ships the Nix package's non-portable `.tendril-wrapped` executable.
 
 Useful local release helpers:
 
 ```bash
-./scripts/stage-release-artifacts.sh v0.0.1
-./scripts/release-artifacts.sh v0.0.1
-./scripts/release-notes.sh v0.0.1
+./scripts/stage-release-artifacts.sh v0.0.4
+./scripts/release-artifacts.sh v0.0.4
+./scripts/release-notes.sh v0.0.4
 ```
 
 ## Documentation site
@@ -485,5 +477,5 @@ The repository publishes a static docs site built from `docs/`.
 ## Notes for developers and agents
 
 - Running `tendril` with no arguments prints agent-oriented help.
-- The workspace version target is `0.0.1`.
+- The workspace version is `0.0.4`.
 - Remaining handoff follow-ups are captured explicitly in [PROJECT_HEALTH.md](PROJECT_HEALTH.md).
