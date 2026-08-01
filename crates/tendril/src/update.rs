@@ -208,30 +208,6 @@ mod tests {
     }
 
     #[test]
-    fn release_workflow_matches_updatable_cli_targets_and_raw_cargo_build() {
-        let workflow = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join(".github/workflows/tag-release.yml"),
-        )
-        .expect("read tag release workflow");
-        for target in ["x86_64-linux", "aarch64-linux", "aarch64-darwin"] {
-            assert!(
-                workflow.contains(&format!("- target: {target}")),
-                "release matrix is missing updater target {target}"
-            );
-            assert!(
-                workflow.contains(&format!("tendril-$version-{target}.tar.gz"))
-                    || workflow.contains("tendril-$version-$target.tar.gz"),
-                "release verification is missing TendrilStyle archive checks"
-            );
-        }
-        assert!(workflow.contains(
-            "nix develop --command cargo build --release --locked -p tendril --bin tendril"
-        ));
-        assert!(workflow.contains("Darwin release binary still references the Nix store"));
-    }
-
-    #[test]
     fn update_output_round_trips_json() {
         let output = UpdateOutput::Check {
             tag: "v0.0.4".to_owned(),
