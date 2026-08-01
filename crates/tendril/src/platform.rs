@@ -1679,6 +1679,10 @@ impl PlatformAdapter for LinuxAdapter {
     fn info(&self) -> AdapterInfo {
         AdapterInfo::from_context(&self.context)
     }
+
+    fn cameras(&self) -> Vec<crate::model::CameraDescriptor> {
+        crate::camera::enumerate_cameras()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1701,6 +1705,14 @@ impl WindowsAdapter {
             PermissionKind::Microphone,
             "Windows microphone capture may be gated by the Privacy > Microphone setting for desktop apps.",
             "Enable microphone access for desktop apps in Settings > Privacy & security > Microphone before retrying.",
+        )
+    }
+
+    fn camera_permission() -> PermissionStatus {
+        PermissionStatus::unknown(
+            PermissionKind::Camera,
+            "Windows camera capture may be gated by the Privacy > Camera setting for desktop apps.",
+            "Enable camera access for desktop apps in Settings > Privacy & security > Camera before retrying.",
         )
     }
 
@@ -1794,10 +1806,7 @@ impl PermissionAdapter for WindowsAdapter {
                 "Desktop input control uses user-session APIs rather than a dedicated accessibility prompt.",
             ),
             Self::microphone_permission(),
-            PermissionStatus::not_required(
-                PermissionKind::Camera,
-                "Desktop camera capture uses user-session media APIs rather than a dedicated privacy prompt for classic desktop apps.",
-            ),
+            Self::camera_permission(),
         ]
     }
 }
@@ -1836,6 +1845,10 @@ impl AudioCapabilityProbe for WindowsAdapter {
 impl PlatformAdapter for WindowsAdapter {
     fn info(&self) -> AdapterInfo {
         AdapterInfo::from_context(&self.context)
+    }
+
+    fn cameras(&self) -> Vec<crate::model::CameraDescriptor> {
+        crate::camera::enumerate_cameras()
     }
 }
 

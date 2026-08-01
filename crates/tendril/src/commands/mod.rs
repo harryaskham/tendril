@@ -286,6 +286,9 @@ fn reject_inherited_target_flags_for_mcp(cli: &TendrilCli) -> Result<(), Tendril
     if cli.display.is_some() {
         offending.push("--display");
     }
+    if cli.camera.is_some() {
+        offending.push("--camera");
+    }
     if cli.json {
         offending.push("--json");
     }
@@ -2475,6 +2478,13 @@ mod tests {
     }
 
     #[test]
+    fn mcp_dispatch_rejects_inherited_camera_flag() {
+        let mut cli = mcp_cli(None, None, false);
+        cli.camera = Some("camera-1".to_owned());
+        assert_mcp_rejects(&cli, "--camera");
+    }
+
+    #[test]
     fn mcp_dispatch_rejects_multiple_inherited_flags_in_one_message() {
         let cli = mcp_cli(Some("win"), Some("DP-1"), true);
         let error = dispatch(&cli, &TendrilConfig::default())
@@ -2612,6 +2622,7 @@ mod tests {
         assert_eq!(schema["type"], "object");
         assert!(schema["properties"].get("window").is_some());
         assert!(schema["properties"].get("display").is_some());
+        assert!(schema["properties"].get("camera").is_some());
         assert!(schema["properties"].get("max_width").is_some());
         assert!(schema["properties"].get("compression").is_some());
     }

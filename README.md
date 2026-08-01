@@ -3,8 +3,8 @@
 Tendril is a stateless Rust CLI for agent-driven desktop inspection and control.
 It can:
 
-- list window and display targets,
-- capture screenshots from a chosen window or display,
+- list window, display, and camera targets,
+- capture screenshots from a chosen window/display or one frame from a camera,
 - run text or input-sequence actions against a target,
 - expose the same `list`, `capture`, and `run` surface over MCP stdio, and
 - probe audio-capture capability with `listen`.
@@ -125,9 +125,9 @@ state itself.
 The intended workflow is:
 
 1. discover targets with `list`
-2. choose a window or display id
+2. choose a window, display, or camera id
 3. capture current state with `capture`
-4. execute text or an input DSL sequence with `run`
+4. for interactive window/display targets, execute text or an input DSL sequence with `run`
 
 For browser/OS automation that must not touch the operator's real desktop, use
 the isolated 1920x1080 Xvfb micro-environment documented in
@@ -150,11 +150,11 @@ input. The Nix package also exposes the helper; run `nix run .#tendril-headless 
 Examples:
 
 ```bash
-# List windows and displays
+# List windows, displays, and cameras
 
 tendril --json list
 
-# List windows and displays on a remote desktop over SSH.
+# List windows, displays, and cameras on a remote desktop over SSH.
 # Linux remotes auto-discover X11/Wayland session variables when SSH did not inherit them.
 
 tendril --remote me@box --json list
@@ -162,6 +162,11 @@ tendril --remote me@box --json list
 # Capture a window using config defaults
 
 tendril --json --window <window-id> capture
+
+# Capture one frame from a camera id discovered by `tendril list`.
+# Uses AVFoundation on macOS, V4L2 on Linux, or DirectShow on Windows.
+
+tendril --camera <camera-id> capture -o /tmp/camera.png
 
 # Capture a display with explicit resize + jpeg settings
 
@@ -205,8 +210,7 @@ tendril --json --window <browser-id> run \
 eval "$(tendril --window <window-id> alias --name desk)"
 ```
 
-Target-scoped commands use the global `--window <id>` or `--display <id>`
-flags. `capture`, `run`, and `alias` require exactly one target selector.
+Target-scoped commands use the global `--window <id>` or `--display <id>` flags. `capture` also accepts `--camera <id>` (mutually exclusive with window/display); camera ids appear in `tendril list`. `run` and `alias` require exactly one window/display selector.
 
 `--remote user@host` proxies the same invocation over `ssh`, strips only the
 local `--remote` flag, bootstraps common non-login-shell `PATH` entries, and
@@ -261,8 +265,7 @@ The initial MCP tool set is:
 The MCP arguments match the CLI command model:
 
 - `list`: `{}`
-- `capture`: `{ "window": "..." }` or `{ "display": "..." }` plus optional
-  `max_width`, `max_height`, `format`, and `compression`
+- `capture`: `{ "window": "..." }`, `{ "display": "..." }`, or `{ "camera": "..." }` plus optional `max_width`, `max_height`, `format`, and `compression`
 - `run`: `{ "window": "...", "input_definition": "send(\"hello\")" }`
   or the display-scoped equivalent
 
@@ -352,6 +355,7 @@ start a helper daemon to bypass platform rules.
   or Tendril binary.
 - Input control requires **Accessibility** consent.
 - Microphone probing/capture paths require **Microphone** consent.
+- Camera capture requires **Camera** consent and `ffmpeg` on `PATH`. Tendril explicitly requests 30 fps to avoid AVFoundation's incompatible 29.97 fps default on cameras such as the Logitech C930e.
 - System loopback audio is not exposed by the current macOS adapter.
 
 ### Linux
@@ -370,8 +374,8 @@ start a helper daemon to bypass platform rules.
   and [docs/src/linux-wayland-operator-validation.md](docs/src/linux-wayland-operator-validation.md).
 - Audio probing expects a supported user-session backend such as PipeWire or
   PulseAudio.
-- Linux permissions are usually session/backend constraints rather than central
-  OS privacy prompts.
+- Camera discovery reads V4L2 device metadata from `/sys/class/video4linux`; camera capture uses ffmpeg's V4L2 backend. The Nix package supplies ffmpeg, while other packages should provide it on `PATH`.
+- Linux permissions are usually session/backend constraints rather than central OS privacy prompts; camera access additionally requires permission to read the selected `/dev/videoN` node.
 
 ### Windows 11
 
@@ -380,8 +384,8 @@ start a helper daemon to bypass platform rules.
   the Tendril binary and do not require a Tendril-managed background service.
 - `list-elements` exposes a pragmatic Win32 window/control tree with stable
   snapshot-local IDs that can be passed to `run 'click(<id>)'`.
-- Microphone paths may depend on **Settings > Privacy & security > Microphone**
-  for desktop apps.
+- Camera discovery/capture uses ffmpeg's DirectShow backend and may depend on **Settings > Privacy & security > Camera** for desktop apps. Provide `ffmpeg.exe` on `PATH`.
+- Microphone paths may depend on **Settings > Privacy & security > Microphone** for desktop apps.
 
 For a source-backed inventory of the current runtime subprocess/tool surface and
 its self-containment classification, see

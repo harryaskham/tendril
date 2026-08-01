@@ -11,6 +11,7 @@ fn runtime_dependency_audit_mentions_every_spawned_program() {
 
     let mut programs = BTreeSet::new();
     for relative_path in [
+        "crates/tendril/src/camera.rs",
         "crates/tendril/src/discovery.rs",
         "crates/tendril/src/listen.rs",
         "crates/tendril/src/platform.rs",
@@ -46,6 +47,7 @@ fn runtime_dependency_audit_mentions_every_spawned_program() {
         "pw-record",
         "screencapture",
         "swaymsg",
+        "system_profiler",
         "wlr-randr",
         "wtype",
         "ydotool",

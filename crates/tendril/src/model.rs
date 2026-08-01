@@ -177,9 +177,9 @@ pub fn default_true() -> bool {
 /// expose UI elements, so they live alongside `targets` rather than inside it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CameraDescriptor {
-    /// Stable identifier accepted by `tendril capture --camera <id>`. On macOS
-    /// this is the device's localized name (the handle the capture backend
-    /// matches on).
+    /// Stable identifier accepted by `tendril capture --camera <id>`: the
+    /// localized name on macOS, a `/dev/videoN` node on Linux, or a `DirectShow`
+    /// alternative device id (when available) on Windows.
     pub id: String,
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -7,7 +7,7 @@ Tendril is designed around a platform adapter boundary so the CLI and MCP surfac
 | Capability | CLI surface | Current status |
 | --- | --- | --- |
 | Target discovery | `list` | Implemented |
-| Screenshot capture | `capture` | Implemented |
+| Screenshot and camera-frame capture | `capture` | Implemented; cameras use AVFoundation (macOS), V4L2 (Linux), or DirectShow (Windows) through ffmpeg |
 | Input execution | `run` | Implemented |
 | Accessibility element discovery | `list-elements` | Implemented with macOS AX, Linux/X11 AT-SPI + surface fallback, Linux/Wayland AT-SPI, and Windows native Win32 control/window enumeration |
 | MCP stdio | `mcp stdio` | Implemented for list/capture/run/list-elements |
@@ -17,7 +17,7 @@ Tendril is designed around a platform adapter boundary so the CLI and MCP surfac
 
 ## Notes
 
-- Discovery currently focuses on windows and displays. On macOS there is no user-selected display socket analogous to X11 or Wayland; Tendril identifies the native WindowServer session as `mac_os_window_server` and discovers display/window connection details through Quartz/AppKit (`NSScreen` and `CGWindowListCopyWindowInfo`).
+- Discovery includes windows, displays, and cameras. macOS camera metadata comes from `system_profiler`, Linux camera nodes from V4L2 sysfs, and Windows camera names/ids from ffmpeg's DirectShow inventory. On macOS there is no user-selected display socket analogous to X11 or Wayland; Tendril identifies the native WindowServer session as `mac_os_window_server` and discovers display/window connection details through Quartz/AppKit (`NSScreen` and `CGWindowListCopyWindowInfo`).
 - `listen` writes WAV bytes to a temp file (or `--output <path>`) on Linux and macOS; the JSON envelope reports the on-disk path under `execution.artifact`. Windows and unrecognized backends still return `status = "probe_only"`.
 - Linux/Wayland is a documented backend matrix rather than one generic path: Hyprland discovery uses `hyprctl`, sway uses `swaymsg`, wlroots display fallback uses `wlr-randr`, capture prefers xdg-desktop-portal with `grim` retained only as a compatibility fallback, and `list-elements` uses AT-SPI when applications publish accessibility metadata.
 - Windows 11 support is native inside the Tendril binary for discovery, capture, input, and Win32 window/control element enumeration; audio capture remains probe-only pending a WASAPI recording backend.
