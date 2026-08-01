@@ -1,12 +1,17 @@
 use std::env;
+#[cfg(target_os = "linux")]
 use std::sync::mpsc;
+#[cfg(any(target_os = "linux", test))]
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(any(target_os = "linux", test))]
+use std::time::Instant;
 
 #[cfg(target_os = "linux")]
 use ashpd::desktop::screenshot::Screenshot as PortalScreenshot;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
+#[cfg(target_os = "linux")]
 use pollster::block_on;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -552,6 +557,7 @@ pub const DEFAULT_CAPTURE_TIMEOUT_MS: u64 = 10_000;
 /// is available. The portal may wait on an invisible compositor/permission UI;
 /// reserving most of the command budget for `grim` lets supported wlroots
 /// sessions capture successfully instead of timing out before the fallback runs.
+#[cfg(any(target_os = "linux", test))]
 const WAYLAND_PORTAL_FALLBACK_TIMEOUT_MS: u64 = 1_500;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1679,6 +1685,10 @@ impl PlatformAdapter for LinuxAdapter {
     fn info(&self) -> AdapterInfo {
         AdapterInfo::from_context(&self.context)
     }
+
+    fn cameras(&self) -> Vec<crate::model::CameraDescriptor> {
+        crate::camera::enumerate_cameras()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1701,6 +1711,14 @@ impl WindowsAdapter {
             PermissionKind::Microphone,
             "Windows microphone capture may be gated by the Privacy > Microphone setting for desktop apps.",
             "Enable microphone access for desktop apps in Settings > Privacy & security > Microphone before retrying.",
+        )
+    }
+
+    fn camera_permission() -> PermissionStatus {
+        PermissionStatus::unknown(
+            PermissionKind::Camera,
+            "Windows camera capture may be gated by the Privacy > Camera setting for desktop apps.",
+            "Enable camera access for desktop apps in Settings > Privacy & security > Camera before retrying.",
         )
     }
 
@@ -1794,10 +1812,7 @@ impl PermissionAdapter for WindowsAdapter {
                 "Desktop input control uses user-session APIs rather than a dedicated accessibility prompt.",
             ),
             Self::microphone_permission(),
-            PermissionStatus::not_required(
-                PermissionKind::Camera,
-                "Desktop camera capture uses user-session media APIs rather than a dedicated privacy prompt for classic desktop apps.",
-            ),
+            Self::camera_permission(),
         ]
     }
 }
@@ -1837,6 +1852,10 @@ impl PlatformAdapter for WindowsAdapter {
     fn info(&self) -> AdapterInfo {
         AdapterInfo::from_context(&self.context)
     }
+
+    fn cameras(&self) -> Vec<crate::model::CameraDescriptor> {
+        crate::camera::enumerate_cameras()
+    }
 }
 
 fn parse_display_index(
@@ -1852,6 +1871,7 @@ fn parse_display_index(
     })
 }
 
+#[cfg(any(target_os = "linux", test))]
 #[derive(Debug, Clone)]
 struct WaylandCaptureBackendFailure {
     message: String,
@@ -1860,18 +1880,21 @@ struct WaylandCaptureBackendFailure {
 
 /// Distinguishes a clean backend failure from an exceeded deadline so the
 /// caller can return a structured `Timeout` error to agents.
+#[cfg(any(target_os = "linux", test))]
 #[derive(Debug, Clone)]
 enum WaylandCaptureBackendError {
     Failed(WaylandCaptureBackendFailure),
     Timeout(String),
 }
 
+#[cfg(any(target_os = "linux", test))]
 impl From<WaylandCaptureBackendFailure> for WaylandCaptureBackendError {
     fn from(value: WaylandCaptureBackendFailure) -> Self {
         Self::Failed(value)
     }
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn wayland_portal_attempt_timeout(total: Duration, fallback_available: bool) -> Duration {
     if !fallback_available {
         return total;
@@ -2122,6 +2145,7 @@ fn classify_wayland_portal_capture_error(error: &ashpd::Error) -> WaylandCapture
     }
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn crop_wayland_portal_capture_to_target(
     image_bytes: &[u8],
     target: &TargetDescriptor,
@@ -2195,6 +2219,7 @@ fn crop_wayland_portal_capture_to_target(
     Ok(encoded)
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn wayland_workspace_origin(inventory: &TargetInventory) -> (i32, i32) {
     let mut displays = inventory
         .targets
@@ -2214,6 +2239,7 @@ fn wayland_workspace_origin(inventory: &TargetInventory) -> (i32, i32) {
 }
 
 /// Outcome of waiting for a capture-helper child process with a deadline.
+#[cfg(any(target_os = "linux", test))]
 #[derive(Debug)]
 enum CaptureChildOutcome {
     Exited(std::process::ExitStatus),
@@ -2223,6 +2249,7 @@ enum CaptureChildOutcome {
 
 /// Poll a child process until it exits or `timeout` elapses. The caller is
 /// responsible for killing+reaping the child on `TimedOut`.
+#[cfg(any(target_os = "linux", test))]
 fn wait_for_capture_child_with_timeout(
     child: &mut std::process::Child,
     timeout: Duration,
@@ -2246,6 +2273,7 @@ fn wait_for_capture_child_with_timeout(
     }
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn capture_wayland_target_with_grim(
     target: &TargetDescriptor,
     timeout: Duration,
@@ -2344,6 +2372,7 @@ fn capture_wayland_target_with_grim(
     })
 }
 
+#[cfg(target_os = "linux")]
 fn wayland_capture_capability(target: CaptureTargetKind) -> Capability {
     match target {
         CaptureTargetKind::Window => Capability::WindowCapture,
@@ -2351,6 +2380,7 @@ fn wayland_capture_capability(target: CaptureTargetKind) -> Capability {
     }
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn wayland_capture_program_on_path(program: &str) -> bool {
     env::var_os("PATH").is_some_and(|path| {
         env::split_paths(&path).any(|entry| {
@@ -2372,12 +2402,12 @@ fn wayland_capture_program_on_path(program: &str) -> bool {
 fn execute_linux_input(
     platform: PlatformKind,
     session: DesktopSession,
-    x11_display: Option<&str>,
+    _x11_display: Option<&str>,
     request: &InputRequest,
 ) -> Result<InputOutcome, TendrilError> {
     match session {
         #[cfg(target_os = "linux")]
-        DesktopSession::X11 => x11::execute_input(platform, x11_display, request),
+        DesktopSession::X11 => x11::execute_input(platform, _x11_display, request),
         #[cfg(not(target_os = "linux"))]
         DesktopSession::X11 => Err(TendrilError::from(PlatformAdapterError::unsupported(
             Capability::InputControl,
@@ -4486,7 +4516,10 @@ mod tests {
             match capture_wayland_target_with_grim(&target, std::time::Duration::from_secs(1))
                 .expect_err("negative origin should be rejected before invoking grim")
             {
-                WaylandCaptureBackendError::Failed(failure) => failure.message,
+                WaylandCaptureBackendError::Failed(failure) => {
+                    assert!(!failure.missing_backend);
+                    failure.message
+                }
                 WaylandCaptureBackendError::Timeout(message) => {
                     panic!("unexpected timeout for negative-origin guard: {message}")
                 }

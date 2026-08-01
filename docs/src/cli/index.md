@@ -23,7 +23,7 @@ The root CLI currently shares these global flags across command execution:
 - `--json` for stable machine-readable envelopes,
 - `--window <id>` to scope target-aware commands to a window, and
 - `--display <id>` to scope target-aware commands to a display,
-- `--camera <id>` to scope `tendril capture` to a video capture device (macOS; see `tendril list`),
+- `--camera <id>` to scope `tendril capture` to a video capture device (AVFoundation on macOS, V4L2 on Linux, or DirectShow on Windows; see `tendril list`),
 - `--remote user@host` to proxy the invocation over SSH, and
 - `--wsl-tunnel` to proxy from WSL/Linux to a Windows-host `tendril.exe`.
 

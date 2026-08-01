@@ -1,8 +1,9 @@
 # Runtime dependency audit
 
 This page inventories every current Tendril runtime subprocess/tool dependency in
-`crates/tendril/src/discovery.rs`, `crates/tendril/src/elements.rs`,
-`crates/tendril/src/platform.rs`, and `crates/tendril/src/wayland_input.rs`.
+`crates/tendril/src/camera.rs`, `crates/tendril/src/discovery.rs`,
+`crates/tendril/src/elements.rs`, `crates/tendril/src/platform.rs`, and
+`crates/tendril/src/wayland_input.rs`.
 
 The governing rule from the approved `SPEC.md` is that every command should be
 self-contained. This audit therefore distinguishes between:
@@ -24,6 +25,7 @@ without spawning anything.
 | CLI command | Platform/session | Current subprocess/tool dependency | Current use | Classification | Native/embedded direction | Tracking |
 | --- | --- | --- | --- | --- | --- | --- |
 | `list` | macOS | `osascript` | Quartz/AppKit discovery script via JXA for displays and windows | Documented platform prerequisite | Native Rust bindings would remove the subprocess boundary, but packaged usability no longer depends on the Swift toolchain | `bd-5c3937` |
+| `list` | macOS | `system_profiler` | Enumerate camera names/model/unique ids without activating them | OS-vended prerequisite | Replace with native AVFoundation enumeration alongside native camera capture | `bd-ad42e8` |
 | `list` | Linux/X11 | _none_ | Native X11/XRandR/EWMH discovery path | Self-contained today | Continue hardening the embedded backend and add more real-session smoke coverage | `bd-a279ed` |
 | `list` | Linux/Wayland | `hyprctl` | Hyprland monitor/client discovery | Documented backend prerequisite today | Prefer compositor-native bindings or another embedded backend if a stable option exists | `bd-e4edee` |
 | `list` | Linux/Wayland | `swaymsg` | sway output/tree discovery | Documented backend prerequisite today | Prefer compositor-native bindings or another embedded backend if a stable option exists | `bd-e4edee` |
@@ -32,7 +34,10 @@ without spawning anything.
 | `capture` | macOS | `screencapture` | Window/display PNG capture | Documented platform prerequisite | Replace with native ScreenCaptureKit/Quartz capture when ready for tighter packaging control | audited in `bd-d513d4` |
 | `capture` | Linux/X11 | _none_ | Native X11 image capture path | Self-contained today | Continue validating packaged flows against real X11 sessions | `bd-a279ed` |
 | `capture` | Linux/Wayland | `grim` | Compatibility fallback when portal screenshot capture is unavailable | Documented compatibility fallback | Keep the portal-backed path primary; retain `grim` only as a clearly diagnosed fallback for supported compositor families | `bd-e4edee` |
-| `capture` | Windows 11 | _none_ | Native Win32/GDI capture inside the Tendril binary | Self-contained | Continue hardening the embedded capture backend and smoke coverage | `bd-a3357b` |
+| `capture` | Windows 11 | _none_ | Native Win32/GDI window/display capture inside the Tendril binary | Self-contained | Continue hardening the embedded capture backend and smoke coverage | `bd-a3357b` |
+| `capture --camera` | macOS | `ffmpeg` | One AVFoundation frame; explicitly negotiates 30 fps (with an advertised-rate retry) rather than ffmpeg's incompatible 29.97 default | Documented cross-platform camera prerequisite | Replace with a native AVFoundation binding when packaging cost justifies it | `bd-ad42e8` |
+| `capture --camera` | Linux | `ffmpeg` | One frame from a V4L2 `/dev/videoN` node; the Nix package supplies ffmpeg | Packaged prerequisite | A safe embedded V4L2 backend would remove the subprocess boundary | `bd-ad42e8` |
+| `list` / `capture --camera` | Windows | `ffmpeg` | DirectShow device inventory and one-frame capture | Documented cross-platform camera prerequisite | Replace with a native Media Foundation binding when available | `bd-ad42e8` |
 | `run` | macOS | `osascript` | Focus transfer by PID/app name, text entry, key events, mouse clicks/drags via JXA/AppleScript | Documented platform prerequisite | Native accessibility/input bindings would still reduce subprocess overhead, but packaged usability no longer depends on the Swift toolchain | `bd-5c3937` |
 | `run` | Linux/X11 | _none_ | Native X11/XTest focus, keyboard, and mouse injection | Self-contained today | Continue real-session validation, especially around keyboard-map edge cases | `bd-a279ed` |
 | `run` | Linux/Wayland | `ydotool` | Preferred Wayland keyboard + pointer injection via uinput; requires the `ydotoold` daemon (`bd-408572`) | Documented platform prerequisite | Embed a uinput-based driver to remove the helper boundary once permissions and packaging are sorted | `bd-408572` |
@@ -57,7 +62,9 @@ binary on a supported host:
 
 - macOS `screencapture`
 - macOS `osascript`
+- macOS `system_profiler` for passive camera discovery
 - macOS `open` (opt-in `permissions --request` only): opens System Settings Privacy pane deep links; ships with the OS and is never spawned by default or for headless/daemon callers (`bd-28c0f6`)
+- `ffmpeg` for cross-platform camera capture: supplied by the Linux Nix package/dev shell; packaged macOS/Windows binaries require an ffmpeg installation on `PATH` until native AVFoundation/Media Foundation backends land (`bd-ad42e8`)
 - Linux display server discovery probes `XDG_RUNTIME_DIR/wayland-*` and `/tmp/.X11-unix/X*` when `WAYLAND_DISPLAY`/`DISPLAY` are not already exported, so SSH and non-login shells can still identify the active local display server before compositor-specific discovery starts.
 - Wayland compositor utilities (`hyprctl`, `swaymsg`, `wlr-randr`) when Tendril
   is explicitly operating against those compositor families

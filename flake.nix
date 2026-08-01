@@ -152,6 +152,8 @@
         );
 
         linuxRuntimeCommands = lib.optionals pkgs.stdenv.isLinux [
+          # Cross-platform camera capture (V4L2 on Linux)
+          { package = pkgs.ffmpeg; exe = "ffmpeg"; }
           # Wayland compositor discovery
           { package = pkgs.hyprland; exe = "hyprctl"; }
           { package = pkgs.sway; exe = "swaymsg"; }
@@ -338,6 +340,7 @@
             clippy
             coreutils
             direnv
+            ffmpeg
             gnutar
             mdbook
             nixpkgs-fmt

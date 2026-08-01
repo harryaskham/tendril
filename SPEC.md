@@ -180,8 +180,8 @@ The repo must include `.cacophony/config.yaml` with:
 Provide a command that enumerates valid automation and capture targets.
 
 #### Required behavior
-- List windows and displays in v0.0.1.
-- Include target IDs, human-readable names/titles where available, bounds, scale information, and target type.
+- List windows, displays, and video capture devices (cameras).
+- Include target IDs, human-readable names/titles where available, bounds/scale information for spatial targets, and target/device type.
 - Mark whether a target supports capture, input, or both.
 - Support `--json` output with a stable schema.
 
@@ -190,19 +190,20 @@ Provide a command that enumerates valid automation and capture targets.
 - On systems with multiple displays or windows, the result distinguishes them unambiguously.
 - If platform permissions are missing, output is a structured permission/capability error rather than an opaque failure.
 
-### Feature 2: Window/display screenshot capture
+### Feature 2: Window/display screenshot and camera-frame capture
 
-Provide a command to capture screenshots for windows and displays.
+Provide a command to capture screenshots for windows/displays or one still frame from a camera.
 
 #### Required behavior
-- Capture by `--window <id>` or `--display <id>`.
+- Capture by `--window <id>`, `--display <id>`, or `--camera <id>` with exactly one selector.
+- Support camera capture on macOS (AVFoundation), Linux (V4L2), and Windows (DirectShow), with structured backend/permission diagnostics.
 - Support `--max-width`, `--max-height`, `--format`, `--compression`.
-- Return metadata needed for coordinate remapping after resize.
+- Return metadata needed for coordinate remapping after resize on spatial window/display captures; camera frames report output dimensions without action coordinates.
 - Support machine-readable responses under `--json`.
 
 #### Acceptance criteria
-- Captures succeed for both a display target and a window target on supported platforms.
-- When resize flags are applied, the response includes original dimensions, output dimensions, and scale mapping values.
+- Captures succeed for display, window, and camera targets on supported platforms.
+- When resize flags are applied to a window/display, the response includes original dimensions, output dimensions, and scale mapping values; camera responses include the processed frame dimensions.
 - Invalid combinations of target flags are rejected with structured validation errors.
 - The same command model is invocable through MCP stdio.
 

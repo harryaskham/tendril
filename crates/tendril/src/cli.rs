@@ -33,9 +33,9 @@ pub struct TendrilCli {
 
     /// Scope `capture` to a camera / video capture device.
     ///
-    /// Pass an id from `tendril list` (the camera's name). Mutually exclusive
-    /// with `--window`/`--display`. macOS captures one frame via ffmpeg's
-    /// `AVFoundation` backend; other platforms are not yet supported.
+    /// Pass an id from `tendril list`. Mutually exclusive with
+    /// `--window`/`--display`. Captures one frame through ffmpeg using
+    /// `AVFoundation` (macOS), V4L2 (Linux), or `DirectShow` (Windows).
     #[arg(long, global = true)]
     pub camera: Option<String>,
 
@@ -73,7 +73,7 @@ impl TendrilCli {
     #[must_use]
     pub fn agent_help() -> String {
         format!(
-            "Tendril is a stateless desktop inspection and control CLI for agents.\n\nWorkflow:\n  1. list targets:    tendril list --json\n  2. remote targets:  tendril --remote me@box list --json\n  3. WSL host:        tendril --wsl-tunnel list --json\n  4. Android device:  tendril --android sgu24:5555 list --json\n  5. list elements:   tendril --window <id> list-elements --json\n  6. capture state:   tendril --window <id> capture --json\n  7. save to file:    tendril --window <id> capture -o /tmp/screen.png\n  8. run input:       tendril --window <id> run 'send(\"hello\")'\n  9. click element:   tendril --window <id> run 'click(33)'\n  10. read clipboard: tendril clipboard get --json\n  11. reuse a target: eval \"$(tendril --window <id> alias --name desk)\"\n\nCommands:\n  list           Discover windows, displays, and Android devices\n  list-elements  Discover UI elements for a window/display or Android device\n  capture        Capture a screenshot from a window/display/Android target\n  run            Type text or execute an input sequence against a target\n  clipboard      Read or serve Linux/X11 text selections for deterministic browser↔OS transfer\n  alias          Emit a shell helper that pre-fills --window/--display\n  listen         Probe supported audio capture paths\n  update         Download and install a Tendril release binary\n  version        Inspect or bump the workspace release version\n  mcp            Serve Tendril over MCP stdio\n\nUse --json for machine-readable success/error envelopes.\nUse --remote user@host to proxy any invocation over ssh; Linux remotes auto-discover X11/Wayland session variables when SSH did not inherit them.\nUse -o/--output on capture to save the image directly to a file.\nUse --help on any subcommand for detailed flags.\n\n{WORKFLOW_HINT}\n"
+            "Tendril is a stateless desktop inspection and control CLI for agents.\n\nWorkflow:\n  1. list targets:    tendril list --json\n  2. remote targets:  tendril --remote me@box list --json\n  3. WSL host:        tendril --wsl-tunnel list --json\n  4. Android device:  tendril --android sgu24:5555 list --json\n  5. list elements:   tendril --window <id> list-elements --json\n  6. capture state:   tendril --window <id> capture --json\n  7. capture camera:  tendril --camera <id> capture -o /tmp/camera.png\n  8. save to file:    tendril --window <id> capture -o /tmp/screen.png\n  9. run input:       tendril --window <id> run 'send(\"hello\")'\n  10. click element:  tendril --window <id> run 'click(33)'\n  11. read clipboard: tendril clipboard get --json\n  12. reuse a target: eval \"$(tendril --window <id> alias --name desk)\"\n\nCommands:\n  list           Discover windows, displays, cameras, and Android devices\n  list-elements  Discover UI elements for a window/display or Android device\n  capture        Capture a screenshot or one camera frame\n  run            Type text or execute an input sequence against a target\n  clipboard      Read or serve Linux/X11 text selections for deterministic browser↔OS transfer\n  alias          Emit a shell helper that pre-fills --window/--display\n  listen         Probe supported audio capture paths\n  update         Download and install a Tendril release binary\n  version        Inspect or bump the workspace release version\n  mcp            Serve Tendril over MCP stdio\n\nUse --json for machine-readable success/error envelopes.\nUse --remote user@host to proxy any invocation over ssh; Linux remotes auto-discover X11/Wayland session variables when SSH did not inherit them.\nUse -o/--output on capture to save the image directly to a file.\nUse --help on any subcommand for detailed flags.\n\n{WORKFLOW_HINT}\n"
         )
     }
 }
@@ -81,12 +81,12 @@ impl TendrilCli {
 /// Top-level commands scaffolded for future feature work.
 #[derive(Debug, Clone, Subcommand)]
 pub enum Command {
-    /// Discover windows, displays, and other future targets.
+    /// Discover windows, displays, cameras, and other targets.
     List(ListCommand),
     /// List lower-level UI elements for a window/display or globally.
     #[command(name = "list-elements")]
     ListElements(ElementListCommand),
-    /// Capture a screenshot from a window or display target.
+    /// Capture a screenshot from a window/display or one camera frame.
     Capture(CaptureCommand),
     /// Execute input against a target.
     Run(RunCommand),
@@ -104,7 +104,7 @@ pub enum Command {
     Permissions(PermissionsCommand),
     /// Expose the CLI surface over MCP stdio.
     ///
-    /// Note: the global --window, --display, and --json flags are inherited
+    /// Note: the global --window, --display, --camera, and --json flags are inherited
     /// from the top-level CLI but DO NOT apply to the MCP server. MCP tool
     /// calls carry their own `target` and option arguments in each request
     /// payload. Passing those flags to `tendril mcp ...` is rejected with a
@@ -373,7 +373,7 @@ pub enum VersionBumpLevel {
 
 #[derive(Debug, Clone, Args)]
 #[command(long_about = "Expose the Tendril CLI surface over MCP.\n\n\
-Note: the global --window, --display, and --json flags are inherited from the\n\
+Note: the global --window, --display, --camera, and --json flags are inherited from the\n\
 top-level CLI but DO NOT apply to the MCP server. MCP tool calls carry their\n\
 own `target` and option arguments in each request payload. Passing those\n\
 flags to `tendril mcp ...` will be rejected with an error to avoid silently\n\
@@ -388,9 +388,9 @@ pub enum McpSubcommand {
     /// Serve MCP tools over stdio.
     ///
     /// The server reads JSON-RPC requests from stdin and writes responses to
-    /// stdout. Target scoping (window/display) and JSON envelope formatting
+    /// stdout. Target scoping (window/display/camera) and JSON envelope formatting
     /// are controlled per-call via the MCP tool arguments, not via top-level
-    /// CLI flags. Passing --window, --display, or --json alongside this
+    /// CLI flags. Passing --window, --display, --camera, or --json alongside this
     /// subcommand is rejected.
     Stdio,
 }
