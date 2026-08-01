@@ -2176,7 +2176,7 @@ dependencies = [
 
 [[package]]
 name = "tendril"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "anyhow",
  "ashpd",
@@ -2204,7 +2204,7 @@ dependencies = [
 
 [[package]]
 name = "tendril-win32"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "image",
  "windows-sys 0.61.2",

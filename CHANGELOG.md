@@ -7,6 +7,17 @@ Tendril follows [Semantic Versioning](https://semver.org/). Release notes are cu
 
 ## [Unreleased]
 
+## [0.0.4] - 2026-08-01
+
+### Added
+- Cross-platform camera discovery and still-frame capture through AVFoundation on macOS, V4L2 on Linux, and DirectShow on Windows. macOS explicitly negotiates 30 fps (with an advertised-rate retry), fixing Logitech C930e capture failures caused by ffmpeg's 29.97 fps default (bd-ad42e8).
+- Repository-root `cargo install --path .` support; the root manifest is now the Tendril package as well as the workspace manifest (bd-8b07a5).
+
+### Fixed
+- `tendril version` now prints the running binary version and no longer exposes the repository-mutating `version bump` development tool (bd-8b07a5).
+- `tendril update` now delegates status, release checks, checksum verification, staging, and promotion directly to `updatable-cli` instead of maintaining a second installer implementation (bd-8b07a5).
+- Tag releases now package raw Cargo binaries from the Nix dev shell on self-hosted x86_64-linux, aarch64-linux, and aarch64-darwin runners. The release path refuses Darwin binaries with Nix-store linkage and no longer ships the non-portable `.tendril-wrapped` Nix wrapper (bd-8b07a5).
+
 ## [0.0.3] - 2026-05-17
 
 ### Fixed

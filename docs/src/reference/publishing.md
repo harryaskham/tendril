@@ -1,54 +1,59 @@
 # Docs publishing and release flow
 
-This repository publishes documentation as a static GitHub Pages site built from the checked-in `docs/` source tree.
+Tendril publishes documentation as a static GitHub Pages site and publishes raw Cargo binaries for the shared `updatable-cli` updater.
 
-## Source and output paths
+## Documentation
 
 | Path | Purpose |
 | --- | --- |
 | `docs/book.toml` | mdBook configuration |
 | `docs/src/` | Human-authored guide and reference content |
-| `docs/theme/nord.css` | Dark-only Nord theme overrides |
 | `scripts/build-docs.sh` | Shared local/CI site assembly entry point |
-| `target/book/` | Final Pages artifact uploaded by CI |
-| `target/book/api/` | Generated rustdoc copied into the published site |
-| `.github/workflows/pages.yaml` | Tag-triggered Pages deployment workflow |
+| `target/book/` | Final Pages artifact |
+| `.github/workflows/pages.yaml` | Tag-triggered Pages deployment |
 
-## Build process
+`mdbook build docs` renders the guide, while `cargo doc --workspace --no-deps` generates API docs copied into `target/book/api/`.
 
-The Pages artifact is assembled in two steps:
+## Tag-only binary releases
 
-1. `mdbook build docs` renders the guide and reference site into `target/book/`.
-2. `cargo doc --workspace --no-deps` generates Rust API docs, which are then copied into `target/book/api/`.
+`.github/workflows/tag-release.yml` runs only for stable `vX.Y.Z` tag pushes. It first verifies that the tag exactly matches `[workspace.package].version` in `Cargo.toml`, then uses self-hosted runners for:
 
-That produces one static site containing both narrative docs and generated Rust API docs.
+- `x86_64-linux`
+- `aarch64-linux`
+- `aarch64-darwin`
 
-## Deployment policy
+Every target builds the raw binary with:
 
-The workflow is intentionally aligned with the repository's tag-oriented release policy:
+```bash
+nix develop --command cargo build --release --locked -p tendril --bin tendril
+```
 
-- GitHub Actions runs on version tags such as `v0.0.1`
-- the release version source of truth is `[workspace.package].version` in `Cargo.toml`
-- Linux and macOS builds run inside the Nix development environment; Windows builds run natively on a hosted Windows runner
-- `nix build .#releaseArtifact` produces the canonical Unix binary release archive, checksum, and manifest for the current Nix system
-- the resulting `target/book/` directory is uploaded to GitHub Pages
+The workflow deliberately does **not** copy `nix build .#tendril` into release archives. The Nix package is wrapped for runtime dependencies and stores its real executable as `.tendril-wrapped`; that wrapper is valid in the Nix store but is not a portable `$HOME/.local/bin` update.
 
-This keeps published docs tied to release snapshots instead of publishing every branch push.
+On Darwin, release staging rewrites the Nix-provided libiconv reference to the ABI-compatible system `/usr/lib/libiconv.2.dylib` and refuses publication if any `/nix/store` linkage remains.
 
-## Release artifacts
+## Updatable-cli asset contract
 
-Binary release assets use the canonical naming pattern
-`tendril-<semver>-<system>.tar.gz` with a matching `.sha256` file. Unix systems
-use Nix system suffixes such as `x86_64-linux` and `aarch64-darwin`; Windows
-uses `x86_64-windows` and contains `tendril.exe` so `--wsl-tunnel` can bootstrap
-the Windows host at runtime. The current tag workflow also publishes
-`tendril-<semver>-source.tar.gz` and a `release-manifest.json` file that records
-the version, tag, system, and artifact list.
+Each self-hosted build publishes the exact `AssetStrategy::TendrilStyle` pair:
+
+```text
+tendril-<semver>-<target>.tar.gz
+tendril-<semver>-<target>.sha256
+```
+
+The tarball contains:
+
+```text
+tendril-<semver>-<target>/tendril
+```
+
+Before upload, CI extracts that archive and runs `tendril version`, `tendril --version`, and `tendril update status` against the packaged executable. The release remains a draft until all three target archive/checksum pairs exist.
 
 ## Local preview
 
 ```bash
 nix develop --command ./scripts/build-docs.sh
+./scripts/stage-release-artifacts.sh v0.0.4
 ```
 
-Then open `target/book/index.html`.
+The local staging script uses the same raw-Cargo archive layout and portability checks as CI.

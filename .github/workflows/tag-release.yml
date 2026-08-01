@@ -1,15 +1,15 @@
 name: tag-release
 
+# Release assets are intentionally built from raw Cargo binaries inside the
+# repository dev shell. Do not package `nix build .#tendril` here: that output
+# is wrapped for Nix runtime dependencies (`.tendril-wrapped`) and is not a
+# portable self-update payload. The archive layout below is the exact
+# updatable-cli AssetStrategy::TendrilStyle contract.
+
 on:
   push:
-    branches:
-      - main
-    paths:
-      - Cargo.toml
-      - Cargo.lock
-      - crates/mcp-cli/Cargo.toml
     tags:
-      - "v*"
+      - "v*.*.*"
 
 permissions:
   contents: write
@@ -19,253 +19,195 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  verify:
-    name: Verify tagged or version-bump release
+  resolve:
+    name: Resolve release context
     runs-on: [self-hosted, nix, x86_64-linux]
-    timeout-minutes: 60
+    timeout-minutes: 10
     outputs:
-      should_release: ${{ steps.release-context.outputs.should_release }}
-      release_tag: ${{ steps.release-context.outputs.release_tag }}
-      release_version: ${{ steps.release-context.outputs.release_version }}
-
+      tag: ${{ steps.context.outputs.tag }}
+      version: ${{ steps.context.outputs.version }}
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Remove stale local build artifacts
-        run: rm -rf target dist
-
-      - name: Resolve release context
-        id: release-context
+      - id: context
+        name: Verify tag matches Cargo version
         shell: bash
         run: |
           set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::release tag $tag is not a stable semver tag like v0.0.4" >&2
+            exit 1
+          fi
+          version="${tag#v}"
+          manifest_version="$(sed -n '/^\[workspace.package\]/,/^\[/{ s/^version = "\([^"]*\)"$/\1/p; }' Cargo.toml | head -n 1)"
+          if [[ "$version" != "$manifest_version" ]]; then
+            echo "::error::tag $tag does not match Cargo workspace version $manifest_version" >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
-          current_version="$(./scripts/release-lib.sh version)"
-          current_tag="v${current_version}"
-          should_release=false
+  test:
+    name: Test release source
+    needs: resolve
+    runs-on: [self-hosted, nix, x86_64-linux]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.tag }}
+          submodules: recursive
+      - name: Run workspace tests inside the dev shell
+        shell: bash
+        run: nix develop --command cargo test --workspace --all-features --locked
+      - name: Verify cargo install from repository root
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/tendril-cargo-install"
+          rm -rf "$root"
+          nix develop --command cargo install --locked --path . --root "$root"
+          "$root/bin/tendril" version | grep -Fx "tendril ${{ needs.resolve.outputs.version }}"
 
-          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            ./scripts/release-lib.sh tag | grep -Fx "${GITHUB_REF_NAME}"
-            current_tag="${GITHUB_REF_NAME}"
-            should_release=true
-          else
-            previous_version=""
-            if [[ -n "${{ github.event.before }}" ]] && git cat-file -e "${{ github.event.before }}:Cargo.toml" 2>/dev/null; then
-              previous_version="$({ git show "${{ github.event.before }}:Cargo.toml" || true; } | sed -n '/^\[workspace.package\]/,/^\[/{ s/^version = "\([^"]*\)"$/\1/p; }' | head -n 1)"
-            fi
-
-            if [[ -z "${previous_version}" || "${previous_version}" != "${current_version}" ]]; then
-              if git rev-parse -q --verify "refs/tags/${current_tag}" >/dev/null; then
-                echo "Workspace version changed to ${current_version}, but ${current_tag} already exists; skipping duplicate release."
-              else
-                should_release=true
-              fi
-            else
-              echo "Cargo metadata changed without a workspace version bump (${current_version}); skipping release."
-            fi
+  prepare-release:
+    name: Prepare draft release
+    needs: [resolve, test]
+    runs-on: [self-hosted, nix, x86_64-linux]
+    timeout-minutes: 10
+    steps:
+      - name: Create draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${{ needs.resolve.outputs.tag }}"
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --draft \
+              --title "$tag" \
+              --generate-notes
           fi
 
-          {
-            echo "should_release=${should_release}"
-            echo "release_tag=${current_tag}"
-            echo "release_version=${current_version}"
-          } >> "${GITHUB_OUTPUT}"
-
-      - name: Verify Nix is available on the self-hosted runner
-        if: steps.release-context.outputs.should_release == 'true'
-        run: nix --version
-
-      - name: Run local pre-merge validation gate
-        if: steps.release-context.outputs.should_release == 'true'
-        run: ./scripts/pre-merge.sh
-
-  build-linux:
-    name: Build linux release artifacts
-    runs-on: [self-hosted, nix, x86_64-linux]
-    timeout-minutes: 30
-    needs: verify
-    if: needs.verify.outputs.should_release == 'true'
+  build:
+    name: Build ${{ matrix.target }}
+    needs: [resolve, prepare-release]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-linux
+            runner: [self-hosted, nix, x86_64-linux]
+          - target: aarch64-linux
+            runner: [self-hosted, linux, aarch64]
+          - target: aarch64-darwin
+            runner: [self-hosted, macos, aarch64]
 
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          ref: ${{ needs.resolve.outputs.tag }}
+          submodules: recursive
 
-      - name: Remove stale local build artifacts
-        run: rm -rf target dist
-
-      - name: Verify Nix is available on the self-hosted runner
-        run: nix --version
-
-      - name: Build linux release artifacts
-        run: ./scripts/release-artifacts.sh "${{ needs.verify.outputs.release_tag }}"
-
-      - name: Upload linux release artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-artifacts-linux
-          path: |
-            dist/*.tar.gz
-            dist/*.sha256
-          if-no-files-found: error
-
-  build-macos:
-    name: Build macOS release artifacts
-    runs-on: [self-hosted, macos]
-    timeout-minutes: 30
-    needs: verify
-    if: needs.verify.outputs.should_release == 'true'
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Remove stale local build artifacts
-        run: rm -rf target dist
-
-      - name: Verify Nix is available on the self-hosted runner
-        run: nix --version
-
-      - name: Build macOS release artifacts
+      - name: Verify native target and Nix dev shell
+        shell: bash
         env:
-          TENDRIL_RELEASE_DIST: ${{ github.workspace }}/dist/macos
-        run: ./scripts/stage-release-artifacts.sh "${{ needs.verify.outputs.release_tag }}"
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          actual="$(./scripts/release-lib.sh target)"
+          [[ "$actual" == "$TARGET" ]]
+          nix develop --command cargo --version
 
-      - name: Smoke packaged Tendril list flow on macOS
+      - name: Build raw portable Tendril binary with Cargo
+        shell: bash
         env:
-          TENDRIL_RELEASE_DIST: ${{ github.workspace }}/dist/macos
-        run: ./scripts/macos-packaged-smoke.sh "${{ needs.verify.outputs.release_tag }}"
-
-      - name: Upload macOS release artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-artifacts-macos
-          path: |
-            dist/macos/*.tar.gz
-            dist/macos/*.sha256
-          if-no-files-found: error
-
-  build-windows:
-    name: Build Windows release artifacts
-    runs-on: windows-latest
-    timeout-minutes: 30
-    needs: verify
-    if: needs.verify.outputs.should_release == 'true'
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Remove stale local build artifacts
-        shell: pwsh
-        run: Remove-Item -Recurse -Force target, dist -ErrorAction SilentlyContinue
-
-      - name: Verify Rust is available on the hosted runner
-        shell: pwsh
+          TARGET: ${{ matrix.target }}
         run: |
-          rustup show
-          cargo --version
+          set -euo pipefail
+          rm -rf target/release
+          nix develop --command cargo build --release --locked -p tendril --bin tendril
 
-      - name: Build Windows Tendril binary
-        shell: pwsh
-        run: cargo build --release -p tendril
+          if [[ "$TARGET" == *-darwin ]]; then
+            bin="target/release/tendril"
+            while IFS= read -r ref; do
+              [[ -n "$ref" ]] && install_name_tool -change "$ref" /usr/lib/libiconv.2.dylib "$bin"
+            done < <(otool -L "$bin" | grep -oE '/nix/store/[^ ]*libiconv[^ ]*\.dylib' || true)
+            remaining="$(otool -L "$bin" | grep /nix/store || true)"
+            if [[ -n "$remaining" ]]; then
+              echo "::error::Darwin release binary still references the Nix store:" >&2
+              echo "$remaining" >&2
+              exit 1
+            fi
+            otool -L "$bin"
+          fi
 
-      - name: Stage Windows release artifact
-        shell: pwsh
+      - name: Package updatable-cli TendrilStyle assets
+        shell: bash
         run: |
-          $version = "${{ needs.verify.outputs.release_version }}"
-          $target = "x86_64-windows"
-          $root = "tendril-$version-$target"
-          New-Item -ItemType Directory -Force -Path "stage/$root", "dist/windows" | Out-Null
-          Copy-Item "target/release/tendril.exe" "stage/$root/tendril.exe"
-          tar -czf "dist/windows/$root.tar.gz" -C stage $root
-          $hash = (Get-FileHash -Algorithm SHA256 "dist/windows/$root.tar.gz").Hash.ToLowerInvariant()
-          "$hash  $root.tar.gz" | Set-Content -NoNewline "dist/windows/$root.sha256"
+          set -euo pipefail
+          version="${{ needs.resolve.outputs.version }}"
+          target="${{ matrix.target }}"
+          root="tendril-$version-$target"
+          rm -rf dist "$root"
+          mkdir -p dist "$root"
+          cp target/release/tendril "$root/tendril"
+          chmod +x "$root/tendril"
+          tar -czf "dist/$root.tar.gz" "$root"
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "dist/$root.tar.gz" | awk '{print $1}' > "dist/$root.sha256"
+          else
+            shasum -a 256 "dist/$root.tar.gz" | awk '{print $1}' > "dist/$root.sha256"
+          fi
 
-      - name: Smoke packaged Tendril version flow on Windows
-        shell: pwsh
+      - name: Smoke exact packaged binary and updater wiring
+        shell: bash
         run: |
-          $version = "${{ needs.verify.outputs.release_version }}"
-          $target = "x86_64-windows"
-          $root = "tendril-$version-$target"
-          New-Item -ItemType Directory -Force -Path smoke | Out-Null
-          tar -xzf "dist/windows/$root.tar.gz" -C smoke
-          & "smoke/$root/tendril.exe" --version
+          set -euo pipefail
+          version="${{ needs.resolve.outputs.version }}"
+          target="${{ matrix.target }}"
+          root="tendril-$version-$target"
+          rm -rf smoke
+          mkdir -p smoke
+          tar -xzf "dist/$root.tar.gz" -C smoke
+          "smoke/$root/tendril" version | grep -Fx "tendril $version"
+          "smoke/$root/tendril" --version | grep -F "$version"
+          "smoke/$root/tendril" update status
 
-      - name: Upload Windows release artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-artifacts-windows
-          path: |
-            dist/windows/*.tar.gz
-            dist/windows/*.sha256
-          if-no-files-found: error
+      - name: Upload target assets to draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ needs.resolve.outputs.tag }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            dist/* \
+            --clobber
 
   publish:
-    name: Publish GitHub release
+    name: Publish release
+    needs: [resolve, build]
     runs-on: [self-hosted, nix, x86_64-linux]
-    timeout-minutes: 30
-    needs:
-      - verify
-      - build-linux
-      - build-macos
-      - build-windows
-    if: needs.verify.outputs.should_release == 'true'
-
+    timeout-minutes: 15
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Remove stale local build artifacts
-        run: rm -rf target dist
-
-      - name: Download linux release artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: release-artifacts-linux
-          path: dist
-
-      - name: Download macOS release artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: release-artifacts-macos
-          path: dist
-
-      - name: Download Windows release artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: release-artifacts-windows
-          path: dist
-
-      - name: Flatten downloaded artifact directories
+      - name: Verify complete updatable-cli asset set and publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          find dist -mindepth 2 -type f \( -name '*.tar.gz' -o -name '*.sha256' \) -exec cp {} dist/ \;
-
-      - name: Extract release notes from changelog
-        run: ./scripts/release-notes.sh "${{ needs.verify.outputs.release_tag }}" > dist/release-notes.md
-
-      - name: Write combined release manifest
-        run: nix develop --command ./scripts/write-release-manifest.py "${{ needs.verify.outputs.release_tag }}" dist > dist/release-manifest.json
-
-      - name: Publish GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.verify.outputs.release_tag }}
-          target_commitish: ${{ github.sha }}
-          body_path: dist/release-notes.md
-          files: |
-            dist/*.tar.gz
-            dist/*.sha256
-            dist/release-manifest.json
-          fail_on_unmatched_files: true
-          prerelease: ${{ contains(needs.verify.outputs.release_tag, '-') }}
+          set -euo pipefail
+          tag="${{ needs.resolve.outputs.tag }}"
+          version="${{ needs.resolve.outputs.version }}"
+          assets="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+          for target in x86_64-linux aarch64-linux aarch64-darwin; do
+            grep -Fxq "tendril-$version-$target.tar.gz" <<<"$assets"
+            grep -Fxq "tendril-$version-$target.sha256" <<<"$assets"
+          done
+          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false --latest

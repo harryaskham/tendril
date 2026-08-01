@@ -32,8 +32,8 @@ The repository currently exposes these user-facing entry points:
 | `tendril list-elements` | Implemented in CLI and MCP across macOS, Linux, and Windows |
 | `tendril listen` | Captures WAV on supported Linux/macOS backends; probe-only fallback elsewhere |
 | `tendril alias` | Implemented as a shell-helper CLI command |
-| `tendril update` | Installs released binaries with checksum verification |
-| `tendril version bump` | Bumps SemVer metadata and creates release commits |
+| `tendril update` | Uses shared `updatable-cli` release discovery, checksum verification, staging, and promotion |
+| `tendril version` | Prints the running binary version without mutating source |
 | `--remote user@host` | SSH proxy mode for remote desktops |
 | `--wsl-tunnel` | WSL/Linux proxy mode for Windows-host `tendril.exe` |
 | `tendril mcp stdio` | Implements the typed list/capture/run/list-elements/listen tool set |

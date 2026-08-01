@@ -9,7 +9,7 @@ This smoke path is specifically intended to catch the historical packaged-binary
 - Linux host
 - active local X11 session
 - `DISPLAY` set
-- packaged Tendril artifact available locally, or the ability to build/stage it with Nix
+- packaged Tendril artifact available locally, or the ability to build it with Cargo inside the Nix dev shell
 
 The script below refuses to run on Wayland because it is intended to validate the generic X11 backend only.
 
@@ -23,7 +23,7 @@ From the repository root:
 
 The script:
 
-1. stages `.#releaseArtifact` when needed,
+1. stages a raw Cargo binary with `scripts/stage-release-artifacts.sh` when needed,
 2. extracts the packaged `tendril` binary,
 3. runs `tendril --json list` inside the active X11 session,
 4. verifies the output stays structured and stateless,
@@ -33,7 +33,7 @@ The script:
 A successful run ends with output like:
 
 ```text
-Verified packaged Linux/X11 tendril list+capture smoke coverage via .../tendril-0.0.1-x86_64-linux.tar.gz
+Verified packaged Linux/X11 tendril list+capture smoke coverage via .../tendril-0.0.4-x86_64-linux.tar.gz
 ```
 
 ## Optional packaged `run` smoke
