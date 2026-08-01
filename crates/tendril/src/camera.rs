@@ -13,6 +13,7 @@ use crate::error::TendrilError;
 use crate::model::CameraDescriptor;
 
 const FFMPEG_BIN: &str = "ffmpeg";
+#[cfg(target_os = "macos")]
 const AVFOUNDATION_DEFAULT_FRAMERATE: &str = "30";
 
 /// Parse the JSON emitted by `system_profiler SPCameraDataType -json` into the
@@ -350,7 +351,9 @@ fn capture_camera_frame_impl(device: &str) -> Result<Vec<u8>, TendrilError> {
         dshow_capture_args(&resolved_device, &output_path),
     );
 
-    let mut completed = run_ffmpeg(&args, backend, device)?;
+    let completed = run_ffmpeg(&args, backend, device)?;
+    #[cfg(target_os = "macos")]
+    let mut completed = completed;
 
     // A minority of AVFoundation devices do not offer 30 fps. ffmpeg prints
     // their supported modes with the failure, so retry once at the first

@@ -10,6 +10,12 @@ on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing vX.Y.Z tag to build/publish with the current workflow"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -34,9 +40,14 @@ jobs:
       - id: context
         name: Verify tag matches Cargo version
         shell: bash
+        env:
+          INPUT_TAG: ${{ inputs.tag || '' }}
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            tag="$INPUT_TAG"
+          fi
           if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::release tag $tag is not a stable semver tag like v0.0.4" >&2
             exit 1
@@ -88,7 +99,7 @@ jobs:
           if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release create "$tag" \
               --repo "$GITHUB_REPOSITORY" \
-              --target "$GITHUB_SHA" \
+              --target "$tag" \
               --draft \
               --title "$tag" \
               --generate-notes
@@ -162,10 +173,12 @@ jobs:
           chmod +x "$root/tendril"
           tar -czf "dist/$root.tar.gz" "$root"
           if command -v sha256sum >/dev/null 2>&1; then
-            sha256sum "dist/$root.tar.gz" | awk '{print $1}' > "dist/$root.sha256"
+            hash_line="$(sha256sum "dist/$root.tar.gz")"
           else
-            shasum -a 256 "dist/$root.tar.gz" | awk '{print $1}' > "dist/$root.sha256"
+            hash_line="$(shasum -a 256 "dist/$root.tar.gz")"
           fi
+          hash="${hash_line%% *}"
+          printf '%s\n' "$hash" > "dist/$root.sha256"
 
       - name: Smoke exact packaged binary and updater wiring
         shell: bash
