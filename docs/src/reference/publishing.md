@@ -28,7 +28,7 @@ Native targets build the raw binary with:
 nix develop --command cargo build --release --locked -p tendril --bin tendril
 ```
 
-The aarch64 Linux lane runs Cargo's `aarch64-unknown-linux-gnu` target inside the same dev shell using `rustup` plus Nix's sysroot-aware GNU cross linker. The workflow deliberately does **not** copy `nix build .#tendril` into release archives. The Nix package is wrapped for runtime dependencies and stores its real executable as `.tendril-wrapped`; that wrapper is valid in the Nix store but is not a portable `$HOME/.local/bin` update.
+No native aarch64 Linux Actions runner is registered, so that lane uses stable Cargo's `aarch64-unknown-linux-gnu` target with the GNU cross compiler and target libc headers on a self-hosted ephemeral Linux runner. The workflow deliberately does **not** copy `nix build .#tendril` into release archives. The Nix package is wrapped for runtime dependencies and stores its real executable as `.tendril-wrapped`; that wrapper is valid in the Nix store but is not a portable `$HOME/.local/bin` update.
 
 On Darwin, release staging rewrites the Nix-provided libiconv reference to the ABI-compatible system `/usr/lib/libiconv.2.dylib` and refuses publication if any `/nix/store` linkage remains.
 

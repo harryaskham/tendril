@@ -450,11 +450,12 @@ MCP exposes the equivalent `self_update_status`, `self_update_check`, and
 currently Linux/macOS-only; Windows source installs remain available via Cargo.
 
 Only a `vX.Y.Z` tag push starts the release workflow. Self-hosted
-`x86_64-linux`, `aarch64-linux`, and `aarch64-darwin` runners build raw Cargo
-binaries inside `nix develop`, package the exact `updatable-cli`
-`TendrilStyle` archive layout, smoke the extracted binary, and publish only
-after every archive/checksum pair exists. The workflow deliberately never
-ships the Nix package's non-portable `.tendril-wrapped` executable.
+`x86_64-linux` and `aarch64-darwin` runners build raw Cargo binaries inside
+`nix develop`; a self-hosted ephemeral Linux runner cross-compiles
+`aarch64-linux` with stable Rust and the GNU target libc/toolchain. The workflow
+packages the exact `updatable-cli` `TendrilStyle` layout and publishes only after
+every archive/checksum pair exists. It never ships the Nix package's
+non-portable `.tendril-wrapped` executable.
 
 Useful local release helpers:
 
