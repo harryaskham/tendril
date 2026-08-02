@@ -157,16 +157,19 @@ jobs:
           if [[ -n "$CROSS" ]]; then
             rm -rf "target/$CROSS/release"
             CROSS_CC="$(nix build --no-link --print-out-paths --impure --expr 'let f = builtins.getFlake (toString ./.); pkgs = import f.inputs.nixpkgs { system = "x86_64-linux"; }; in pkgs.pkgsCross.aarch64-multiplatform-musl.stdenv.cc')"
-            RUSTUP="$(nix build --no-link --print-out-paths --impure --expr 'let f = builtins.getFlake (toString ./.); pkgs = import f.inputs.nixpkgs { system = "x86_64-linux"; }; in pkgs.rustup')"
-            export RUSTUP_HOME="$RUNNER_TEMP/tendril-rustup"
+            CROSS_RUSTC="$(nix build --no-link --print-out-paths --impure --expr 'let f = builtins.getFlake (toString ./.); pkgs = import f.inputs.nixpkgs { system = "x86_64-linux"; }; in pkgs.pkgsCross.aarch64-multiplatform-musl.rustPlatform.rust.rustc')"
+            CROSS_CARGO="$(nix build --no-link --print-out-paths --impure --expr 'let f = builtins.getFlake (toString ./.); pkgs = import f.inputs.nixpkgs { system = "x86_64-linux"; }; in pkgs.pkgsCross.aarch64-multiplatform-musl.rustPlatform.rust.cargo')"
             export CARGO_HOME="$RUNNER_TEMP/tendril-cargo-home"
-            "$RUSTUP/bin/rustup" toolchain install stable --profile minimal
-            "$RUSTUP/bin/rustup" target add --toolchain stable aarch64-unknown-linux-musl
             linker="$CROSS_CC/bin/aarch64-unknown-linux-musl-cc"
+            rustc="$CROSS_RUSTC/bin/rustc"
+            cargo="$CROSS_CARGO/bin/cargo"
             test -x "$linker"
+            test -x "$rustc"
+            test -x "$cargo"
+            export RUSTC="$rustc"
             export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER="$linker"
             export CC_aarch64_unknown_linux_musl="$linker"
-            "$RUSTUP/bin/rustup" run stable cargo build --release --locked -p tendril --bin tendril --target aarch64-unknown-linux-musl
+            "$cargo" build --release --locked -p tendril --bin tendril --target aarch64-unknown-linux-musl
           else
             nix develop --command cargo build --release --locked -p tendril --bin tendril
           fi
