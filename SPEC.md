@@ -386,7 +386,7 @@ The strategy will combine:
 - `tendril version` reports the running binary version and must not mutate a source checkout.
 - `tendril update` and MCP self-update tools share the `updatable-cli` implementation and asset contract.
 - GitHub Actions release flow runs on tag pushes only.
-- Self-hosted release jobs build raw Cargo binaries inside the development shell; release archives must not contain Nix wrapper executables or retain `/nix/store` linkage.
+- Self-hosted native release jobs build raw Cargo binaries inside the development shell; a missing native architecture may use a self-hosted cross-build with an explicit Rust target, linker, and target libc. Release archives must not contain Nix wrapper executables or retain `/nix/store` linkage.
 - Releases should produce versioned `x86_64-linux`, `aarch64-linux`, and `aarch64-darwin` artifacts using the `TendrilStyle` archive/checksum layout.
 - Maintain `CHANGELOG.md` using Keep a Changelog format.
 - Version strings must be updated in Rust manifests and any release metadata.

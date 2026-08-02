@@ -152,7 +152,6 @@
 
         linuxRuntimeDeps = lib.unique (map (command: command.package) linuxRuntimeCommands);
         linuxHeadlessDeps = lib.unique (map (command: command.package) linuxHeadlessCommands);
-        aarch64LinuxCrossCc = pkgs.pkgsCross.aarch64-multiplatform.stdenv.cc;
         linuxRuntimeBinPath = linkRuntimeCommands "tendril-linux-runtime-bin-path" linuxRuntimeCommands;
         linuxHeadlessBinPath = linkRuntimeCommands "tendril-linux-headless-bin-path" linuxHeadlessCommands;
         linuxRuntimeDependencyAudit = runtimeCommandAudit "tendril-linux-runtime-dependency-audit" linuxHeadlessCommands;
@@ -255,8 +254,6 @@
           default = tendril;
           tendril = tendril;
           mcp-cli = mcpCli;
-        } // lib.optionalAttrs pkgs.stdenv.isLinux {
-          aarch64-linux-cross-cc = aarch64LinuxCrossCc;
         };
 
         checks = {
@@ -282,14 +279,7 @@
             rust-analyzer
             rustc
             rustfmt
-          ]
-          ++ linuxHeadlessDeps
-          ++ lib.optionals pkgs.stdenv.isLinux [
-            # The aarch64-linux release lane drives Cargo through rustup inside
-            # this shell. Its sysroot-aware linker is exposed separately as
-            # .#aarch64-linux-cross-cc so native shells keep their host CC.
-            pkgs.rustup
-          ];
+          ] ++ linuxHeadlessDeps;
           # Dev-shell environment guards for direct foreground cargo validation.
           #
           # 1. macOS libiconv (bd-c88e56): the Nix apple-sdk does not ship

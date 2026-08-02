@@ -118,7 +118,7 @@ jobs:
             runner: [self-hosted, nix, x86_64-linux]
             cross: ""
           - target: aarch64-linux
-            runner: [self-hosted, nix, x86_64-linux]
+            runner: [self-hosted, azure-ephemeral]
             cross: aarch64-unknown-linux-gnu
           - target: aarch64-darwin
             runner: [self-hosted, nix, aarch64-darwin]
@@ -130,7 +130,31 @@ jobs:
           ref: ${{ needs.resolve.outputs.tag }}
           submodules: recursive
 
-      - name: Verify target and Nix dev shell
+      - name: Move cross-build Cargo home off shared cache
+        if: matrix.cross != ''
+        shell: bash
+        run: |
+          if [[ "${CARGO_HOME:-}" == /mnt/build-cache/* ]]; then
+            echo "CARGO_HOME=$RUNNER_TEMP/tendril-cargo-home" >> "$GITHUB_ENV"
+          fi
+
+      - name: Install stable Rust for aarch64 cross-build
+        if: matrix.cross != ''
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+
+      - name: Install aarch64 GNU cross toolchain and libc headers
+        if: matrix.cross != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          SUDO=""
+          [[ "$(id -u)" -ne 0 ]] && SUDO="sudo"
+          $SUDO apt-get update -qq
+          $SUDO apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+
+      - name: Verify target toolchain
         shell: bash
         env:
           TARGET: ${{ matrix.target }}
@@ -140,10 +164,12 @@ jobs:
           actual="$(./scripts/release-lib.sh target)"
           if [[ -z "$CROSS" ]]; then
             [[ "$actual" == "$TARGET" ]]
+            nix develop --command cargo --version
           else
             [[ "$actual" == "x86_64-linux" ]]
+            cargo --version
+            aarch64-linux-gnu-gcc --version
           fi
-          nix develop --command cargo --version
 
       - name: Build raw portable Tendril binary with Cargo
         shell: bash
@@ -155,19 +181,9 @@ jobs:
           rm -rf target/release
           if [[ -n "$CROSS" ]]; then
             rm -rf "target/$CROSS/release"
-            CROSS_CC="$(nix build --no-link --print-out-paths .#aarch64-linux-cross-cc)"
-            export CROSS_CC
-            # shellcheck disable=SC2016
-            nix develop --command bash -c '
-              set -euo pipefail
-              rustup toolchain install stable --profile minimal
-              rustup target add --toolchain stable aarch64-unknown-linux-gnu
-              linker="$CROSS_CC/bin/aarch64-unknown-linux-gnu-cc"
-              test -x "$linker"
-              export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER="$linker"
-              export CC_aarch64_unknown_linux_gnu="$linker"
-              rustup run stable cargo build --release --locked -p tendril --bin tendril --target aarch64-unknown-linux-gnu
-            '
+            export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+            export CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc
+            cargo build --release --locked -p tendril --bin tendril --target "$CROSS"
           else
             nix develop --command cargo build --release --locked -p tendril --bin tendril
           fi

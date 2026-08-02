@@ -14,16 +14,16 @@ Tendril ships through a tag-only, self-hosted release pipeline whose artifacts m
 The self-hosted matrix builds binaries for:
 
 - `x86_64-linux` natively on `[self-hosted, nix, x86_64-linux]`
-- `aarch64-linux` with Rust/GNU cross tooling on `[self-hosted, nix, x86_64-linux]`
+- `aarch64-linux` with Rust/GNU cross tooling on `[self-hosted, azure-ephemeral]`
 - `aarch64-darwin` natively on `[self-hosted, nix, aarch64-darwin]`
 
-Each job builds inside the repository development shell with Cargo. Native targets use:
+Native jobs build inside the repository development shell with Cargo:
 
 ```bash
 nix develop --command cargo build --release --locked -p tendril --bin tendril
 ```
 
-The aarch64 Linux lane uses the dev shell's `rustup` and Nix sysroot-aware GNU cross linker with Cargo's `aarch64-unknown-linux-gnu` target. This is intentionally different from `nix build .#tendril`: the Nix package wraps the executable to provide runtime dependencies and is not portable outside the Nix store.
+No native aarch64 Linux Actions runner is registered. That lane uses a self-hosted ephemeral Linux runner with the stable Rust `aarch64-unknown-linux-gnu` target plus `gcc-aarch64-linux-gnu` and `libc6-dev-arm64-cross`. Native targets still use the dev shell. Both paths intentionally differ from `nix build .#tendril`: the Nix package wraps the executable to provide runtime dependencies and is not portable outside the Nix store.
 
 ## Canonical assets
 
