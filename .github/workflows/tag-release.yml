@@ -116,10 +116,13 @@ jobs:
         include:
           - target: x86_64-linux
             runner: [self-hosted, nix, x86_64-linux]
+            cross: ""
           - target: aarch64-linux
-            runner: [self-hosted, linux, aarch64]
+            runner: [self-hosted, nix, x86_64-linux]
+            cross: aarch64-unknown-linux-gnu
           - target: aarch64-darwin
-            runner: [self-hosted, macos, aarch64]
+            runner: [self-hosted, nix, aarch64-darwin]
+            cross: ""
 
     steps:
       - uses: actions/checkout@v4
@@ -127,24 +130,47 @@ jobs:
           ref: ${{ needs.resolve.outputs.tag }}
           submodules: recursive
 
-      - name: Verify native target and Nix dev shell
+      - name: Verify target and Nix dev shell
         shell: bash
         env:
           TARGET: ${{ matrix.target }}
+          CROSS: ${{ matrix.cross }}
         run: |
           set -euo pipefail
           actual="$(./scripts/release-lib.sh target)"
-          [[ "$actual" == "$TARGET" ]]
+          if [[ -z "$CROSS" ]]; then
+            [[ "$actual" == "$TARGET" ]]
+          else
+            [[ "$actual" == "x86_64-linux" ]]
+          fi
           nix develop --command cargo --version
 
       - name: Build raw portable Tendril binary with Cargo
         shell: bash
         env:
           TARGET: ${{ matrix.target }}
+          CROSS: ${{ matrix.cross }}
         run: |
           set -euo pipefail
           rm -rf target/release
-          nix develop --command cargo build --release --locked -p tendril --bin tendril
+          if [[ -n "$CROSS" ]]; then
+            rm -rf "target/$CROSS/release"
+            CROSS_CC="$(nix build --no-link --print-out-paths .#aarch64-linux-cross-cc)"
+            export CROSS_CC
+            # shellcheck disable=SC2016
+            nix develop --command bash -c '
+              set -euo pipefail
+              rustup toolchain install stable --profile minimal
+              rustup target add --toolchain stable aarch64-unknown-linux-gnu
+              linker="$CROSS_CC/bin/aarch64-unknown-linux-gnu-cc"
+              test -x "$linker"
+              export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER="$linker"
+              export CC_aarch64_unknown_linux_gnu="$linker"
+              rustup run stable cargo build --release --locked -p tendril --bin tendril --target aarch64-unknown-linux-gnu
+            '
+          else
+            nix develop --command cargo build --release --locked -p tendril --bin tendril
+          fi
 
           if [[ "$TARGET" == *-darwin ]]; then
             bin="target/release/tendril"
@@ -162,14 +188,20 @@ jobs:
 
       - name: Package updatable-cli TendrilStyle assets
         shell: bash
+        env:
+          CROSS: ${{ matrix.cross }}
         run: |
           set -euo pipefail
           version="${{ needs.resolve.outputs.version }}"
           target="${{ matrix.target }}"
           root="tendril-$version-$target"
+          binary="target/release/tendril"
+          if [[ -n "$CROSS" ]]; then
+            binary="target/$CROSS/release/tendril"
+          fi
           rm -rf dist "$root"
           mkdir -p dist "$root"
-          cp target/release/tendril "$root/tendril"
+          cp "$binary" "$root/tendril"
           chmod +x "$root/tendril"
           tar -czf "dist/$root.tar.gz" "$root"
           if command -v sha256sum >/dev/null 2>&1; then
@@ -181,6 +213,7 @@ jobs:
           printf '%s\n' "$hash" > "dist/$root.sha256"
 
       - name: Smoke exact packaged binary and updater wiring
+        if: matrix.cross == ''
         shell: bash
         run: |
           set -euo pipefail
