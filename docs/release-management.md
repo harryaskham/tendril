@@ -23,7 +23,7 @@ Native jobs build inside the repository development shell with Cargo:
 nix develop --command cargo build --release --locked -p tendril --bin tendril
 ```
 
-No native aarch64 Linux Actions runner is registered. That lane runs stable Cargo's `aarch64-unknown-linux-musl` target inside the tag's dev shell with Nixpkgs' sysroot-aware musl cross compiler, producing a static portable binary without changing the immutable tag's flake outputs. Native targets also use the dev shell. Both paths intentionally differ from `nix build .#tendril`: the Nix package wraps the executable to provide runtime dependencies and is not portable outside the Nix store.
+No native aarch64 Linux Actions runner is registered. That lane runs stable Cargo's `aarch64-unknown-linux-musl` target directly with Nixpkgs' sysroot-aware musl cross compiler, producing a static portable binary without entering the heavyweight desktop dev shell or changing the immutable tag's flake outputs. Native targets use the dev shell. Both paths intentionally differ from `nix build .#tendril`: the Nix package wraps the executable to provide runtime dependencies and is not portable outside the Nix store.
 
 ## Canonical assets
 
