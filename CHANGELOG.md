@@ -9,6 +9,7 @@ Tendril follows [Semantic Versioning](https://semver.org/). Release notes are cu
 
 ### Fixed
 - Release checksum staging no longer assumes `awk` is available in the minimal self-hosted runner PATH; shell-only digest extraction keeps tag repair dispatches portable across the release fleet (bd-598fb2).
+- The release matrix now uses the repository's real `aarch64-darwin` runner label and cross-compiles `aarch64-linux` inside the Nix dev shell on a self-hosted x86_64 runner, because no native aarch64 Linux Actions runner is registered (bd-11731d).
 
 ## [0.0.4] - 2026-08-01
 
