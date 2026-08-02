@@ -28,7 +28,7 @@ Native targets build the raw binary with:
 nix develop --command cargo build --release --locked -p tendril --bin tendril
 ```
 
-No native aarch64 Linux Actions runner is registered, so that lane runs stable Cargo's `aarch64-unknown-linux-musl` target inside the tag's dev shell with Nixpkgs' musl cross compiler on a self-hosted x86_64 Nix runner. The resulting static binary remains portable without requiring new flake outputs in the immutable tag. The workflow deliberately does **not** copy `nix build .#tendril` into release archives. The Nix package is wrapped for runtime dependencies and stores its real executable as `.tendril-wrapped`; that wrapper is valid in the Nix store but is not a portable `$HOME/.local/bin` update.
+No native aarch64 Linux Actions runner is registered, so that lane runs stable Cargo's `aarch64-unknown-linux-musl` target directly with Nixpkgs' musl cross compiler on a self-hosted x86_64 Nix runner. Avoiding the heavyweight desktop dev shell prevents camera/browser runtime packages from exhausting the build volume; the resulting static binary remains portable without requiring new flake outputs in the immutable tag. The workflow deliberately does **not** copy `nix build .#tendril` into release archives. The Nix package is wrapped for runtime dependencies and stores its real executable as `.tendril-wrapped`; that wrapper is valid in the Nix store but is not a portable `$HOME/.local/bin` update.
 
 On Darwin, release staging rewrites the Nix-provided libiconv reference to the ABI-compatible system `/usr/lib/libiconv.2.dylib` and refuses publication if any `/nix/store` linkage remains.
 

@@ -452,7 +452,8 @@ currently Linux/macOS-only; Windows source installs remain available via Cargo.
 Only a `vX.Y.Z` tag push starts the release workflow. Self-hosted
 `x86_64-linux` and `aarch64-darwin` runners build raw Cargo binaries inside
 `nix develop`; a self-hosted x86_64 Nix runner cross-compiles a static
-`aarch64-linux` musl binary inside the tag's dev shell. The workflow
+`aarch64-linux` musl binary with stable Cargo plus Nixpkgs' cross compiler,
+without entering the heavyweight desktop dev shell. The workflow
 packages the exact `updatable-cli` `TendrilStyle` layout and publishes only after
 every archive/checksum pair exists. It never ships the Nix package's
 non-portable `.tendril-wrapped` executable.
