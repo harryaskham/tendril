@@ -1,53 +1,28 @@
 name: pages
 
+# Shared self-hosted publisher (harryaskham.github.io publish-pages.yml):
+# mdBook guide + workspace rustdoc → a.skh.am/tendril/. Guide changes on main
+# deploy immediately; release tags refresh the API docs.
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
+    tags: ['v*']
+    paths:
+      - docs/**
+      - scripts/build-docs.sh
+      - .github/workflows/pages.yaml
+  workflow_dispatch:
 
 permissions:
   contents: read
   pages: write
   id-token: write
 
-concurrency:
-  group: github-pages
-  cancel-in-progress: true
-
 jobs:
-  build:
-    name: Build docs site
-    runs-on: [self-hosted, nix, x86_64-linux]
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Remove stale local build artifacts
-        run: rm -rf target
-
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
-
-      - name: Build mdBook and rustdoc site
-        run: nix develop --command ./scripts/build-docs.sh
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: target/book
-
-  deploy:
-    name: Deploy docs site
-    needs: build
-    runs-on: [self-hosted, nix, x86_64-linux]
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+  pages:
+    uses: harryaskham/harryaskham.github.io/.github/workflows/publish-pages.yml@main
+    with:
+      path: target/book
+      submodules: recursive
+      timeout-minutes: 60
+      build: nix develop --command ./scripts/build-docs.sh
