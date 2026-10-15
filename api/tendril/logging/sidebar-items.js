@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["LogDestination","LoggingMode"],"fn":["init_logging"],"struct":["LoggingPolicy"]};

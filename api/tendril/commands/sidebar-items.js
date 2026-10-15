@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CommandOutput"],"fn":["dispatch"],"struct":["AliasRequest","CaptureRequest","ClipboardGetRequest","ClipboardSetRequest","ElementListRequest","HelpCommandSummary","HelpExample","HelpOutput","HelpWorkflowStep","ListRequest","ListenExecutionStatus","ListenRequest","ListenResponse","RunRequest","TargetScope"]};

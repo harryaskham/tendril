@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["JSON_SCHEMA_VERSION"],"enum":["ErrorCategory","JsonEnvelope","McpCliError"],"fn":["envelope_from_result","envelope_from_result_ref","write_json_result","write_json_result_ref"],"struct":["EnvelopeMeta","JsonError","McpServer","StdioServerConfig","Tool","ToolMetadata","ToolRouter"],"trait":["StructuredError"]};

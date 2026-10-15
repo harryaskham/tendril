@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["avfoundation_capture_args","capture_camera_frame","dshow_capture_args","enumerate_cameras","enumerate_v4l2_cameras","parse_avfoundation_supported_framerate","parse_dshow_devices","parse_spcamera_json","png_dimensions","v4l2_capture_args"]};

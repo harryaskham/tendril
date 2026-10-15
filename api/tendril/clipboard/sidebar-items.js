@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_CLIPBOARD_SERVE_MS","DEFAULT_CLIPBOARD_TIMEOUT_MS"],"enum":["ClipboardSelection"],"fn":["execute_clipboard_get","execute_clipboard_set","render_clipboard_get_human","render_clipboard_set_human"],"struct":["ClipboardGetInput","ClipboardGetOutput","ClipboardSetInput","ClipboardSetOutput"]};

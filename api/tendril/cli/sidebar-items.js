@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["WORKFLOW_HINT"],"enum":["ClipboardSubcommand","Command","McpSubcommand","UpdateAction"],"struct":["AliasCommand","CaptureCommand","ClipboardCommand","ClipboardGetCommand","ClipboardSetCommand","ElementListCommand","ListCommand","ListenCommand","McpCommand","PermissionsCommand","RunCommand","TendrilCli","UpdateCommand"]};

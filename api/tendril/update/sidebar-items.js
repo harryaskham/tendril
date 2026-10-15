@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["UpdateOutput"],"fn":["execute_update","render_update_human","updater_config"]};

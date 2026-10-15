@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ModifierKey","MouseButton"],"fn":["capture_display_png","capture_window_png","click_mouse","discover_displays","discover_window_elements","discover_windows","drag_mouse","focus_window","hold_modifier","release_modifier","send_text","tap_key"],"struct":["Bounds","DisplayInfo","ElementInfo","WindowInfo"]};

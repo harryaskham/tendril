@@ -1,0 +1,2 @@
+createSrcSidebar('[["mcp_cli",["",[],["lib.rs"]]],["tendril",["",[["commands",[],["mod.rs"]]],["android.rs","camera.rs","capture.rs","cli.rs","clipboard.rs","config.rs","discovery.rs","elements.rs","error.rs","execution_lock.rs","feedback.rs","input.rs","lib.rs","listen.rs","logging.rs","model.rs","platform.rs","remote.rs","update.rs","wayland_input.rs","wsl.rs","x11.rs"]]],["tendril_win32",["",[],["lib.rs"]]]]');
+//{"start":19,"fragment_lengths":[30,327,37]}
