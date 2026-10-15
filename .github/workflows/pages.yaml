@@ -1,6 +1,6 @@
 name: pages
 
-# Shared self-hosted publisher (harryaskham.github.io publish-pages.yml):
+# Shared self-hosted gh-pages publisher (harryaskham.github.io publish-pages.yml):
 # mdBook guide + workspace rustdoc → a.skh.am/tendril/. Guide changes on main
 # deploy immediately; release tags refresh the API docs.
 on:
@@ -14,9 +14,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write # push gh-pages
+  pages: write    # request the Pages build
 
 jobs:
   pages:
