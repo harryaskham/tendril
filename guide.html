@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<!-- shell:head -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guide · discover, capture, act, verify</title>
+<meta name="description" content="The Tendril loop in practice: list targets, capture with coordinate scaling, list semantic elements, drive input with the run language, restore focus, record audio and make shell aliases.">
+<meta name="theme-color" content="#0c0c0d">
+<meta name="color-scheme" content="light">
+<meta property="og:title" content="Guide · discover, capture, act, verify">
+<meta property="og:description" content="The Tendril loop in practice: list targets, capture with coordinate scaling, list semantic elements, drive input with the run language, restore focus, record audio and make shell aliases.">
+<meta property="og:type" content="website">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="assets/fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/fragment-mono.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/site.css">
+<script src="assets/site.js" defer></script>
+<!-- /shell:head -->
+</head>
+<body>
+<!-- shell:top -->
+<a class="skip" href="#main">Skip to content</a>
+<header class="edge"><div class="edge-in">
+  <a class="brand" href="index.html" aria-label="Tendril home"><b>tendril</b><small>0.0.4</small></a>
+  <nav class="nav" aria-label="Pages"><a href="index.html">Overview</a><a href="guide.html" aria-current="page">Guide</a><a href="platforms.html">Platforms</a><a href="agents.html">Agents</a><a href="reference.html">Reference</a><a href="api/tendril/index.html">API</a></nav>
+</div></header>
+<!-- /shell:top -->
+<div class="page">
+<aside class="rail">
+<!-- shell:rail -->
+<nav aria-label="On this page"><p>Frames</p>
+<ol>
+<li><a href="#list">Discover targets</a></li>
+<li><a href="#capture">Capture</a></li>
+<li><a href="#elements">Semantic elements</a></li>
+<li><a href="#run">The run language</a></li>
+<li><a href="#focus">Focus and the shared desktop</a></li>
+<li><a href="#listen">Audio</a></li>
+<li><a href="#alias">Aliases instead of sessions</a></li>
+</ol></nav>
+<!-- /shell:rail -->
+</aside>
+<main id="main">
+<p class="kicker">guide</p>
+<h1>Discover, capture, act, verify</h1>
+<p class="lede">Every Tendril workflow is the same four steps. Each is its own command, with its own JSON envelope, so an agent can stop, think and resume at any point.</p>
+
+<h2 id="list">Discover targets</h2>
+<pre><code><span class="ln"><span class="p">tendril list</span></span><span class="ln"><span class="o">platform: Linux / X11</span></span><span class="ln"><span class="o">permissions: 4</span></span><span class="ln"><span class="o">targets:</span></span><span class="ln"><span class="o">- Display 1 screen 1920x1080+0+0 scale=1/1 capture=true,<wbr> input=true</span></span><span class="ln"><span class="o">- Window 0x600003 Chromium-browser 1918x1053+1+22 scale=1/1 capture=true,<wbr> input=true title="Tendril Smoke Browser" app=Chromium-browser</span></span><span class="ln"><span class="o">- Window 0xe00003 Chromium-browser 797x587+125+94 scale=1/1 capture=true,<wbr> input=true title="Trail log" app=Chromium-browser</span></span><span class="ln"><span class="o">- Window 0x40000c XTerm 604x316+41+102 scale=1/1 capture=true,<wbr> input=true title="Tendril Headless Shell" app=XTerm</span></span></code></pre>
+<p>Targets are windows, displays and cameras. Each has an id, bounds, a scale factor and what it supports: capture, input and, for some, audio. With <code class="nb">--json</code> each target also carries its kind, title, application name and process id. Commands that act on a target take exactly one of <code>--window <var>ID</var></code> or <code>--display <var>ID</var></code>; <code class="nb">capture</code> also accepts <code>--camera <var>ID</var></code>.</p>
+
+<h2 id="capture">Capture</h2>
+<pre><code><span class="ln"><span class="p">tendril --window 0xe00003 capture -o before.png</span></span><span class="ln"><span class="o">capture target: Window 0xe00003</span></span><span class="ln"><span class="o">platform: Linux / X11</span></span><span class="ln"><span class="o">original: 797x587</span></span><span class="ln"><span class="o">output: 512x377</span></span><span class="ln"><span class="o">resized: true</span></span><span class="ln"><span class="o">source_to_output: 512/797 x 377/587</span></span><span class="ln"><span class="o">output_to_source: 797/512 x 587/377</span></span><span class="ln"><span class="o">format: Png</span></span></code></pre>
+<p>By default a capture fits a 512 × 512 box, keeping its aspect ratio, so screenshots do not overwhelm an agent's context. <code class="nb">--max-width</code> and <code class="nb">--max-height</code> raise the bound; capturing a single window rather than a display is usually better than a bigger image. <code class="nb">--format png|jpeg</code> and <code class="nb">--compression 0–100</code> trade size for detail. With <code class="nb">--json</code> the image comes back as base64 in the envelope; with <code class="nb">-o</code> it is written to a file.</p>
+<figure class="fig">
+<div class="fig-scroll">
+<!-- fig:scale -->
+<svg class="f" viewBox="0 0 700 306" width="700" height="306" role="img" aria-labelledby="scale-t scale-d"><title id="scale-t">Capture space and source space</title><desc id="scale-d">On the left, the window&#x27;s source space: 797 by 587 pixels, the space run coordinates use, with the Save button at 72, 354. On the right, the capture an agent sees, scaled down to 512 by 377. The same button appears at about 46, 227 in the capture. The capture reports both ratios: source to output, 512 over 797 by 377 over 587, and output to source, 797 over 512 by 587 over 377. Multiply a point in the capture by output to source to get the coordinates to click.</desc><defs><marker id="scale-a-target" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-target"/></marker><marker id="scale-a-shot" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-shot"/></marker><marker id="scale-a-act" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-act"/></marker><marker id="scale-a-lock" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-lock"/></marker><marker id="scale-a-agent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-agent"/></marker><marker id="scale-a-far" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-far"/></marker><marker id="scale-a-mute" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-mute"/></marker></defs>
+<rect x="0" y="30" width="318" height="234" rx="3" class="b-target"/>
+<text x="10" y="22" class="f-xs">source space · 797 × 587</text>
+<rect x="14" y="160" width="40" height="16" rx="3" class="b-act"/>
+<text x="60" y="173" class="f-m">Save (72, 354)</text>
+<rect x="420" y="70" width="204" height="151" rx="3" class="b-shot"/>
+<text x="420" y="44" class="f-xs">what the agent sees</text>
+<text x="420" y="62" class="f-xs">capture · 512 × 377</text>
+<rect x="429" y="156" width="26" height="10" rx="2" class="b-act"/>
+<text x="462" y="166" class="f-m">(46, 227)</text>
+<path d="M452 172 L452 250 L60 250 L60 180" class="wire s-act" marker-end="url(#scale-a-act)"/>
+<text x="256" y="274" class="f-m" text-anchor="middle">× output_to_source = 797/512 × 587/377</text>
+<text x="0" y="298" class="f-xs">run takes source coordinates; captures may be smaller</text>
+</svg>
+<!-- /fig -->
+</div>
+<figcaption><b>Two coordinate spaces.</b><code class="nb">run</code> always takes source coordinates. A capture reports the ratio to convert from what the agent saw.</figcaption>
+</figure>
+<p>A camera works the same way: <code>tendril --camera <var>ID</var> capture</code> takes one frame, through AVFoundation on macOS, V4L2 on Linux or DirectShow on Windows.</p>
+
+<h2 id="elements">Semantic elements</h2>
+<p>Pixels are not the only way in. <code class="nb">list-elements</code> reads the platform's accessibility tree (AX on macOS, AT-SPI on Linux, native Win32 controls on Windows) and returns buttons, fields and text with ids and bounds:</p>
+<pre><code><span class="ln"><span class="p">tendril --window <var>ID</var> list-elements --json</span></span><span class="ln"><span class="p">tendril --window <var>ID</var> run 'click(<var>element-id</var>),<wbr>send("Ridge loop")'</span></span></code></pre>
+<p>Element ids belong to one snapshot. They are stable while the interface is, and <code>click(<var>id</var>)</code>, <code>press(<var>id</var>)</code> and <code>element(<var>id</var>)</code> list the elements again, find the match and act at the centre of its bounds. When there is no accessibility service, the result says so and falls back to the window tree:</p>
+<pre><code><span class="ln"><span class="p">tendril --window 0xe00003 list-elements</span></span><span class="ln"><span class="o">platform: Linux / X11</span></span><span class="ln"><span class="o">elements: 1</span></span><span class="ln"><span class="y">notes: X11 AT-SPI element listing failed: org.a11y.Bus.GetAddress failed: … falling back to the X11 window tree.</span></span><span class="ln"><span class="o">- 1: window&lt;Chromium-browser/Chromium-browser&gt; 797x587+125+94 actions=click</span></span></code></pre>
+
+<h2 id="run">The run language</h2>
+<p><code class="nb">tendril run</code> takes one argument: plain text, a comma-separated sequence of actions, or an action list from MCP. All three become the same typed model.</p>
+<pre><code><span class="ln"><span class="p">tendril --window <var>ID</var> run 'hello world'</span>                                    <span class="c"># types the text</span></span><span class="ln"><span class="p">tendril --window <var>ID</var> run 'hold(ctrl),<wbr>c,<wbr>release(ctrl),<wbr>wait(250ms),<wbr>send("done")'</span></span><span class="ln"><span class="p">tendril --window <var>ID</var> run 'hover(320,<wbr>240),<wbr>wait(250ms)'</span></span><span class="ln"><span class="p">tendril --window <var>ID</var> run 'drag(100,<wbr>200,<wbr>400,<wbr>200)'</span></span><span class="ln"><span class="p">tendril --window <var>ID</var> run 'scroll(220,<wbr>420,<wbr>8)'</span></span></code></pre>
+<div class="table"><table>
+<thead><tr><th>Action</th><th>Does</th></tr></thead>
+<tbody>
+<tr><td><code class="nb">send("…")</code></td><td>Type text</td></tr>
+<tr><td><code class="nb">Return</code>, <code class="nb">Tab</code>, <code class="nb">c</code>, …</td><td>Tap a key</td></tr>
+<tr><td><code class="nb">hold(ctrl)</code>, <code class="nb">release(ctrl)</code></td><td>Press and release a modifier around other actions</td></tr>
+<tr><td><code class="nb">wait(250ms)</code>, <code class="nb">wait(1s)</code></td><td>Pause; a bare number means milliseconds</td></tr>
+<tr><td><code class="nb">lclick(x,y)</code>, <code class="nb">rclick</code>, <code class="nb">mclick</code></td><td>Click a button at source coordinates</td></tr>
+<tr><td><code class="nb">dblclick(x,y)</code></td><td>A calibrated double-click (alias <code class="nb">doubleclick</code>)</td></tr>
+<tr><td><code class="nb">move(x,y)</code></td><td>Move the pointer without clicking, for hovers and tooltips (alias <code class="nb">hover</code>)</td></tr>
+<tr><td><code class="nb">drag(x0,y0,x1,y1)</code></td><td>Press, move and release</td></tr>
+<tr><td><code class="nb">scroll(x,y,dy)</code></td><td>Wheel ticks under a point; positive scrolls down</td></tr>
+<tr><td><code class="nb">click(id)</code>, <code class="nb">press(id)</code></td><td>Act on a semantic element</td></tr>
+</tbody>
+</table></div>
+<p>Android adds its own verbs (<code class="nb">launch</code>, <code class="nb">tap_text</code>, <code class="nb">scroll_until</code>, <code class="nb">assert_visible</code>, <code class="nb">back</code>, <code class="nb">notifications</code> and more); see <a href="platforms.html#android">Platforms</a>.</p>
+<h3 id="guards">Guards</h3>
+<p>Some inputs are refused because typing them would almost certainly be a mistake:</p>
+<ul>
+<li>A single bare word that looks like an action, such as <code class="nb">Return</code> or <code class="nb">type "hi"</code>, is rejected rather than typed into the focused window (see <a href="agents.html#errors">the error it returns</a>). Use <code class="nb">wait(1ms),Return</code> to press a key, or <code class="nb">send("Return")</code> to type the word.</li>
+<li>On X11, <code class="nb">Ctrl+L</code> followed by a URL into a browser window is refused: browsers decide where synthetic key chords land, and the URL can end up typed into the page. Click the address bar from a capture instead, then verify.</li>
+</ul>
+<p>On X11, text that the keyboard map cannot type directly, such as most non-ASCII text, is pasted through a short-lived clipboard selection instead. Terminals get a terminal-compatible paste shortcut, and the envelope's notes say what was done.</p>
+
+<h2 id="focus">Focus and the shared desktop</h2>
+<p>An agent often works on a desktop someone else is using. <code class="nb">run</code> therefore:</p>
+<ol class="steps">
+<li><h3>Waits its turn</h3><p>A host-wide lock serialises every <code class="nb">run</code>, from any process or MCP server (see <a href="agents.html#lock">Agents</a>).</p></li>
+<li><h3>Records where you were</h3><p>On X11, the focused window and the pointer position.</p></li>
+<li><h3>Focuses the target and acts</h3><p>So keys and clicks reach the requested window, not whatever was on top.</p></li>
+<li><h3>Puts things back</h3><p>Focus and pointer are restored unless <code class="nb">--no-restore-focus</code> is given. Where an adapter cannot restore reliably yet, the run still succeeds and reports <code class="nb">focus_restored: false</code> with a note.</p></li>
+</ol>
+
+<h2 id="listen">Audio</h2>
+<p><code class="nb">tendril listen</code> records WAV audio with PipeWire or PulseAudio on Linux and CoreAudio on macOS, writing a temporary file or <code>--output <var>PATH</var></code>; the envelope reports where. Elsewhere it reports capability and permission state only, as <code class="nb">probe_only</code>.</p>
+
+<h2 id="alias">Aliases instead of sessions</h2>
+<p>Tendril keeps no session, so it cannot remember a target. It can write a shell function that does:</p>
+<pre><code><span class="ln"><span class="p">eval "$(tendril --window 0xe00003 alias --name trail)"</span></span><span class="ln"><span class="p">trail capture --json</span></span><span class="ln"><span class="p">trail run 'send("hello")'</span></span></code></pre>
+<p><code>--shell bash|zsh|fish|powershell</code> chooses the syntax.</p>
+</main>
+</div>
+<!-- shell:foot -->
+<footer class="foot">
+  <span>Tendril 0.0.4 · Rust · stateless desktop control for agents</span>
+  <span>Type: Schibsted Grotesk and Fragment Mono, <a href="assets/fonts/LICENSE.txt">OFL 1.1</a></span>
+</footer>
+<!-- /shell:foot -->
+</body>
+</html>
