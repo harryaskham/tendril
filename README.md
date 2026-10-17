@@ -16,7 +16,7 @@ self-contained.
 
 - [Approved spec](SPEC.md)
 - [Project health / handoff summary](PROJECT_HEALTH.md)
-- [Published docs source](docs/src/index.md)
+- [Documentation site](https://a.skh.am/tendril/) (source in `site/`; long-form guides in `docs/src/`)
 - [Changelog](CHANGELOG.md)
 
 ## Enter the development environment
@@ -471,9 +471,10 @@ Useful local release helpers:
 The repository publishes a static docs site built from `docs/`.
 
 - local build: `nix develop --command ./scripts/build-docs.sh`
-- mdBook source: `docs/src/`
-- published Pages artifact: `target/book/`
-- generated Rust API docs: `target/book/api/`
+- site source: `site/` (built by `scripts/site/build.py`, checked by `scripts/check-site.py`)
+- long-form guides: `docs/src/` (repository documentation)
+- published Pages artifact: `target/site/`
+- generated Rust API docs: `target/site/api/`
 - deployment workflows: `.github/workflows/pages.yaml` and `.github/workflows/tag-release.yml`
 
 ## Notes for developers and agents

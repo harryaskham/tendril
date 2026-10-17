@@ -26,7 +26,7 @@ Green surfaces:
 | Changelog / semver | Ready | `CHANGELOG.md`, workspace version `0.0.4`; `tendril version` is read-only |
 | License declaration | Ready | `LICENSE`, workspace `license = "MIT"` |
 | Audio capture | Ready on Linux + macOS; probe-only on unwired lanes | `crates/tendril/src/listen.rs` drives real WAV capture (Linux PipeWire `pw-record`→`parecord`, PulseAudio `parecord`; macOS `afrecord` plus ffmpeg/avfoundation system loopback). Windows/Android and non-WAV formats fall back to a structured `probe_only` response |
-| Documentation publishing | Ready | `docs/book.toml`, `scripts/build-docs.sh`, `.github/workflows/pages.yaml` |
+| Documentation publishing | Ready | `site/`, `scripts/site/build.py`, `scripts/check-site.py`, `scripts/build-docs.sh`, `.github/workflows/pages.yaml` |
 | Coverage enforcement | Follow-up | SPEC targets are documented, but no coverage gate is enforced in `flake.nix` or `scripts/pre-merge.sh` yet |
 
 ## Validation commands

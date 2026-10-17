@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<!-- shell:head -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Platforms · Linux, macOS, Windows, Android and remote</title>
+<meta name="description" content="What Tendril supports on each platform: X11 and Wayland backends, macOS permissions, native Windows, Android over ADB, SSH remotes, the WSL tunnel, a disposable headless desktop and runtime dependencies.">
+<meta name="theme-color" content="#0c0c0d">
+<meta name="color-scheme" content="light">
+<meta property="og:title" content="Platforms · Linux, macOS, Windows, Android and remote">
+<meta property="og:description" content="What Tendril supports on each platform: X11 and Wayland backends, macOS permissions, native Windows, Android over ADB, SSH remotes, the WSL tunnel, a disposable headless desktop and runtime dependencies.">
+<meta property="og:type" content="website">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="assets/fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/fragment-mono.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/site.css">
+<script src="assets/site.js" defer></script>
+<!-- /shell:head -->
+</head>
+<body>
+<!-- shell:top -->
+<a class="skip" href="#main">Skip to content</a>
+<header class="edge"><div class="edge-in">
+  <a class="brand" href="index.html" aria-label="Tendril home"><b>tendril</b><small>0.0.4</small></a>
+  <nav class="nav" aria-label="Pages"><a href="index.html">Overview</a><a href="guide.html">Guide</a><a href="platforms.html" aria-current="page">Platforms</a><a href="agents.html">Agents</a><a href="reference.html">Reference</a><a href="api/tendril/index.html">API</a></nav>
+</div></header>
+<!-- /shell:top -->
+<div class="page">
+<aside class="rail">
+<!-- shell:rail -->
+<nav aria-label="On this page"><p>Frames</p>
+<ol>
+<li><a href="#matrix">What runs where</a></li>
+<li><a href="#linux">Linux</a></li>
+<li><a href="#macos">macOS</a></li>
+<li><a href="#windows">Windows</a></li>
+<li><a href="#android">Android</a></li>
+<li><a href="#remote">Remote machines and WSL</a></li>
+<li><a href="#headless">A disposable desktop</a></li>
+<li><a href="#dependencies">Runtime dependencies</a></li>
+</ol></nav>
+<!-- /shell:rail -->
+</aside>
+<main id="main">
+<p class="kicker">platforms</p>
+<h1>Every desktop, and some that aren't</h1>
+<p class="lede">The same commands work on X11 and Wayland, macOS, Windows 11 and Android, and they reach other machines over SSH or from WSL. Where a platform needs a helper tool, Tendril says which; where it cannot do something yet, the result says so.</p>
+
+<h2 id="matrix">What runs where</h2>
+<div class="table"><table>
+<thead><tr><th>Platform</th><th>Discover</th><th>Capture</th><th>Input</th><th>Elements</th></tr></thead>
+<tbody>
+<tr><td>Linux, X11</td><td>native</td><td>native</td><td>native XTest</td><td>AT-SPI, else the window tree</td></tr>
+<tr><td>Linux, Wayland</td><td class="wrap"><code class="nb">hyprctl</code>, <code class="nb">swaymsg</code>, <code class="nb">wlr-randr</code></td><td class="wrap">desktop portal; <code class="nb">grim</code> as fallback</td><td class="wrap"><code class="nb">ydotool</code>; <code class="nb">wtype</code> for keys only</td><td>AT-SPI</td></tr>
+<tr><td>macOS</td><td><code class="nb">osascript</code></td><td><code class="nb">screencapture</code></td><td><code class="nb">osascript</code></td><td>AX</td></tr>
+<tr><td>Windows 11</td><td>native</td><td>native</td><td>native</td><td>native Win32</td></tr>
+<tr><td>Android</td><td>ADB</td><td><code class="nb">screencap</code></td><td><code class="nb">input</code></td><td>UIAutomator</td></tr>
+</tbody>
+</table></div>
+<p>"Native" means inside the binary, with no subprocess. Cameras use <code class="nb">ffmpeg</code> everywhere: AVFoundation on macOS, V4L2 on Linux, DirectShow on Windows. Audio uses <code class="nb">pw-record</code> or <code class="nb">parecord</code> on Linux and <code class="nb">afrecord</code> on macOS; on Windows it is probe-only for now. When no input helper is installed on Wayland, <code class="nb">run</code> fails with a structured <code class="nb">unsupported_capability</code> error rather than doing nothing.</p>
+
+<h2 id="linux">Linux</h2>
+<p>On X11 everything is built in: discovery through XRandR and EWMH, capture, and focus, keyboard and pointer through XTest. Wayland has no single portable path, so Tendril uses each compositor's own tools for discovery and the desktop portal for screenshots, and documents the supported combinations. Input on Wayland goes through <code class="nb">ydotool</code> (which needs its daemon) or, for keys only, <code class="nb">wtype</code>.</p>
+
+<h2 id="macos">macOS</h2>
+<p>macOS gates screen capture, input, microphone and camera behind permissions. <code class="nb">tendril permissions</code> reports all four with remediation steps and changes nothing; <code class="nb">--request</code>, in a foreground session, shows the system prompts and opens the right System Settings panes.</p>
+<pre><code><span class="ln"><span class="p">tendril permissions --json</span></span><span class="ln"><span class="p">tendril permissions --request</span></span></code></pre>
+
+<h2 id="windows">Windows</h2>
+<p>Windows 11 support is native inside the binary: monitor and window enumeration, GDI capture, focus transfer, keyboard and mouse input, and Win32 control enumeration for <code class="nb">list-elements</code>. Audio capture is probe-only until a WASAPI recorder lands.</p>
+
+<h2 id="android">Android</h2>
+<p><code>--android <var>SERIAL</var></code> drives a phone or emulator over ADB; <code class="nb">--android auto</code> picks the only connected device and fails clearly when there are none or several.</p>
+<pre><code><span class="ln"><span class="p">tendril --android emulator-5554 list --json</span></span><span class="ln"><span class="p">tendril --android emulator-5554 list-elements --json</span></span><span class="ln"><span class="p">tendril --android auto capture -o screen.png</span></span><span class="ln"><span class="p">tendril --android emulator-5554 run 'launch("com.example"),<wbr>assert_visible("Ready")'</span></span><span class="ln"><span class="p">tendril --android emulator-5554 run 'notifications(),<wbr>wait(500ms),<wbr>back()'</span></span></code></pre>
+<div class="table"><table>
+<thead><tr><th>Run action</th><th>On Android</th></tr></thead>
+<tbody>
+<tr><td><code class="nb">lclick(x,y)</code>, <code class="nb">dblclick</code></td><td>One or two <code class="nb">input tap</code></td></tr>
+<tr><td><code class="nb">drag</code>, <code class="nb">scroll</code></td><td><code class="nb">input swipe</code></td></tr>
+<tr><td><code class="nb">send("…")</code>, plain text</td><td><code class="nb">input text</code></td></tr>
+<tr><td><code class="nb">Return</code>, <code class="nb">Back</code>, <code class="nb">Home</code>, volume keys, key codes</td><td><code class="nb">input keyevent</code></td></tr>
+<tr><td><code class="nb">tap_text</code>, <code class="nb">tap_desc</code>, <code class="nb">tap_resource</code></td><td>Tap by text, content description or resource id from the UI dump</td></tr>
+<tr><td><code class="nb">scroll_until("Done")</code></td><td>Swipe and re-read until the selector is visible, then tap it</td></tr>
+<tr><td><code class="nb">assert_visible</code>, <code class="nb">assert_absent</code></td><td>Check the UI without touching it</td></tr>
+<tr><td><code class="nb">launch("pkg")</code></td><td>Start or switch to an app</td></tr>
+<tr><td><code class="nb">back()</code>, <code class="nb">home()</code>, <code class="nb">recents()</code>, <code class="nb">notifications()</code>, <code class="nb">quicksettings()</code></td><td>System navigation</td></tr>
+</tbody>
+</table></div>
+<p>Every Android run leaves a debug trail (the commands, the UI dump and the screenshot) in a per-run directory, or in <code class="nb">TENDRIL_ANDROID_ARTIFACT_DIR</code>.</p>
+
+<h2 id="remote">Remote machines and WSL</h2>
+<figure class="fig">
+<div class="fig-scroll">
+<!-- fig:routes -->
+<svg class="f" viewBox="0 0 700 300" width="700" height="300" role="img" aria-labelledby="routes-t routes-d"><title id="routes-t">Same invocation, different places</title><desc id="routes-d">A local tendril invocation can run in four places. Without flags it drives the local desktop. With --remote user at host it strips that flag and runs the same tendril command over SSH on another machine, streaming the result back. With --wsl-tunnel, from WSL or Linux, it runs the Windows build, tendril.exe, on the Windows host. With --android and a serial it drives an Android device or emulator over ADB.</desc><defs><marker id="routes-a-target" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-target"/></marker><marker id="routes-a-shot" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-shot"/></marker><marker id="routes-a-act" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-act"/></marker><marker id="routes-a-lock" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-lock"/></marker><marker id="routes-a-agent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-agent"/></marker><marker id="routes-a-far" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-far"/></marker><marker id="routes-a-mute" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-mute"/></marker></defs>
+<rect x="0" y="112" width="170" height="76" rx="8" class="b-agent"/>
+<text x="12" y="139.0" class="f-t">tendril …</text>
+<text x="12" y="157.0" class="f-s">same arguments</text>
+<text x="12" y="173.0" class="f-s">same envelopes</text>
+<path d="M172 150 C251.0 150 251.0 45 330 45" class="wire s-target" marker-end="url(#routes-a-target)"/>
+<rect x="334" y="20" width="366" height="52" rx="8" class="b-target"/>
+<text x="346" y="43.0" class="f-t">local desktop</text>
+<text x="346" y="61.0" class="f-s">X11, Wayland, macOS, Windows</text>
+<path d="M172 150 C251.0 150 251.0 115 330 115" class="wire s-far" marker-end="url(#routes-a-far)"/>
+<rect x="334" y="90" width="366" height="52" rx="8" class="b-far"/>
+<text x="346" y="113.0" class="f-t">--remote user@host</text>
+<text x="346" y="131.0" class="f-s">OpenSSH → tendril on that host</text>
+<path d="M172 150 C251.0 150 251.0 185 330 185" class="wire s-far" marker-end="url(#routes-a-far)"/>
+<rect x="334" y="160" width="366" height="52" rx="8" class="b-far"/>
+<text x="346" y="183.0" class="f-t">--wsl-tunnel</text>
+<text x="346" y="201.0" class="f-s">→ tendril.exe on the Windows host</text>
+<path d="M172 150 C251.0 150 251.0 255 330 255" class="wire s-far" marker-end="url(#routes-a-far)"/>
+<rect x="334" y="230" width="366" height="52" rx="8" class="b-far"/>
+<text x="346" y="253.0" class="f-t">--android SERIAL</text>
+<text x="346" y="271.0" class="f-s">ADB → device or emulator</text>
+</svg>
+<!-- /fig -->
+</div>
+<figcaption><b>One invocation, four places.</b>Remote modes strip only their own flag and run the identical command elsewhere, so envelopes and errors look the same.</figcaption>
+</figure>
+<pre><code><span class="ln"><span class="p">tendril --remote user@host --json list</span></span><span class="ln"><span class="p">tendril --remote user@host --window <var>ID</var> run 'send("hello")'</span></span><span class="ln"><span class="p">tendril --wsl-tunnel --json list</span></span><span class="ln"><span class="p">tendril --remote user@host --wsl-tunnel --json list</span>        <span class="c"># a Windows host behind a remote WSL</span></span></code></pre>
+<ul>
+<li>The remote needs <code class="nb">tendril</code> on its <code class="nb">PATH</code>, or <code class="nb">TENDRIL_REMOTE_BIN</code>. On Linux the bootstrap fixes non-login shells: it adds package-manager paths, ignores forwarded displays that point back at the client, and discovers the session's runtime directory, bus and display sockets.</li>
+<li>For MCP, standard input and output are streamed through untouched, so JSON-RPC framing survives. SSH failures in ordinary commands come back as structured error envelopes.</li>
+<li>From WSL, <code class="nb">--wsl-tunnel</code> runs <code class="nb">tendril.exe</code> on the Windows host, from its <code class="nb">PATH</code> or <code class="nb">TENDRIL_WSL_WINDOWS_BIN</code>.</li>
+</ul>
+
+<h2 id="headless">A disposable desktop</h2>
+<p>For browser and desktop work that must not touch a person's screen, <code class="nb">tendril-headless</code> (shipped in the package, and as <code class="nb">scripts/tendril-headless.sh</code>) starts an isolated 1920 × 1080 X11 session with XTest, a lightweight window manager and a browser, and prints the variables to point Tendril at it. It is process-scoped, keeps only lifecycle metadata under the runtime directory, and has smoke tests for clipboard, Unicode, drag, hover, scroll and file-upload behaviour. The captures on the <a href="index.html#example">home page</a> came from one.</p>
+<pre><code><span class="ln"><span class="p">tendril-headless --name site --display 151 start</span></span><span class="ln"><span class="o">[tendril-headless] starting Xvfb :151 at 1920x1080x24</span></span><span class="ln"><span class="o">[tendril-headless] starting window manager: openbox</span></span><span class="ln"><span class="o">[tendril-headless] starting browser: …/bin/chromium</span></span><span class="ln"><span class="o">export DISPLAY=:151</span></span><span class="ln"><span class="o">export XDG_SESSION_TYPE=x11</span></span><span class="ln"><span class="p">tendril-headless --name site stop</span></span></code></pre>
+
+<h2 id="dependencies">Runtime dependencies</h2>
+<p>A source-backed audit lists every external tool Tendril calls, per command and platform, and classifies each as self-contained, a documented prerequisite or a compatibility fallback, with a direction for replacing it. Linux X11 and Windows are self-contained today; macOS relies on tools that ship with the system; Wayland and cameras rely on documented helpers that the Nix package can supply.</p>
+</main>
+</div>
+<!-- shell:foot -->
+<footer class="foot">
+  <span>Tendril 0.0.4 · Rust · stateless desktop control for agents</span>
+  <span>Type: Schibsted Grotesk and Fragment Mono, <a href="assets/fonts/LICENSE.txt">OFL 1.1</a></span>
+</footer>
+<!-- /shell:foot -->
+</body>
+</html>

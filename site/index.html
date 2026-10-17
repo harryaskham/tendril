@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<!-- shell:head -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tendril · eyes and hands on a desktop, for agents</title>
+<meta name="description" content="Tendril is a stateless Rust CLI that lets agents see and drive desktops: list windows, displays and cameras, capture screenshots, read accessibility elements, type, click and scroll, on Linux, macOS, Windows and Android.">
+<meta name="theme-color" content="#0c0c0d">
+<meta name="color-scheme" content="light">
+<meta property="og:title" content="Tendril · eyes and hands on a desktop, for agents">
+<meta property="og:description" content="Tendril is a stateless Rust CLI that lets agents see and drive desktops: list windows, displays and cameras, capture screenshots, read accessibility elements, type, click and scroll, on Linux, macOS, Windows and Android.">
+<meta property="og:type" content="website">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="assets/fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/fragment-mono.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/site.css">
+<script src="assets/site.js" defer></script>
+<!-- /shell:head -->
+</head>
+<body>
+<!-- shell:top -->
+<a class="skip" href="#main">Skip to content</a>
+<header class="edge"><div class="edge-in">
+  <a class="brand" href="index.html" aria-label="Tendril home"><b>tendril</b><small>0.0.4</small></a>
+  <nav class="nav" aria-label="Pages"><a href="index.html" aria-current="page">Overview</a><a href="guide.html">Guide</a><a href="platforms.html">Platforms</a><a href="agents.html">Agents</a><a href="reference.html">Reference</a><a href="api/tendril/index.html">API</a></nav>
+</div></header>
+<!-- /shell:top -->
+<div class="page">
+<aside class="rail">
+<!-- shell:rail -->
+<nav aria-label="On this page"><p>Frames</p>
+<ol>
+<li><a href="#example">One turn of the loop</a></li>
+<li><a href="#why">Why it is built this way</a></li>
+<li><a href="#pages">Where to go</a></li>
+</ol></nav>
+<!-- /shell:rail -->
+</aside>
+<main id="main">
+<p class="kicker">overview</p>
+<h1 class="hero-h1">Eyes and hands on a desktop.</h1>
+<p class="lede"><strong>Tendril</strong> lets an agent see and drive a computer the way a person does: find a window, take a screenshot, read its controls, then type, click and scroll. It is one stateless Rust binary for Linux, macOS, Windows and Android. There is no daemon and no session, and every command stands alone.</p>
+
+<div class="loop">
+<p><b>01 · list</b><code class="nb">tendril list</code><span>Windows, displays and cameras, with ids and capabilities.</span></p>
+<p><b>02 · capture</b><code class="nb">--window ID capture</code><span>A screenshot, plus the scale to map it back.</span></p>
+<p><b>03 · act</b><code class="nb">--window ID run '…'</code><span>Text, keys, clicks, drags and scrolls, serialised by a lock.</span></p>
+<p><b>04 · verify</b><code class="nb">--window ID capture</code><span>Look again before the next step.</span></p>
+</div>
+
+<figure class="fig">
+<div class="fig-scroll only-wide">
+<!-- fig:hero -->
+<svg class="f" viewBox="0 0 900 330" width="900" height="330" role="img" aria-labelledby="hero-t hero-d"><title id="hero-t">The loop on a strip of film</title><desc id="hero-d">On the left, an agent, either through the command line or the MCP server. On the right, a strip of film with four frames. Frame one, list: discover windows, displays and cameras. Frame two, capture: take a screenshot and its coordinate scale. Frame three, act: run typed input, clicks and scrolls, holding the execution lock and restoring focus afterwards. Frame four, verify: capture again and compare. An arrow returns from frame four to frame two when the result is not yet right. Below the strip, the places a frame can come from: X11, Wayland, macOS, Windows, Android over ADB, any of them over SSH, and the Windows host from WSL.</desc><defs><marker id="hero-a-target" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-target"/></marker><marker id="hero-a-shot" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-shot"/></marker><marker id="hero-a-act" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-act"/></marker><marker id="hero-a-lock" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-lock"/></marker><marker id="hero-a-agent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-agent"/></marker><marker id="hero-a-far" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-far"/></marker><marker id="hero-a-mute" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-mute"/></marker></defs>
+<rect x="0" y="70" width="150" height="110" rx="8" class="b-agent"/>
+<text x="12" y="114.0" class="f-t">agent</text>
+<text x="12" y="132.0" class="f-s">CLI or MCP</text>
+<text x="12" y="148.0" class="f-s">stateless calls</text>
+<path d="M152 125 L196 125" class="wire s-agent" marker-end="url(#hero-a-agent)"/>
+<rect x="200" y="20" width="700" height="210" rx="2" class="frame"/>
+<rect x="208" y="25" width="10" height="7" rx="2" class="hole"/>
+<rect x="208" y="218" width="10" height="7" rx="2" class="hole"/>
+<rect x="230" y="25" width="10" height="7" rx="2" class="hole"/>
+<rect x="230" y="218" width="10" height="7" rx="2" class="hole"/>
+<rect x="252" y="25" width="10" height="7" rx="2" class="hole"/>
+<rect x="252" y="218" width="10" height="7" rx="2" class="hole"/>
+<rect x="274" y="25" width="10" height="7" rx="2" class="hole"/>
+<rect x="274" y="218" width="10" height="7" rx="2" class="hole"/>
+<rect x="296" y="25" width="10" height="7" rx="2" class="hole"/>
+<rect x="296" y="218" width="10" height="7" rx="2" class="hole"/>
+<rect x="318" y="25" width="10" height="7" rx="2" class="hole"/>
+<rect x="318" y="218" width="10" height="7" rx="2" class="hole"/>
+<rect x="340" y="25" width="10" height="7" rx="2" class="hole"/>
+<rect x="340" y="218" width="10" height="7" rx="2" class="hole"/>
+<rect x="362" y="25" width="10" height="7" rx="2" class="hole"/>
+<rect x="362" y="218" width="10" height="7" rx="2" class="hole"/>
+<rect x="384" y="25" width="10" height="7" rx="2" class="hole"/>
+<rect x="384" y="218" width="10" height="7" rx="2" class="hole"/>
+<rect x="406" y="25" width="10" height="7" rx="2" class="hole"/>
+<rect x="406" y="218" width="10" height="7" rx="2" class="hole"/>
+<rect x="428" y="25" width="10" height="7" rx="2" class="hole"/>
+<rect x="428" y="218" width="10" height="7" rx="2" class="hole"/>
+<rect x="450" y="25" width="10" height="7" rx="2" class="hole"/>
+<rect x="450" y="218" width="10" height="7" rx="2" class="hole"/>
+<rect x="472" y="25" width="10" height="7" rx="2" class="hole"/>
+<rect x="472" y="218" width="10" height="7" rx="2" class="hole"/>
+<rect x="494" y="25" width="10" height="7" rx="2" class="hole"/>
+<rect x="494" y="218" width="10" height="7" rx="2" class="hole"/>
+<rect x="516" y="25" width="10" height="7" rx="2" class="hole"/>
+<rect x="516" y="218" width="10" height="7" rx="2" class="hole"/>
+<rect x="538" y="25" width="10" height="7" rx="2" class="hole"/>
+<rect x="538" y="218" width="10" height="7" rx="2" class="hole"/>
+<rect x="560" y="25" width="10" height="7" rx="2" class="hole"/>
+<rect x="560" y="218" width="10" height="7" rx="2" class="hole"/>
+<rect x="582" y="25" width="10" height="7" rx="2" class="hole"/>
+<rect x="582" y="218" width="10" height="7" rx="2" class="hole"/>
+<rect x="604" y="25" width="10" height="7" rx="2" class="hole"/>
+<rect x="604" y="218" width="10" height="7" rx="2" class="hole"/>
+<rect x="626" y="25" width="10" height="7" rx="2" class="hole"/>
+<rect x="626" y="218" width="10" height="7" rx="2" class="hole"/>
+<rect x="648" y="25" width="10" height="7" rx="2" class="hole"/>
+<rect x="648" y="218" width="10" height="7" rx="2" class="hole"/>
+<rect x="670" y="25" width="10" height="7" rx="2" class="hole"/>
+<rect x="670" y="218" width="10" height="7" rx="2" class="hole"/>
+<rect x="692" y="25" width="10" height="7" rx="2" class="hole"/>
+<rect x="692" y="218" width="10" height="7" rx="2" class="hole"/>
+<rect x="714" y="25" width="10" height="7" rx="2" class="hole"/>
+<rect x="714" y="218" width="10" height="7" rx="2" class="hole"/>
+<rect x="736" y="25" width="10" height="7" rx="2" class="hole"/>
+<rect x="736" y="218" width="10" height="7" rx="2" class="hole"/>
+<rect x="758" y="25" width="10" height="7" rx="2" class="hole"/>
+<rect x="758" y="218" width="10" height="7" rx="2" class="hole"/>
+<rect x="780" y="25" width="10" height="7" rx="2" class="hole"/>
+<rect x="780" y="218" width="10" height="7" rx="2" class="hole"/>
+<rect x="802" y="25" width="10" height="7" rx="2" class="hole"/>
+<rect x="802" y="218" width="10" height="7" rx="2" class="hole"/>
+<rect x="824" y="25" width="10" height="7" rx="2" class="hole"/>
+<rect x="824" y="218" width="10" height="7" rx="2" class="hole"/>
+<rect x="846" y="25" width="10" height="7" rx="2" class="hole"/>
+<rect x="846" y="218" width="10" height="7" rx="2" class="hole"/>
+<rect x="868" y="25" width="10" height="7" rx="2" class="hole"/>
+<rect x="868" y="218" width="10" height="7" rx="2" class="hole"/>
+<rect x="214" y="40" width="160" height="170" rx="3" class="b-target"/>
+<text x="224" y="60" class="f-xs">01</text>
+<text x="294" y="110" class="f-d" text-anchor="middle">list</text>
+<text x="294" y="136" class="f-m" text-anchor="middle">tendril list</text>
+<rect x="386" y="40" width="160" height="170" rx="3" class="b-shot"/>
+<text x="396" y="60" class="f-xs">02</text>
+<text x="466" y="110" class="f-d" text-anchor="middle">capture</text>
+<text x="466" y="136" class="f-m" text-anchor="middle">… capture</text>
+<rect x="558" y="40" width="160" height="170" rx="3" class="b-act"/>
+<text x="568" y="60" class="f-xs">03</text>
+<text x="638" y="110" class="f-d" text-anchor="middle">act</text>
+<text x="638" y="136" class="f-m" text-anchor="middle">… run &#x27;…&#x27;</text>
+<rect x="730" y="40" width="160" height="170" rx="3" class="b-shot"/>
+<text x="740" y="60" class="f-xs">04</text>
+<text x="810" y="110" class="f-d" text-anchor="middle">verify</text>
+<text x="810" y="136" class="f-m" text-anchor="middle">… capture</text>
+<text x="638" y="172" class="f-xs" text-anchor="middle">lock held</text>
+<text x="638" y="190" class="f-xs" text-anchor="middle">focus restored</text>
+<path d="M800 212 C800 262 380 262 380 212" class="wire s-act dash" marker-end="url(#hero-a-act)"/>
+<rect x="488.4" y="245" width="203.2" height="18" rx="3" class="labbg"/>
+<text x="590" y="258" class="f-xs" text-anchor="middle">not right yet: capture again</text>
+<rect x="200" y="290" width="47.8" height="28" rx="14" class="b-target"/>
+<text x="223.9" y="309" class="f-t" text-anchor="middle">X11</text>
+<rect x="257.8" y="290" width="82.19999999999999" height="28" rx="14" class="b-target"/>
+<text x="298.9" y="309" class="f-t" text-anchor="middle">Wayland</text>
+<rect x="350.0" y="290" width="65.0" height="28" rx="14" class="b-target"/>
+<text x="382.5" y="309" class="f-t" text-anchor="middle">macOS</text>
+<rect x="425.0" y="290" width="82.19999999999999" height="28" rx="14" class="b-target"/>
+<text x="466.1" y="309" class="f-t" text-anchor="middle">Windows</text>
+<rect x="517.2" y="290" width="82.19999999999999" height="28" rx="14" class="b-far"/>
+<text x="558.3000000000001" y="309" class="f-t" text-anchor="middle">Android</text>
+<rect x="609.4000000000001" y="290" width="47.8" height="28" rx="14" class="b-far"/>
+<text x="633.3000000000001" y="309" class="f-t" text-anchor="middle">SSH</text>
+<rect x="667.2" y="290" width="47.8" height="28" rx="14" class="b-far"/>
+<text x="691.1" y="309" class="f-t" text-anchor="middle">WSL</text>
+</svg>
+<!-- /fig -->
+</div>
+<figcaption><b>The loop.</b>Each frame is a separate, stateless invocation; an agent repeats capture and act until the screen says it is done.</figcaption>
+</figure>
+
+<h2 id="example">One turn of the loop</h2>
+<p>A form in a disposable X11 desktop, driven by one <code class="nb">run</code> call between two captures. These are the actual captures:</p>
+<div class="sheet">
+<figure><img src="assets/shots/trail-before.png" width="797" height="587" alt="A form titled Trail log with an empty Title field, an empty Notes box and a Save button."><figcaption>14A<span>capture, before</span></figcaption></figure>
+<figure><img src="assets/shots/trail-after.png" width="797" height="587" alt="The same form with the title Ridge loop, the note Fog lifted at the saddle, and the status Saved: Ridge loop under the Save button."><figcaption>15A<span>capture, after one run</span></figcaption></figure>
+</div>
+<pre><code><span class="ln"><span class="p">tendril list</span></span><span class="ln"><span class="o">platform: Linux / X11</span></span><span class="ln"><span class="o">targets:</span></span><span class="ln"><span class="o">- Display 1 screen 1920x1080+0+0 scale=1/1 capture=true,<wbr> input=true</span></span><span class="ln"><span class="o">- Window 0xe00003 Chromium-browser 797x587+125+94 scale=1/1 capture=true,<wbr> input=true title="Trail log" app=Chromium-browser</span></span><span class="ln"><span class="c">… and two more windows: the helper's browser and shell</span></span><span class="ln"><span class="p">tendril --window 0xe00003 capture -o before.png</span></span><span class="ln"><span class="p">tendril --window 0xe00003 run 'send("Ridge loop"),<wbr>Tab,<wbr>send("Fog lifted at the saddle."),<wbr>lclick(72,<wbr>354),<wbr>wait(300ms)'</span></span><span class="ln"><span class="p">tendril --window 0xe00003 capture -o after.png</span></span></code></pre>
+<p>The run's JSON envelope says what happened, including the parts a person would not see: it waited for no one in the lock queue, moved focus to the target to deliver input, and put focus and the pointer back afterwards.</p>
+<pre data-label="excerpt of run --json"><code><span class="ln"><span class="o">"action_count": 5,<wbr></span></span><span class="ln"><span class="o">"execution_lock": { "acquired": true,<wbr> "queue_position_at_join": 1,<wbr> "wait_ms": 0,<wbr> "stale_ms": 30000,<wbr> "timeout_ms": 60000 },<wbr></span></span><span class="ln"><span class="o">"focus_transferred": true,<wbr> "focus_restored": true,<wbr> "pointer_restored": true</span></span></code></pre>
+
+<h2 id="why">Why it is built this way</h2>
+<dl class="defs">
+<dt>Stateless</dt><dd>No daemon, session or hidden store. An agent can call it from anywhere, in parallel with others, and a crash leaves nothing behind. Where a stored target would help, <code class="nb">tendril alias</code> writes a shell function instead.</dd>
+<dt>Typed, everywhere</dt><dd>The command line and the MCP server share one typed surface and the same JSON envelopes, so an agent gets identical results either way.</dd>
+<dt>Careful with a shared desktop</dt><dd>Input is serialised by a host-wide lock, focus is restored after each run, and inputs that look like commands are refused rather than typed into the focused window.</dd>
+<dt>Honest about platforms</dt><dd>Where a backend is missing, results say so: a probe-only audio capture, a skipped focus restore or a fallback element tree is reported in the envelope, not hidden.</dd>
+<dt>Anywhere</dt><dd>The same invocation runs on a remote host over SSH, on the Windows host from WSL, or against an Android phone over ADB.</dd>
+</dl>
+
+<h2 id="pages">Where to go</h2>
+<ul class="routes">
+<li><a href="guide.html"><b>Guide</b><span>List, capture and coordinates, semantic elements, the run language, focus, audio and aliases.</span></a></li>
+<li><a href="platforms.html"><b>Platforms</b><span>X11 and Wayland, macOS, Windows, Android, SSH and WSL, and a disposable headless desktop.</span></a></li>
+<li><a href="agents.html"><b>Agents</b><span>MCP tools, envelopes and errors, the execution lock and the safety guards.</span></a></li>
+<li><a href="reference.html"><b>Reference</b><span>Commands and flags, every run action, configuration and environment.</span></a></li>
+<li><a href="api/tendril/index.html"><b>API</b><span>The Rust API documentation for the workspace.</span></a></li>
+</ul>
+</main>
+</div>
+<!-- shell:foot -->
+<footer class="foot">
+  <span>Tendril 0.0.4 · Rust · stateless desktop control for agents</span>
+  <span>Type: Schibsted Grotesk and Fragment Mono, <a href="assets/fonts/LICENSE.txt">OFL 1.1</a></span>
+</footer>
+<!-- /shell:foot -->
+</body>
+</html>
