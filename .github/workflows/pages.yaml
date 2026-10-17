@@ -1,14 +1,16 @@
 name: pages
 
 # Shared self-hosted gh-pages publisher (harryaskham.github.io publish-pages.yml):
-# mdBook guide + workspace rustdoc → a.skh.am/tendril/. Guide changes on main
+# site/ + workspace rustdoc → a.skh.am/tendril/. Site changes on main
 # deploy immediately; release tags refresh the API docs.
 on:
   push:
     branches: [main]
     tags: ['v*']
     paths:
-      - docs/**
+      - site/**
+      - scripts/site/**
+      - scripts/check-site.py
       - scripts/build-docs.sh
       - .github/workflows/pages.yaml
   workflow_dispatch:
@@ -21,7 +23,7 @@ jobs:
   pages:
     uses: harryaskham/harryaskham.github.io/.github/workflows/publish-pages.yml@main
     with:
-      path: target/book
+      path: target/site
       submodules: recursive
       timeout-minutes: 60
       build: nix develop --command ./scripts/build-docs.sh

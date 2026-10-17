@@ -225,12 +225,14 @@
           touch "$out"
         '';
 
-        docs = pkgs.runCommand "tendril-docs-check" { nativeBuildInputs = [ pkgs.mdbook ]; } ''
+        # The documentation site in site/ is built in place by scripts/site/build.py;
+        # this check fails if it is stale or invalid (links, budgets, private details).
+        docs = pkgs.runCommand "tendril-docs-check" { nativeBuildInputs = [ pkgs.python3 ]; } ''
           export HOME="$TMPDIR"
           cp -r ${fullSrc} source
           chmod -R +w source
           cd source
-          mdbook build docs
+          python3 scripts/check-site.py
           touch "$out"
         '';
       in
@@ -273,7 +275,6 @@
             direnv
             ffmpeg
             gnutar
-            mdbook
             nixpkgs-fmt
             python3
             rust-analyzer

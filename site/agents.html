@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<!-- shell:head -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agents · MCP tools, envelopes and the execution lock</title>
+<meta name="description" content="Tendril for agents: the MCP tool surface, JSON envelopes and structured errors, the host-wide execution lock and queue, safety guards, and the capture-act-verify discipline.">
+<meta name="theme-color" content="#0c0c0d">
+<meta name="color-scheme" content="light">
+<meta property="og:title" content="Agents · MCP tools, envelopes and the execution lock">
+<meta property="og:description" content="Tendril for agents: the MCP tool surface, JSON envelopes and structured errors, the host-wide execution lock and queue, safety guards, and the capture-act-verify discipline.">
+<meta property="og:type" content="website">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="assets/fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/fragment-mono.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/site.css">
+<script src="assets/site.js" defer></script>
+<!-- /shell:head -->
+</head>
+<body>
+<!-- shell:top -->
+<a class="skip" href="#main">Skip to content</a>
+<header class="edge"><div class="edge-in">
+  <a class="brand" href="index.html" aria-label="Tendril home"><b>tendril</b><small>0.0.4</small></a>
+  <nav class="nav" aria-label="Pages"><a href="index.html">Overview</a><a href="guide.html">Guide</a><a href="platforms.html">Platforms</a><a href="agents.html" aria-current="page">Agents</a><a href="reference.html">Reference</a><a href="api/tendril/index.html">API</a></nav>
+</div></header>
+<!-- /shell:top -->
+<div class="page">
+<aside class="rail">
+<!-- shell:rail -->
+<nav aria-label="On this page"><p>Frames</p>
+<ol>
+<li><a href="#mcp">MCP tools</a></li>
+<li><a href="#envelopes">Envelopes and errors</a></li>
+<li><a href="#lock">The execution lock</a></li>
+<li><a href="#discipline">Capture, act, verify</a></li>
+<li><a href="#stack">Updates and feedback</a></li>
+</ol></nav>
+<!-- /shell:rail -->
+</aside>
+<main id="main">
+<p class="kicker">agents</p>
+<h1>Built to be called by agents</h1>
+<p class="lede">Tendril's users are mostly agents. The command line and the MCP server share one typed surface; every result is a JSON envelope with structured errors; and input is serialised, guarded and reversible, because the desktop is shared.</p>
+
+<h2 id="mcp">MCP tools</h2>
+<p><code class="nb">tendril mcp stdio</code> serves the same surface over the Model Context Protocol. The tool list, as the server reports it:</p>
+<div class="table"><table>
+<thead><tr><th>Tool</th><th>Arguments</th><th>Does</th></tr></thead>
+<tbody>
+<tr><td><code class="nb">list</code></td><td class="wrap"><code class="nb">all_apps</code>, <code class="nb">x11_display</code></td><td>Discover targets</td></tr>
+<tr><td><code class="nb">list_elements</code></td><td class="wrap"><code class="nb">window</code>, <code class="nb">display</code>, <code class="nb">camera</code>, <code class="nb">include_offscreen</code>, <code class="nb">x11_display</code></td><td>Semantic elements</td></tr>
+<tr><td><code class="nb">capture</code></td><td class="wrap"><code class="nb">window</code>, <code class="nb">display</code>, <code class="nb">camera</code>, <code class="nb">format</code>, <code class="nb">compression</code>, <code class="nb">max_width</code>, <code class="nb">max_height</code>, <code class="nb">timeout_ms</code></td><td>A screenshot or camera frame</td></tr>
+<tr><td><code class="nb">run</code></td><td class="wrap"><code class="nb">input_definition</code>, a target, <code class="nb">restore_focus</code>, <code class="nb">no_lock</code>, <code class="nb">lock_timeout_ms</code>, <code class="nb">lock_stale_ms</code>, <code class="nb">lock_path</code></td><td>Input, under the execution lock</td></tr>
+<tr><td><code class="nb">listen</code></td><td class="wrap"><code class="nb">source</code>, <code class="nb">duration_ms</code>, <code class="nb">format</code>, <code class="nb">output</code></td><td>Record audio, or probe</td></tr>
+<tr><td><code class="nb">clipboard_get</code>, <code class="nb">clipboard_set</code></td><td class="wrap"><code class="nb">selection</code>, <code class="nb">text</code>, <code class="nb">serve_ms</code></td><td>The X11 clipboard or primary selection</td></tr>
+<tr><td><code class="nb">permissions</code></td><td><code class="nb">request</code></td><td>Platform permission status</td></tr>
+<tr><td><code class="nb">self_update_*</code>, <code class="nb">feedback_*</code></td><td></td><td>Updates and feedback from the shared CLI stack</td></tr>
+</tbody>
+</table></div>
+<p>The <code class="nb">x11_display</code> argument lets one server work against a disposable headless display without changing its environment. Through <code class="nb">--remote</code>, the MCP stream is passed through to a remote Tendril unchanged.</p>
+
+<h2 id="envelopes">Envelopes and errors</h2>
+<p>With <code class="nb">--json</code>, and always over MCP, a result is <code>{status, meta: {schema_version, command}, data}</code> or, on failure, <code>{status: "error", meta, error}</code>. Errors are typed, so an agent can branch on them instead of parsing prose. The guard that refuses to type a bare key name returns:</p>
+<pre id="errors" data-label="tendril --window 0xe00003 --json run 'Return'"><code><span class="ln"><span class="o">{</span></span><span class="ln"><span class="o">  "status": "error",<wbr></span></span><span class="ln"><span class="o">  "meta": { "schema_version": 1,<wbr> "command": "run" },<wbr></span></span><span class="ln"><span class="o">  "error": {</span></span><span class="ln"><span class="o">    "category": "validation",<wbr></span></span><span class="ln"><span class="o">    "code": "invalid_run_input",<wbr></span></span><span class="ln"><span class="o">    "message": "validation error: ambiguous run input `Return` looks like a DSL key token; refusing to type it as literal text",<wbr></span></span><span class="ln"><span class="o">    "details": {</span></span><span class="ln"><span class="o">      "action": "Return",<wbr> "ambiguity": "bare_key_token",<wbr> "ambiguous_token": "Return",<wbr> "field": "input_definition",<wbr> "stage": "parse",<wbr></span></span><span class="ln"><span class="o">      "hint": "Use a DSL sequence containing a comma for key taps,<wbr> for example `wait(1ms),<wbr>Return`. If you intended to type the literal text,<wbr> use `send(\"Return\")`."</span></span><span class="ln"><span class="o">    }</span></span><span class="ln"><span class="o">  }</span></span><span class="ln"><span class="o">}</span></span></code></pre>
+<div class="table"><table>
+<thead><tr><th>Category</th><th>Typical codes and details</th></tr></thead>
+<tbody>
+<tr><td><code class="nb">validation</code></td><td class="wrap"><code class="nb">invalid_input</code>, <code class="nb">invalid_run_input</code>, with the field and a hint</td></tr>
+<tr><td><code class="nb">unsupported_capability</code></td><td class="wrap">The capability, platform, reason and a suggested action</td></tr>
+<tr><td><code class="nb">missing_permission</code></td><td class="wrap">Which permission, for what, and how to grant it</td></tr>
+<tr><td><code class="nb">target_not_found</code></td><td>The target kind and id</td></tr>
+<tr><td><code class="nb">platform_adapter_failure</code></td><td>The operation and platform</td></tr>
+<tr><td><code class="nb">timeout</code></td><td class="wrap"><code class="nb">platform_adapter_timeout</code>, with the backend and timeout</td></tr>
+<tr><td><code class="nb">execution_failure</code>, <code class="nb">config_error</code>, <code class="nb">serialization_error</code></td><td>What failed, and where</td></tr>
+</tbody>
+</table></div>
+<p>The process exits 0 on success and 1 on any error; the envelope carries the detail. Successful results carry <code class="nb">notes</code> for anything an agent should know, such as a fallback taken or a focus restore that was not possible.</p>
+
+<h2 id="lock">The execution lock</h2>
+<figure class="fig">
+<div class="fig-scroll">
+<!-- fig:lockq -->
+<svg class="f" viewBox="0 0 700 250" width="700" height="250" role="img" aria-labelledby="lockq-t lockq-d"><title id="lockq-t">The execution lock</title><desc id="lockq-d">Three run commands from different agents arrive at once. Each writes a queue ticket and waits its turn. The first ticket takes the lock: it writes an owner record and refreshes a heartbeat while its input runs, then releases. The next ticket then proceeds. A holder whose heartbeat stops for 30 seconds is reaped as stale, and a waiter gives up after 60 seconds by default. Reads such as list and capture do not take the lock.</desc><defs><marker id="lockq-a-target" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-target"/></marker><marker id="lockq-a-shot" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-shot"/></marker><marker id="lockq-a-act" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-act"/></marker><marker id="lockq-a-lock" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-lock"/></marker><marker id="lockq-a-agent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-agent"/></marker><marker id="lockq-a-far" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-far"/></marker><marker id="lockq-a-mute" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-mute"/></marker></defs>
+<text x="0" y="18" class="f-xs">queue/</text>
+<rect x="0" y="30" width="150" height="40" rx="4" class="b-plain"/>
+<text x="12" y="55" class="f-m">ticket · agent A</text>
+<rect x="0" y="82" width="150" height="40" rx="4" class="b-plain"/>
+<text x="12" y="107" class="f-m">ticket · agent B</text>
+<rect x="0" y="134" width="150" height="40" rx="4" class="b-plain"/>
+<text x="12" y="159" class="f-m">ticket · MCP run</text>
+<path d="M152 50 L246 100" class="wire s-lock" marker-end="url(#lockq-a-lock)"/>
+<rect x="250" y="70" width="200" height="74" rx="4" class="b-lock"/>
+<text x="264" y="94" class="f-m">held/owner.json</text>
+<text x="264" y="114" class="f-s">heartbeat while running</text>
+<text x="264" y="132" class="f-s">then release</text>
+<path d="M452 107 L540 107" class="wire s-act" marker-end="url(#lockq-a-act)"/>
+<rect x="544" y="76" width="156" height="62" rx="8" class="b-act"/>
+<text x="556" y="104.0" class="f-t">input runs</text>
+<text x="556" y="122.0" class="f-s">one run at a time</text>
+<path d="M152 102 L246 112" class="wire s-mute dash" marker-end="url(#lockq-a-mute)"/>
+<path d="M152 154 L246 124" class="wire s-mute dash" marker-end="url(#lockq-a-mute)"/>
+<text x="250" y="176" class="f-xs">stale holder reaped after 30 s without a heartbeat</text>
+<text x="250" y="196" class="f-xs">a waiter times out after 60 s (both configurable)</text>
+<text x="250" y="216" class="f-xs">list and capture never wait for the lock</text>
+</svg>
+<!-- /fig -->
+</div>
+<figcaption><b>One input stream at a time.</b>Several agents can share a desktop without interleaving keystrokes, clicks and waits.</figcaption>
+</figure>
+<p>Every <code class="nb">run</code>, including MCP <code class="nb">run</code> calls, writes a ticket and waits until it is first in the queue, then takes the lock atomically and keeps a heartbeat while its input runs. The lock is per user and desktop session, under the temporary directory by default (<code>$TMPDIR/tendril-execution-lock-<var>user</var>-<var>session</var>/</code>), so separate processes and separate MCP servers share it. A run's envelope reports its place in the queue, how long it waited and whether stale locks were reaped. <code class="nb">--no-lock</code> opts out for workflows that serialise themselves.</p>
+
+<h2 id="discipline">Capture, act, verify</h2>
+<p>Tendril cannot know whether an action worked; only the screen can. The working rule for agents:</p>
+<ol class="steps">
+<li><h3>Capture before acting</h3><p>Find the target and its coordinates from a fresh capture, and convert them to source space.</p></li>
+<li><h3>Act in small runs</h3><p>A few actions per <code class="nb">run</code>, with <code class="nb">wait</code>s where the interface needs time.</p></li>
+<li><h3>Capture again</h3><p>Confirm the change before the next step. If a run reports that focus was not restored, pause and recapture before sending more input.</p></li>
+<li><h3>Prefer elements to pixels</h3><p>Where an accessibility tree exists, <code class="nb">list-elements</code> and <code>click(<var>id</var>)</code> survive layout changes that coordinates do not.</p></li>
+</ol>
+
+<h2 id="stack">Updates and feedback</h2>
+<p>Tendril shares the same small libraries as the owner's other command-line tools: one typed surface for the CLI and MCP, <code class="nb">tendril update</code> for checked self-updates from tagged releases, and optional feedback that routes breakages to the owning project's board through a webhook. Feedback is off unless configured.</p>
+</main>
+</div>
+<!-- shell:foot -->
+<footer class="foot">
+  <span>Tendril 0.0.4 · Rust · stateless desktop control for agents</span>
+  <span>Type: Schibsted Grotesk and Fragment Mono, <a href="assets/fonts/LICENSE.txt">OFL 1.1</a></span>
+</footer>
+<!-- /shell:foot -->
+</body>
+</html>
