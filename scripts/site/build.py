@@ -23,6 +23,8 @@ import html
 import re
 import sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import made  # noqa: E402  (the a.skh.am made-by meta and seal)
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
@@ -90,7 +92,7 @@ REDIRECTS = {
 def head(title: str, desc: str, base: str | None = None) -> str:
     out = [f'<base href="{base}">'] if base else []
     out += [
-        '<meta charset="utf-8">',
+        '<meta charset="utf-8">', made.META,
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
         f"<title>{html.escape(title)}</title>",
         f'<meta name="description" content="{html.escape(desc, quote=True)}">',
@@ -134,7 +136,7 @@ def foot() -> str:
         '<footer class="foot">',
         f"  <span>{FOOT}</span>",
         '  <span>Type: Schibsted Grotesk and Fragment Mono, <a href="assets/fonts/LICENSE.txt">OFL 1.1</a></span>',
-        "</footer>",
+        f'<div class="made-row" style="flex:1 0 100%;width:100%;margin-top:14px;line-height:0">{made.SEAL}</div>', "</footer>",
     ])
 
 
@@ -186,7 +188,7 @@ def render(file: str, title: str, desc: str, src: str, figs: dict, used: set) ->
 def redirect(old: str, new: str) -> str:
     target = "../" * old.count("/") + new
     return "\n".join([
-        "<!doctype html>", '<html lang="en">', "<head>", '<meta charset="utf-8">', f"<title>Moved · {NAME}</title>",
+        "<!doctype html>", '<html lang="en">', "<head>", '<meta charset="utf-8">', made.META, f"<title>Moved · {NAME}</title>",
         '<meta name="robots" content="noindex">', f'<meta http-equiv="refresh" content="0; url={target}">',
         f'<link rel="canonical" href="{target}">', "</head>", '<body data-redirect="">',
         f'<p>This page moved to <a href="{target}">{new}</a>.</p>', "</body>", "</html>", "",
