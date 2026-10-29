@@ -22,7 +22,7 @@
     flake-utils.lib.eachDefaultSystem (
       system:
       let
-        pkgs = import nixpkgs { inherit system; };
+        pkgs = nixpkgs.legacyPackages.${system};
         lib = pkgs.lib;
         workspaceManifest = builtins.fromTOML (builtins.readFile ./Cargo.toml);
         workspaceVersion = workspaceManifest.workspace.package.version;
