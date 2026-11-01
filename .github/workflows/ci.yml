@@ -4,16 +4,10 @@ name: ci
 # the local reint gate (scripts/pre-merge.sh) runs, so PR-backed reintegration
 # can rely on a green CI status check instead of the local gate.
 #
-# Runs on tendril's own dedicated NixOS self-hosted runners (label set
-# [self-hosted, nix, x86_64-linux] = tendril-aurora/beelink/sonance/ms-dev/
-# ms-dev-2), NOT the shared org-wide azure-ephemeral pool. Those NixOS boxes
-# run Nix with sandbox=true by default and have no stale /homeless-shelter, so
-# `nix flake check` builds purely. The azure-ephemeral pool runs Nix
-# non-sandboxed with a pre-existing /homeless-shelter, which fails the purity
-# guard for the build/test/clippy/docs derivations (bd-acf75f); mono's infra
-# guidance is to route heavy nix builds to self-hostable labels, which is
-# exactly what this does. No bare toolchains are required because everything is
-# driven through `nix flake check`.
+# Runs on GitHub-hosted ubuntu-latest with Determinate Nix (public repository:
+# GitHub-hosted minutes are free here, and the fleet's self-hosted runners never
+# serve public repositories, where fork pull requests could run code). Nix
+# builds sandboxed there, so `nix flake check` stays pure.
 
 on:
   pull_request:
@@ -33,10 +27,12 @@ concurrency:
 jobs:
   checks:
     name: Nix flake checks (fmt, clippy, tests, docs)
-    runs-on: [self-hosted, nix, x86_64-linux]
+    runs-on: ubuntu-latest
     timeout-minutes: 60
 
     steps:
+
+      - uses: DeterminateSystems/determinate-nix-action@v3
       - name: Check out repository
         uses: actions/checkout@v4
         with:

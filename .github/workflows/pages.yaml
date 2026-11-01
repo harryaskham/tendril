@@ -1,6 +1,6 @@
 name: pages
 
-# Shared self-hosted gh-pages publisher (harryaskham.github.io publish-pages.yml):
+# Shared gh-pages publisher (harryaskham.github.io publish-pages.yml):
 # site/ + workspace rustdoc → a.skh.am/tendril/. Site changes on main
 # deploy immediately; release tags refresh the API docs.
 on:
@@ -23,6 +23,8 @@ jobs:
   pages:
     uses: harryaskham/harryaskham.github.io/.github/workflows/publish-pages.yml@main
     with:
+      # Public repository: GitHub-hosted (free); fleet runners never serve public repos.
+      runs-on: '["ubuntu-latest"]'
       path: target/site
       submodules: recursive
       timeout-minutes: 60

@@ -27,7 +27,7 @@ concurrency:
 jobs:
   resolve:
     name: Resolve release context
-    runs-on: [self-hosted, nix, x86_64-linux]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
       tag: ${{ steps.context.outputs.tag }}
@@ -64,13 +64,14 @@ jobs:
   test:
     name: Test release source
     needs: resolve
-    runs-on: [self-hosted, nix, x86_64-linux]
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.resolve.outputs.tag }}
           submodules: recursive
+      - uses: DeterminateSystems/determinate-nix-action@v3
       - name: Run workspace tests inside the dev shell
         shell: bash
         run: nix develop --command cargo test --workspace --all-features --locked
@@ -86,7 +87,7 @@ jobs:
   prepare-release:
     name: Prepare draft release
     needs: [resolve, test]
-    runs-on: [self-hosted, nix, x86_64-linux]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Create draft release
@@ -115,13 +116,13 @@ jobs:
       matrix:
         include:
           - target: x86_64-linux
-            runner: [self-hosted, nix, x86_64-linux]
+            runner: ubuntu-latest
             cross: ""
           - target: aarch64-linux
-            runner: [self-hosted, nix, x86_64-linux]
+            runner: ubuntu-latest
             cross: aarch64-unknown-linux-musl
           - target: aarch64-darwin
-            runner: [self-hosted, nix, aarch64-darwin]
+            runner: macos-latest
             cross: ""
 
     steps:
@@ -129,6 +130,7 @@ jobs:
         with:
           ref: ${{ needs.resolve.outputs.tag }}
           submodules: recursive
+      - uses: DeterminateSystems/determinate-nix-action@v3
 
       - name: Verify target toolchain
         shell: bash
@@ -242,7 +244,7 @@ jobs:
   publish:
     name: Publish release
     needs: [resolve, build]
-    runs-on: [self-hosted, nix, x86_64-linux]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Verify complete updatable-cli asset set and publish

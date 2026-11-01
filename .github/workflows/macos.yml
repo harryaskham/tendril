@@ -10,11 +10,10 @@ name: macos
 # release tags -- so macOS code could rot between releases undetected, the same
 # gap windows.yml just exposed on Windows.
 #
-# This workflow closes that gap by building tendril on the self-hosted
-# aarch64-darwin runner (tendril-ms-mac, which has nix) on every PR and main
-# push, plus a `--version` smoke of the built binary. It validates that
-# tendril's unix dependencies (zbus/ashpd/x11rb) and macOS code paths compile on
-# darwin.
+# This workflow closes that gap by building tendril on GitHub-hosted macos-
+# latest (Apple silicon) with Determinate Nix on every PR and main push, plus a
+# `--version` smoke of the built binary. It validates that tendril's unix
+# dependencies (zbus/ashpd/x11rb) and macOS code paths compile on darwin.
 #
 # It is deliberately a SEPARATE workflow from ci.yml and is NOT wired into the
 # required PR-merge status check, so a busy or offline macOS runner can never
@@ -40,10 +39,12 @@ concurrency:
 jobs:
   build:
     name: macOS build + smoke
-    runs-on: [self-hosted, macos]
+    runs-on: macos-latest
     timeout-minutes: 45
 
     steps:
+
+      - uses: DeterminateSystems/determinate-nix-action@v3
       - name: Check out repository
         uses: actions/checkout@v4
         with:
