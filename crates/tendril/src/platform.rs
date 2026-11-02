@@ -2402,12 +2402,13 @@ fn wayland_capture_program_on_path(program: &str) -> bool {
 fn execute_linux_input(
     platform: PlatformKind,
     session: DesktopSession,
-    _x11_display: Option<&str>,
+    // Only the Linux X11 path reads the display.
+    #[cfg_attr(not(target_os = "linux"), allow(unused_variables))] x11_display: Option<&str>,
     request: &InputRequest,
 ) -> Result<InputOutcome, TendrilError> {
     match session {
         #[cfg(target_os = "linux")]
-        DesktopSession::X11 => x11::execute_input(platform, _x11_display, request),
+        DesktopSession::X11 => x11::execute_input(platform, x11_display, request),
         #[cfg(not(target_os = "linux"))]
         DesktopSession::X11 => Err(TendrilError::from(PlatformAdapterError::unsupported(
             Capability::InputControl,
